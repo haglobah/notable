@@ -118,6 +118,14 @@ and the metrics stack. Server work must stay small.
   account database.
 - The server is packaged as a NixOS module and a container image, so others can self-host it.
 
+### Sync runs in the foreground only (2026-10-11)
+
+- Onyx freezes Notable about 3 s after it leaves the foreground, even when Android reports it as
+  exempt. Changes then wait until the app is opened again and arrive within seconds.
+- Beat chose foreground-only sync: no foreground service and no permanent notification. Drawing
+  happens with the app open, and the PWA shows whatever has reached the server.
+- A foreground service stays possible later if the delay turns out to matter.
+
 ### WebDAV
 
 - WebDAV sync is removed once the new sync covers folders, notebooks, pages, strokes, images and
@@ -156,6 +164,8 @@ Harder:
   Notable self-contained.
 - **Per-doc access control** sits in the sync server. Isolation between users depends on it, so
   it needs focused tests.
+- **Foreground-only sync on Onyx.** The Boox shows remote changes a few seconds after Notable is
+  opened, not while it sits in the background.
 - **Coupling with upstream.** This fork diverges from `Ethran/notable`'s WebDAV sync. Upstream
   merges touching `sync/` will conflict.
 - **Out of scope for now:** importing annotations made in other PDF readers back into Notable,

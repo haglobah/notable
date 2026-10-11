@@ -171,8 +171,8 @@ Known gaps in part B:
   re-applies the same diff.
 - A page that is loading when an edit commits can miss it, until it is reopened.
 - Deleting the page that is open in the editor leaves the editor showing it until it is closed.
-- Changes arrive only while Notable is in the foreground on Onyx (see above). Background
-  delivery needs a foreground service or Onyx's exemption; that's a Phase 4 decision.
+- Changes arrive only while Notable is in the foreground on Onyx (see above). Decided
+  2026-10-11: foreground-only sync, no foreground service (ADR-001).
 - Notebook doc changes bump no `updatedAt` in the doc, so "edited" dates in the library don't move.
 - The WebDAV consent dialog still covers the Notable Sync section; it goes with WebDAV in Phase 5.
 - automerge-repo in Node logs `TimeoutNegativeWarning` on most client runs; not investigated.
