@@ -98,14 +98,18 @@ internal class Device(
     val docs: MemoryLocalDocs = MemoryLocalDocs(),
     var clock: Long = 1_780_001_000_000, // after t1, the rows' updatedAt
     canvasWidth: Double = 1860.0,
+    /** What the writer sees of [docs]; tests wrap it to record or fail commits. */
+    writerDocs: (MemoryLocalDocs) -> LocalDocs = { it },
+    /** Ids with a queued local write; the projector leaves them alone. */
+    localPending: (String) -> Boolean = { false },
 ) {
     val room = FakeRoom()
     private val dir = tmp.newFolder()
     val state = ProjectionStateStore(java.io.File(dir, "projection.json"))
     val blobs = FakeBlobStore()
-    val writer = LocalDocWriter(docs, room.library, blobs, MigrationStateStore(java.io.File(dir, "migration.json")), state, canvasWidth) { clock }
+    val writer = LocalDocWriter(writerDocs(docs), room.library, blobs, MigrationStateStore(java.io.File(dir, "migration.json")), state, canvasWidth) { clock }
     val files = FakeFiles()
-    val projector = AutomergeProjector(room, files, state, canvasWidth)
+    val projector = AutomergeProjector(room, files, state, canvasWidth, localPending)
 
     /** What a repository does for an edit or deletion: doc first, then Room, then settle. */
     fun edit(change: LocalChange): WriteReceipt {

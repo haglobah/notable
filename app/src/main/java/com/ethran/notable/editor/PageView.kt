@@ -454,10 +454,10 @@ class PageView(
 
 
     private fun removeStrokesFromPersistLayer(strokeIds: List<String>) =
-        pageDataManager.removeStrokesFromDb(strokeIds)
+        pageDataManager.removeStrokesFromDb(currentPageId, strokeIds)
 
     private fun removeImagesFromPersistLayer(imageIds: List<String>) =
-        pageDataManager.removeImagesFromDb(imageIds)
+        pageDataManager.removeImagesFromDb(currentPageId, imageIds)
 
     // load background, fast, if it is accurate enough.
     private fun loadInitialBitmap(): Boolean {

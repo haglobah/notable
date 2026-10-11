@@ -147,6 +147,10 @@ private fun ProjectionBlock(state: ProjectionStatus, enabled: Boolean, onRebuild
     )
     state.errors.forEach { (doc, why) -> Notice(stringResource(R.string.nsync_receive_error, doc, why)) }
     state.warnings.takeLast(3).forEach { Notice(it) }
+    state.writeError?.let { Notice(stringResource(R.string.nsync_write_error, it)) }
+    state.commitLatency?.let {
+        Text(stringResource(R.string.nsync_commit_latency, it.p50Ms, it.maxMs, it.count), style = MaterialTheme.typography.body2)
+    }
     Spacer(Modifier.height(8.dp))
     Button(
         onClick = onRebuild,

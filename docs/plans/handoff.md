@@ -23,8 +23,11 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - `AutomergeSchema.kt`: doc readers and writers.
   - `Migration.kt`: Room → docs.
   - `Projector.kt` + `RoomProjection.kt`: docs → Room.
-  - `LocalDocWriter.kt`: editor edits → docs. Not wired yet.
-  - `NotableSyncClient.kt`: Hilt singleton, session, repo, dialer.
+  - `LocalDocWriter.kt`: editor edits → docs.
+  - `RepoLocalDocs.kt`: `DurableStorage` + `RepoLocalDocs`, edits that return once on disk.
+  - `DocFirstMirror.kt`: the `ContentMirror` (doc, Room, settle) and `LatencyStats`.
+  - `NotableSyncClient.kt`: Hilt singleton, session, repo, dialer; the bound `ContentMirror`.
+  - `data/EditorWriteQueue.kt`: the editor's serial write queue and `PendingLocalWrites`.
   - `AndroidAdapters.kt`: Room, files, background-limit adapters.
 - Editor: `docs/editor-data-flow.md`, `docs/editor-state-and-view.md`. The stroke and image write
   functions are in `data/PageDataManager.kt`.
@@ -58,40 +61,51 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
 ## State (2026-10-11)
 
 - Phases 0–3 are done and deployed.
-- Phase 4a is in progress. Committed in `a177f2e2`: `LocalDocWriter`, which isn't wired into the
-  editor yet, and the projector fixes.
-- Untracked and not compiling yet: `RepoLocalDocsTest.kt`, the durability tests for the classes
-  in Next, step 1.
+- Phase 4a is in progress. Committed in `a177f2e2`: `LocalDocWriter` and the projector fixes.
+- Done, not committed yet (steps 1–3 of the old Next list; unit tests only, not on device):
+  - **Durability.** `RepoLocalDocs.kt`: `DurableStorage` records finished puts; `RepoLocalDocs.edit`
+    waits for the new heads' incremental keys (or a later snapshot), `createDoc` also waits until
+    the doc has no write in flight. A failed storage write fails the edit. `RepoLocalDocsTest`
+    passes; its "kill" copy retries until the file list is stable, because compaction deletes
+    files during a copy.
+  - **Editor wiring.** `data/EditorWriteQueue.kt`: one serial queue for the 6 stroke and image
+    writes in `PageDataManager`; `PendingLocalWrites` holds their ids until done. The remove
+    functions now take the page id (`PageView` passes it). `DocFirstMirror.kt` is the
+    `ContentMirror`: doc commit (durable), Room, settle; Room only without a session; a doc
+    failure is reported and Room is still written. `NotableSyncClient` implements `ContentMirror`
+    by delegating to it, bound in `di/SyncModule.kt`. The projector skips stroke and image ids
+    that are pending, and its Room writes run under the mirror's lock (`exclusive`), so they never
+    land between a local Room write and its settle.
+  - **Session.** One `ProjectionStateStore` and one `MigrationStateStore` per session.
+    `LibraryUrlCache` (`files/notable-sync/<account>/library-url`): with a cached URL, the writer
+    and the projection start at launch, offline. `ProjectionStatus.writeError` and
+    `commitLatency` (p50, max over the last 256) show in the sync settings; the latency is also
+    logged every 100 edits.
+- Tests: `sync.automerge.*`, `data.*` and `editor.*` unit tests pass.
+
+Known gaps from steps 1–3:
+
+- A projection that read the doc between a page-cut's remove and re-add, and applies after the
+  re-add settled, drops the strokes from the editor until the next projection brings them back.
+- A remote change to a stroke whose local delete is queued is skipped in Room; the doc keeps the
+  remote put (it wins over the delete), so Room lacks it until that stroke changes again.
+- A failed doc write leaves the edit in Room only; nothing retries it.
+- "Upload notebooks" (`runMigration`) still creates docs through `RepoDocStore`, without the
+  durability wait, and can race the writer's on-demand migration of the same notebook (shared
+  state store, no shared lock): a possible duplicate doc.
+- The cached library URL is not checked against `/me` on connect.
+- `UploadingBlobStore` fails offline, so offline image edits are Room-only (step 1 below).
 
 ## Next (Phase 4a remaining)
 
-1. **Durability.** In automerge-java 0.0.9, `DocHandle.withDocument` returns before the storage write.
-   - Storage keys are `<docId>/incremental/<changeHash>`.
-   - Build `DurableStorage`, a `FileSystemStorage` wrapper that records finished puts.
-   - Build `RepoLocalDocs`:
-     - `edit` waits for the new head's key;
-     - `createDoc` waits for its heads' keys, then until no write for that doc is in flight.
-   - Make `RepoLocalDocsTest` pass.
-2. **Editor wiring.**
-   - The 6 write functions in `PageDataManager` (save, update and remove for strokes and images)
-     start unordered IO coroutines. That's an existing race: a page-cut move does remove, then add,
-     of the same ids.
-   - Replace them with one serial queue: doc commit, wait for durability, Room write, settle.
-   - With no session, write Room only.
-   - Bind `ContentMirror` to `NotableSyncClient` in Hilt.
-   - Ignore remote upserts and deletes of ids that have a queued local write.
-3. **Session.**
-   - One `ProjectionStateStore`, shared by the writer and the projector.
-   - Cache `libraryUrl`, and project at launch even when offline.
-   - Show writer errors in the sync status.
-   - Record pen-up → commit latency (p50 and max).
-4. **Images offline.** Queue the blob store: copy `content://` files into the account folder, and
+1. **Images offline.** Queue the blob store: copy `content://` files into the account folder, and
    upload when connected.
-5. **Debug hook and device check.**
+2. **Debug hook and device check.**
    - A debug-only broadcast that drives `PageView` and `History`: draw, erase, move, undo/redo,
      images.
    - On device, check: server and PWA, a remote and a local edit merging, `am force-stop` right
-     after an edit, latency.
+     after an edit, latency (sync settings show p50 and max), offline launch with a cached
+     library URL.
    - A live test for offline edits that sync on reconnect (pattern: `LiveServerMigrationTest`).
    - Update the plan.
 

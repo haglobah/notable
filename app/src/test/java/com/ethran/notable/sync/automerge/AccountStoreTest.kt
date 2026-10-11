@@ -59,3 +59,28 @@ class AccountStoreTest {
         assertTrue(load.toString(), load is AccountLoad.Unreadable)
     }
 }
+
+/** The library doc URL, kept per account so the editor and projection work offline at launch. */
+class LibraryUrlCacheTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    @Test
+    fun `nothing is cached at first`() {
+        assertEquals(null, LibraryUrlCache(tmp.root.resolve("acct/library-url")).load())
+    }
+
+    @Test
+    fun `a saved URL survives a restart, in a folder that did not exist`() {
+        val file = tmp.root.resolve("acct/library-url")
+        LibraryUrlCache(file).save("automerge:4A78qrc8w2U9PjqSmkNxpsG854bR")
+        assertEquals("automerge:4A78qrc8w2U9PjqSmkNxpsG854bR", LibraryUrlCache(file).load())
+    }
+
+    @Test
+    fun `a file that is not an automerge URL is an error, not a missing cache`() {
+        val file = tmp.root.resolve("library-url").apply { writeText("garbage") }
+        val e = org.junit.Assert.assertThrows(java.io.IOException::class.java) { LibraryUrlCache(file).load() }
+        assertTrue(e.message!!.contains("garbage"))
+    }
+}

@@ -165,6 +165,9 @@ data class NotebookProjection(val edits: List<RemotePageEdit>, val warnings: Lis
  *   here after the upload, not synced yet) survive both paths.
  * - **No echo.** The projector writes Room only, never a doc. The migration skips every notebook
  *   that already has a library entry, so projected rows are never uploaded again.
+ * - **Local writes win.** Strokes and images with a queued local write are neither upserted nor
+ *   deleted here; the local write lands in Room after its doc commit, and a later projection
+ *   applies whatever the doc holds then.
  * - **Failures are visible.** A doc that fails (schema error, missing blob) throws; its heads are
  *   not advanced, so the next change or reconnect retries it.
  *
@@ -176,6 +179,8 @@ class AutomergeProjector(
     private val files: ProjectionFiles,
     private val state: ProjectionStateStore,
     private val localCanvasWidth: Double,
+    /** Stroke and image ids with a queued local write; see [com.ethran.notable.data.PendingLocalWrites]. */
+    private val localPending: (String) -> Boolean = { false },
 ) {
     @Volatile
     private var library: AmLibrary? = null
@@ -393,7 +398,7 @@ class AutomergeProjector(
             if (p.id !in pageRows && sink.page(p.id) == null) continue
             val wanted = if (delta == null || p.id in delta.pagesCreated || p.id in delta.imagesReplaced) p.images.keys
             else delta.imagesTouched[p.id].orEmpty().intersect(p.images.keys)
-            images[p.id] = wanted.map { id ->
+            images[p.id] = wanted.filterNot(localPending).map { id ->
                 val i = p.images.getValue(id)
                 Image(i.id, (i.x * factor).toInt(), (i.y * factor).toInt(), (i.height * factor).toInt(), (i.width * factor).toInt(),
                     files.imageUri(i.blob), p.id, i.createdAt, i.updatedAt)
@@ -413,17 +418,17 @@ class AutomergeProjector(
                 if (sink.page(p.id) == null) continue
                 val all = delta == null || p.id in delta.pagesCreated || p.id in delta.strokesReplaced
                 val strokeIds = if (all) p.strokes.keys else delta!!.strokesTouched[p.id].orEmpty().intersect(p.strokes.keys)
-                val strokes = strokeIds.map { toStroke(p.strokes.getValue(it), p.id, factor, warnings) }
+                val strokes = strokeIds.filterNot(localPending).map { toStroke(p.strokes.getValue(it), p.id, factor, warnings) }
                 val goneStrokes = when {
                     delta == null -> emptySet()
                     p.id in delta.strokesReplaced -> sink.strokeIds(p.id).toSet() - p.strokes.keys
                     else -> delta.strokesDeleted[p.id].orEmpty() - p.strokes.keys
-                }
+                }.filterNotTo(HashSet(), localPending)
                 val goneImages = when {
                     delta == null -> emptySet()
                     p.id in delta.imagesReplaced -> sink.imageIds(p.id).toSet() - p.images.keys
                     else -> delta.imagesDeleted[p.id].orEmpty() - p.images.keys
-                }
+                }.filterNotTo(HashSet(), localPending)
                 strokes.chunked(BATCH).forEach(sink::upsertStrokes)
                 sink.deleteStrokes(goneStrokes)
                 val imgs = images[p.id].orEmpty()
@@ -434,13 +439,15 @@ class AutomergeProjector(
                     edits += RemotePageEdit(p.id, strokes, goneStrokes, imgs, goneImages, pageChanged = pageChanged)
             }
             // Strokes deleted from a page that wasn't read (only deletions in the diff).
-            delta?.strokesDeleted?.filterKeys { it !in plan.pages && it in shell.pages }?.forEach { (pageId, ids) ->
-                if (sink.page(pageId) == null) return@forEach
+            delta?.strokesDeleted?.filterKeys { it !in plan.pages && it in shell.pages }?.forEach { (pageId, all) ->
+                val ids = all.filterNotTo(HashSet(), localPending)
+                if (sink.page(pageId) == null || ids.isEmpty()) return@forEach
                 sink.deleteStrokes(ids)
                 edits += RemotePageEdit(pageId, deleteStrokes = ids)
             }
-            delta?.imagesDeleted?.filterKeys { it !in plan.pages && it in shell.pages }?.forEach { (pageId, ids) ->
-                if (sink.page(pageId) == null) return@forEach
+            delta?.imagesDeleted?.filterKeys { it !in plan.pages && it in shell.pages }?.forEach { (pageId, all) ->
+                val ids = all.filterNotTo(HashSet(), localPending)
+                if (sink.page(pageId) == null || ids.isEmpty()) return@forEach
                 sink.deleteImages(ids)
                 edits += RemotePageEdit(pageId, deleteImages = ids)
             }

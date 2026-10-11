@@ -112,9 +112,16 @@ class PageDataManager @Inject constructor(
     private val appEventBus: AppEventBus,
     private val backgroundFileWatcher: BackgroundFileWatcher,
     private val viewport: PageViewportState,
+    mirror: ContentMirror,
+    pendingWrites: PendingLocalWrites,
 ) {
     val log = ShipBook.getLogger("PageDataManager")
     private val dataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Stroke and image writes, in order: doc first, then Room. See [EditorWriteQueue]. */
+    private val contentWrites = EditorWriteQueue(mirror, pendingWrites, dataScope) { op, e ->
+        log.e("content write '$op' failed: ${e.message}", e)
+    }
 
     // Read from every thread, written by the suspend setPage; @Volatile so a stale read can't
     // unpin the real current page mid-evict.
@@ -1031,69 +1038,84 @@ class PageDataManager @Inject constructor(
         }
     }
 
+    /**
+     * Queues one content write: doc commit (on disk), then [room], then settle; Room only without
+     * a sync session. The page and notebook are taken now, not when the write runs.
+     */
+    private fun enqueueContentWrite(op: String, change: LocalChange, room: suspend () -> Unit) {
+        val page = pageFromDb
+        contentWrites.enqueue(op, change) {
+            room()
+            bumpEditTimestamps(page?.id, page?.notebookId)
+        }
+    }
+
     fun updateStrokesInDb(strokes: List<Stroke>) {
-        launchDbWrite("updateStrokes(${strokes.size})") {
-            appRepository.strokeRepository.update(strokes)
-            bumpEditTimestamps()
+        strokes.groupBy { it.pageId }.forEach { (pageId, onPage) ->
+            enqueueContentWrite("updateStrokes(${onPage.size})", LocalChange.StrokesUpserted(pageId, onPage)) {
+                appRepository.strokeRepository.update(onPage)
+            }
         }
     }
 
     fun updateImagesInDb(images: List<Image>) {
-        launchDbWrite("updateImages(${images.size})") {
-            appRepository.imageRepository.update(images)
-            bumpEditTimestamps()
+        images.groupBy { it.pageId }.forEach { (pageId, onPage) ->
+            enqueueContentWrite("updateImages(${onPage.size})", LocalChange.ImagesUpserted(pageId, onPage)) {
+                appRepository.imageRepository.update(onPage)
+            }
         }
     }
 
     fun saveStrokesToDb(strokes: List<Stroke>) {
-        launchDbWrite("saveStrokes(${strokes.size})") {
-            try {
-                appRepository.strokeRepository.create(strokes)
-            } catch (_: SQLiteConstraintException) {
-                // There were some rare bugs when strokes weren't unique when inserting from history
-                // I'm not sure if it's still a problem, let's just show the message
-                appEventBus.tryEmit(
-                    AppEvent.LogMessage(
-                        reason = "saveStrokesToPersistLayer",
-                        message = "Attempted to create strokes that already exist"
+        strokes.groupBy { it.pageId }.forEach { (pageId, onPage) ->
+            enqueueContentWrite("saveStrokes(${onPage.size})", LocalChange.StrokesUpserted(pageId, onPage)) {
+                try {
+                    appRepository.strokeRepository.create(onPage)
+                } catch (_: SQLiteConstraintException) {
+                    // There were some rare bugs when strokes weren't unique when inserting from history
+                    // I'm not sure if it's still a problem, let's just show the message
+                    appEventBus.tryEmit(
+                        AppEvent.LogMessage(
+                            reason = "saveStrokesToPersistLayer",
+                            message = "Attempted to create strokes that already exist"
+                        )
                     )
-                )
-                appRepository.strokeRepository.update(strokes)
+                    appRepository.strokeRepository.update(onPage)
+                }
             }
-            bumpEditTimestamps()
         }
     }
 
     fun saveImagesToDb(images: List<Image>) {
-        launchDbWrite("saveImages(${images.size})") {
-            appRepository.imageRepository.create(images)
-            bumpEditTimestamps()
+        images.groupBy { it.pageId }.forEach { (pageId, onPage) ->
+            enqueueContentWrite("saveImages(${onPage.size})", LocalChange.ImagesUpserted(pageId, onPage)) {
+                appRepository.imageRepository.create(onPage)
+            }
         }
     }
 
-    fun removeStrokesFromDb(strokes: List<String>) {
-        launchDbWrite("removeStrokes(${strokes.size})") {
+    fun removeStrokesFromDb(pageId: String, strokes: List<String>) {
+        if (strokes.isEmpty()) return
+        enqueueContentWrite("removeStrokes(${strokes.size})", LocalChange.StrokesDeleted(pageId, strokes)) {
             appRepository.strokeRepository.deleteAll(strokes)
-            bumpEditTimestamps()
         }
     }
 
-    fun removeImagesFromDb(images: List<String>) {
-        launchDbWrite("removeImages(${images.size})") {
+    fun removeImagesFromDb(pageId: String, images: List<String>) {
+        if (images.isEmpty()) return
+        enqueueContentWrite("removeImages(${images.size})", LocalChange.ImagesDeleted(pageId, images)) {
             appRepository.imageRepository.deleteAll(images)
-            bumpEditTimestamps()
         }
     }
 
     // Bump the edit timestamps after a content write on the current page. The page timestamp is
     // the per-page dirty signal (for incremental upload); the notebook timestamp drives the
     // per-notebook sync Upload/Download decision. Both advance together on any stroke/image edit.
-    private suspend fun bumpEditTimestamps() {
-        val pageId = pageFromDb?.id
+    private suspend fun bumpEditTimestamps(pageId: String?, notebookId: String?) {
         if (!pageId.isNullOrEmpty()) {
             appRepository.pageRepository.touchUpdatedAt(pageId)
         }
-        val notebookId = pageFromDb?.notebookId ?: return
+        if (notebookId == null) return
         val notebook = appRepository.bookRepository.getById(notebookId) ?: return
         appRepository.bookRepository.update(notebook)
     }

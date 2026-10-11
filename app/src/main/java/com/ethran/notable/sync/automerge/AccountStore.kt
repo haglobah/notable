@@ -62,3 +62,25 @@ class AccountStore(private val file: File, private val cipher: SecretCipher) {
         if (file.exists() && !file.delete()) throw IOException("could not delete ${file.path}")
     }
 }
+
+/**
+ * The account's library doc URL, from the server's `/me`. Cached so the editor can write to the
+ * docs, and the projection can start, at launch without a connection. It never changes for an
+ * account; the file lives in the account's own folder.
+ */
+class LibraryUrlCache(private val file: File) {
+    /** @throws IOException when the file holds something other than an `automerge:` URL. */
+    fun load(): String? {
+        if (!file.exists()) return null
+        val url = file.readText().trim()
+        if (!url.startsWith("automerge:")) throw IOException("${file.path} holds '$url', not an automerge URL")
+        return url
+    }
+
+    fun save(url: String) {
+        file.absoluteFile.parentFile.mkdirs()
+        val tmp = File(file.absoluteFile.parentFile, file.name + ".tmp")
+        tmp.writeText(url)
+        if (!tmp.renameTo(file)) throw IOException("could not write ${file.path}")
+    }
+}

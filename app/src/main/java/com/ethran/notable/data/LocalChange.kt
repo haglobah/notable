@@ -42,12 +42,23 @@ sealed interface LocalChange {
  * no local edit is lost. Never call these from the main thread.
  */
 interface ContentMirror {
-    suspend fun <T> write(change: LocalChange, room: suspend () -> T): T
+    /** [queuedAtNanos]: when the edit was made (`System.nanoTime`), for the pen-up → commit latency. */
+    suspend fun <T> write(change: LocalChange, queuedAtNanos: Long? = null, room: suspend () -> T): T
     suspend fun <T> create(change: LocalChange, room: suspend () -> T): T
 
     /** Room only. For tests and for code that must not touch the docs. */
     object None : ContentMirror {
-        override suspend fun <T> write(change: LocalChange, room: suspend () -> T): T = room()
+        override suspend fun <T> write(change: LocalChange, queuedAtNanos: Long?, room: suspend () -> T): T = room()
         override suspend fun <T> create(change: LocalChange, room: suspend () -> T): T = room()
     }
 }
+
+/** Stroke and image ids a [LocalChange] writes; empty for page, notebook and folder changes. */
+val LocalChange.contentIds: List<String>
+    get() = when (this) {
+        is LocalChange.StrokesUpserted -> strokes.map { it.id }
+        is LocalChange.StrokesDeleted -> ids
+        is LocalChange.ImagesUpserted -> images.map { it.id }
+        is LocalChange.ImagesDeleted -> ids
+        else -> emptyList()
+    }

@@ -17,7 +17,11 @@ Contents:
 - **Responsibilities**:
     - Fetching strokes, images, and other page elements from the database.
     - Caching frequently accessed data to improve performance, including memory management via component callbacks (`onTrimMemory`).
-    - Persisting new or modified data back to the database.
+    - Persisting new or modified data back to the database. Stroke and image writes go through
+      one serial queue (`EditorWriteQueue`), in the order they were made. With a sync session,
+      each is committed to the Automerge doc first and waits until it is on disk; then Room is
+      written. Without a session, only Room is written. The ids stay "pending" until the write is
+      done, and the projector leaves pending ids alone.
 - **Role**: It serves as a single source of truth for page content, ensuring data consistency and providing a clean API for the editor components to request and submit data.
 
 ---

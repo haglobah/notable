@@ -3,6 +3,9 @@ package com.ethran.notable.sync.automerge
 import android.content.Context
 import com.ethran.notable.SCREEN_HEIGHT
 import com.ethran.notable.SCREEN_WIDTH
+import com.ethran.notable.data.ContentMirror
+import com.ethran.notable.data.LocalChange
+import com.ethran.notable.data.PendingLocalWrites
 import com.ethran.notable.data.db.CryptoHelper
 import com.ethran.notable.data.RemoteEdits
 import com.ethran.notable.data.db.FolderDao
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -66,6 +70,10 @@ data class ProjectionStatus(
     /** docUrl (or "library") → why its last projection failed. Retried on the next change. */
     val errors: Map<String, String> = emptyMap(),
     val warnings: List<String> = emptyList(),
+    /** Why the last local edit did not reach the docs; null once one did. */
+    val writeError: String? = null,
+    /** Pen-up → doc commit on disk, over the last edits. */
+    val commitLatency: LatencySummary? = null,
 )
 
 sealed interface MigrationState {
@@ -78,6 +86,10 @@ sealed interface MigrationState {
 /**
  * The Automerge sync client (ADR-001): the account, the local repo, and its WebSocket to the
  * server. One per process. The repo keeps docs on disk under `files/notable-sync/<account>/`.
+ *
+ * It is also the [ContentMirror]: editor writes go into the docs first (see [DocFirstMirror]).
+ * With a stored account that has synced once, that works offline from launch; without one,
+ * edits go to Room only.
  */
 @Singleton
 class NotableSyncClient @Inject constructor(
@@ -88,8 +100,9 @@ class NotableSyncClient @Inject constructor(
     private val pageDao: PageDao,
     private val strokeDao: StrokeDao,
     private val imageDao: ImageDao,
+    private val pendingWrites: PendingLocalWrites,
     @param:ApplicationScope private val scope: CoroutineScope,
-) {
+) : ContentMirror {
     private val root = File(context.filesDir, "notable-sync")
     private val accounts = AccountStore(File(root, "account.json"), KeystoreCipher(crypto))
     private val http = OkHttpClient.Builder()
@@ -108,15 +121,49 @@ class NotableSyncClient @Inject constructor(
     val projection: StateFlow<ProjectionStatus> = _projection.asStateFlow()
 
     private val lock = Mutex()
+    @Volatile
     private var session: Session? = null
 
-    private class Session(val account: StoredAccount, val api: ServerApi, val repo: Repo, var dialer: DialerHandle?) {
+    private val commitLatency = LatencyStats()
+    private val mirror = DocFirstMirror(
+        writer = { session?.writer },
+        report = ::onWriteResult,
+        latency = commitLatency,
+    )
+
+    private class Session(
+        val account: StoredAccount, val api: ServerApi, val repo: Repo, val storage: DurableStorage, dir: File,
+    ) {
+        var dialer: DialerHandle? = null
         var projectionJob: Job? = null
         val queue = Channel<String>(Channel.UNLIMITED)
         val handles = java.util.concurrent.ConcurrentHashMap<String, DocHandle>()
         val listeners = java.util.concurrent.ConcurrentHashMap<String, ListenerRegistration>()
-        var libraryUrl: String? = null
+        val libraryUrlCache = LibraryUrlCache(File(dir, "library-url"))
+        /** One per session, shared by the writer (settle) and the projector. */
+        val projectionState = ProjectionStateStore(File(dir, "projection.json"))
+        val migrationState = MigrationStateStore(File(dir, "migration.json"))
+        @Volatile var libraryUrl: String? = null
+        @Volatile var writer: LocalDocWriter? = null
         var projector: AutomergeProjector? = null
+    }
+
+    override suspend fun <T> write(change: LocalChange, queuedAtNanos: Long?, room: suspend () -> T): T =
+        mirror.write(change, queuedAtNanos, room)
+
+    override suspend fun <T> create(change: LocalChange, room: suspend () -> T): T = mirror.create(change, room)
+
+    private var latencyLoggedAt = 0L
+
+    private fun onWriteResult(error: String?) {
+        val latency = commitLatency.summary()
+        val before = _projection.getAndUpdate { it.copy(writeError = error, commitLatency = latency) }
+        if (error != null && error != before.writeError) log.e(error)
+        val recorded = commitLatency.recorded()
+        if (latency != null && recorded >= latencyLoggedAt + 100) {
+            latencyLoggedAt = recorded
+            log.i("pen-up to commit: p50 ${latency.p50Ms} ms, max ${latency.maxMs} ms over the last ${latency.count}")
+        }
     }
 
     /** Connects with the stored account, if any. Safe to call more than once. */
@@ -196,7 +243,7 @@ class NotableSyncClient @Inject constructor(
             local = RoomLocalLibrary(folderDao, notebookDao, pageDao),
             blobs = UploadingBlobStore(s.api, s.account.token, androidFileOpener(context)),
             docs = RepoDocStore(s.repo, library),
-            state = MigrationStateStore(File(accountDir(s.account), "migration.json")),
+            state = s.migrationState,
             canvasWidth = canvasWidth().toDouble(),
         )
         return migration.run { _migration.value = MigrationState.Running(it) }
@@ -215,12 +262,25 @@ class NotableSyncClient @Inject constructor(
 
     /** Must be called with [lock] held. */
     private fun connect(account: StoredAccount) {
-        val dir = File(accountDir(account), "repo").apply { mkdirs() }
-        val repo = Repo.load(RepoConfig.builder().storage(FileSystemStorage(dir.toPath())).build())
+        val accountDir = accountDir(account)
+        val dir = File(accountDir, "repo").apply { mkdirs() }
+        val storage = DurableStorage(FileSystemStorage(dir.toPath()))
+        val repo = Repo.load(RepoConfig.builder().storage(storage).build())
         val api = ServerApi(http, ServerApi.parseServerUrl(account.serverUrl))
-        val s = Session(account, api, repo, null)
+        val s = Session(account, api, repo, storage, accountDir)
         session = s
         _status.value = SyncStatus.Connecting(account.serverUrl, account.username)
+        // Known from an earlier session: write and project from the local repo, before (or without) a connection.
+        val cached = try {
+            s.libraryUrlCache.load()
+        } catch (e: java.io.IOException) {
+            log.e("library URL cache unreadable; waiting for the server", e)
+            null
+        }
+        if (cached != null) {
+            useLibrary(s, cached)
+            startProjection(s)
+        }
         val dialer = OkHttpDialer(http, ServerApi.syncUrl(api.baseUrl), account.token, object : OkHttpDialer.Listener {
             override fun onOpen() {
                 if (session !== s) return
@@ -243,10 +303,24 @@ class NotableSyncClient @Inject constructor(
         s.dialer = repo.dial(dialer, DialerConfig.defaults())
     }
 
+    /** The library doc is known: editor writes go to the docs from now on. */
+    private fun useLibrary(s: Session, url: String) {
+        s.libraryUrl = url
+        s.writer = LocalDocWriter(
+            docs = RepoLocalDocs(s.repo, s.storage, url),
+            local = RoomLocalLibrary(folderDao, notebookDao, pageDao),
+            blobs = UploadingBlobStore(s.api, s.account.token, androidFileOpener(context)),
+            migrationState = s.migrationState,
+            projection = s.projectionState,
+            canvasWidth = canvasWidth().toDouble(),
+        )
+    }
+
     /** Must be called with [lock] held. */
     private fun disconnect() {
         val s = session ?: return
         session = null
+        s.writer = null
         s.projectionJob?.cancel()
         s.listeners.values.forEach { runCatching { it.remove() } }
         s.listeners.clear()
@@ -275,8 +349,10 @@ class NotableSyncClient @Inject constructor(
         }
         s.projectionJob = scope.launch(Dispatchers.IO) {
             try {
-                val me = s.api.me(s.account.token)
-                s.libraryUrl = me.libraryDocUrl
+                val libraryUrl = s.libraryUrl ?: s.api.me(s.account.token).libraryDocUrl.also { url ->
+                    s.libraryUrlCache.save(url)
+                    if (session === s) useLibrary(s, url)
+                }
                 s.projector = AutomergeProjector(
                     sink = RoomProjectionSink(folderDao, notebookDao, pageDao, strokeDao, imageDao),
                     files = DownloadingProjectionFiles(
@@ -284,10 +360,11 @@ class NotableSyncClient @Inject constructor(
                         dir = File(getDbDir(), "sync-blobs").apply { mkdirs() },
                         open = androidFileOpener(context),
                     ),
-                    state = ProjectionStateStore(File(accountDir(s.account), "projection.json")),
+                    state = s.projectionState,
                     localCanvasWidth = canvasWidth().toDouble(),
+                    localPending = pendingWrites::contains,
                 )
-                follow(s, me.libraryDocUrl)
+                follow(s, libraryUrl)
                 for (url in s.queue) {
                     drainInto(s.queue, url).forEach { project(s, it) }
                 }
@@ -327,7 +404,7 @@ class NotableSyncClient @Inject constructor(
         try {
             if (url == s.libraryUrl) {
                 val plan = handle.withDocument { projector.prepareLibrary(it, url) }.get(60, TimeUnit.SECONDS)
-                val result = projector.apply(plan)
+                val result = mirror.exclusive { projector.apply(plan) }
                 result.follow.forEach { e ->
                     runCatching { follow(s, e.docUrl) }.onFailure { err ->
                         _projection.value = _projection.value.copy(errors = _projection.value.errors + (e.docUrl to "${e.title}: ${err.message}"))
@@ -336,7 +413,7 @@ class NotableSyncClient @Inject constructor(
                 warn(result.warnings)
             } else {
                 val plan = handle.withDocument { projector.prepareNotebook(it, url) }.get(60, TimeUnit.SECONDS)
-                val result = projector.apply(plan)
+                val result = mirror.exclusive { projector.apply(plan) }
                 result.edits.forEach { dropPagePreviews(it.pageId) }
                 if (!RemoteEdits.publish(result.edits)) log.w("editor cache missed ${result.edits.size} remote edits; pages reload on open")
                 warn(result.warnings)
