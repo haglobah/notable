@@ -83,6 +83,23 @@ class ProjectionStateStore(private val file: File) {
         save()
     }
 
+    /**
+     * Sets [docUrl]'s heads to [after] if they are still [before]: a local commit that Room already
+     * has, with nothing else in between. Otherwise leaves them, and the projector applies both.
+     */
+    @Synchronized
+    fun compareAndSetHeads(docUrl: String, before: Array<ChangeHash>, after: Array<ChangeHash>): Boolean {
+        val stored = docs[docUrl] ?: return false
+        if (stored.toSet() != before.map { bytesToHex(it.bytes) }.toSet()) return false
+        setHeads(docUrl, after)
+        return true
+    }
+
+    @Synchronized
+    fun setHeadsIfAbsent(docUrl: String, heads: Array<ChangeHash>) {
+        if (docUrl !in docs) setHeads(docUrl, heads)
+    }
+
     @Synchronized
     fun entries(): Map<String, String> = entries.toMap()
 
@@ -123,6 +140,13 @@ class ProjectionStateStore(private val file: File) {
         fun hexToBytes(s: String) = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
     }
 }
+
+/**
+ * Heads compared by their bytes. ChangeHash has no value equality, and stored heads come back as
+ * [StoredChangeHash], so `contentEquals` never matched and every projection re-read the doc.
+ */
+internal fun sameHeads(a: Array<ChangeHash>, b: Array<ChangeHash>): Boolean =
+    a.size == b.size && a.map { it.bytes.toList() }.toSet() == b.map { it.bytes.toList() }.toSet()
 
 /** automerge-java only creates ChangeHash itself; heads read back from disk come through here. */
 private class StoredChangeHash(bytes: ByteArray) : ChangeHash(bytes)
@@ -166,6 +190,8 @@ class AutomergeProjector(
         val library: AmLibrary,
         val deletedFolders: Set<String>,
         val deletedEntries: Set<String>,
+        /** Folders and entries the diff touched; null means all (a full projection). */
+        val touched: Set<String>?,
     )
 
     fun prepareLibrary(doc: Document, url: String): LibraryPlan {
@@ -174,9 +200,14 @@ class AutomergeProjector(
         val last = state.heads(url)
         val deletedFolders = HashSet<String>()
         val deletedEntries = HashSet<String>()
-        if (last != null && !last.contentEquals(heads)) {
+        // Only what the diff touched is applied. Room may hold newer values than the doc (its own
+        // "edited" dates move with every stroke), and an untouched entry must not overwrite them.
+        var touched: HashSet<String>? = if (last == null) null else HashSet()
+        if (last != null && !sameHeads(last, heads)) {
             for (patch in doc.diff(last, heads)) {
                 val keys = keysOf(patch)
+                if (keys.size < 2) { touched = null; continue }
+                touched?.add("${keys[0]}/${keys[1]}")
                 if (keys.size == 2 && patch.action is PatchAction.DeleteMap) {
                     when (keys[0]) {
                         "folders" -> if (keys[1] !in library.folders) deletedFolders += keys[1]
@@ -185,15 +216,17 @@ class AutomergeProjector(
                 }
             }
         }
-        return LibraryPlan(url, heads, library, deletedFolders, deletedEntries)
+        return LibraryPlan(url, heads, library, deletedFolders, deletedEntries, touched)
     }
 
     fun apply(plan: LibraryPlan): LibraryProjection {
         val warnings = mutableListOf<String>()
         val lib = plan.library
+        val touched = plan.touched
         sink.transaction {
-            upsertFolders(lib, warnings)
-            for (e in lib.notebooks.values) updateEntryRow(e, lib, warnings)
+            if (touched == null || touched.any { it.startsWith("folders/") }) upsertFolders(lib, warnings)
+            for (e in lib.notebooks.values)
+                if (touched == null || "notebooks/${e.id}" in touched) updateEntryRow(e, lib, warnings)
             val known = state.entries()
             for (id in plan.deletedEntries) {
                 when {
@@ -313,7 +346,7 @@ class AutomergeProjector(
             val nb = AutomergeSchema.readNotebook(doc)
             return NotebookPlan(url, heads, nb, nb.pages, null)
         }
-        if (last.contentEquals(heads)) return NotebookPlan(url, heads, null, emptyMap(), Delta())
+        if (sameHeads(last, heads)) return NotebookPlan(url, heads, null, emptyMap(), Delta())
         val delta = Delta()
         for (patch in doc.diff(last, heads)) delta.add(keysOf(patch), patch.action)
         val shell = AutomergeSchema.readNotebookShell(doc)

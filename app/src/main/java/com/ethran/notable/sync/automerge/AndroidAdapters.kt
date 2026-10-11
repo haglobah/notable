@@ -41,6 +41,8 @@ internal class RoomLocalLibrary(
     override fun notebooks() = notebookDao.getAll()
     override fun quickPages() = runBlocking { pageDao.getAllQuickPages() }
     override fun page(pageId: String) = runBlocking { pageDao.getPageWithDataById(pageId) }
+    override fun pageRow(pageId: String) = runBlocking { pageDao.getById(pageId) }
+    override fun notebook(id: String) = runBlocking { notebookDao.getById(id) }
 }
 
 /**

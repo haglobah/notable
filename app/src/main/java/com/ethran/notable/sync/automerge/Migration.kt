@@ -20,6 +20,9 @@ interface LocalLibrary {
     /** Pages with no notebook ("quick pages"). */
     fun quickPages(): List<Page>
     fun page(pageId: String): PageWithData?
+    /** The page row alone, without loading its strokes. */
+    fun pageRow(pageId: String): Page? = page(pageId)?.page
+    fun notebook(id: String): Notebook? = notebooks().firstOrNull { it.id == id }
 }
 
 /** Uploads a local file (path or content URI) and returns its sha256 hex digest. */
@@ -135,6 +138,24 @@ class RoomToAutomergeMigration(
         }
         onProgress(MigrationProgress(items.size, items.size, null))
         return MigrationReport(migrated, already, failed, warnings)
+    }
+
+    /**
+     * Makes sure the notebook or quick page [id] has a doc and a library entry, migrating it from
+     * Room if not, and returns its doc URL. Null when Room has no such notebook or quick page.
+     * @throws MissingFileException when a file it refers to can't be read.
+     */
+    fun ensureEntry(id: String): String? {
+        docs.library().notebooks[id]?.let { return it.docUrl }
+        val created = state.load()[id]
+        val entry = local.notebook(id)?.let { migrateNotebook(it, created).first }
+            ?: local.page(id)?.page?.takeIf { it.notebookId == null }?.let { migrateQuickPage(it, created) }
+            ?: return null
+        docs.editLibrary { doc ->
+            val (_, notebooks) = AutomergeSchema.libraryMapsOf(doc)
+            doc.startTransaction().apply { AutomergeSchema.putNotebookEntry(this, notebooks, entry); commit() }
+        }
+        return entry.docUrl
     }
 
     private fun migrateFolders() {

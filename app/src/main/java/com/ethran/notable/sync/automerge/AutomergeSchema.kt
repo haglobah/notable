@@ -220,6 +220,12 @@ object AutomergeSchema {
         return w
     }
 
+    /** The doc's canvas width in stroke units, or null in docs written before it existed. */
+    fun canvasWidthOf(doc: Document): Double? = readCanvasWidth(Reader(doc))
+
+    /** A page's updatedAt, read without its content. */
+    fun pageUpdatedAt(doc: Document, page: ObjectId): Date = Reader(doc).date(page, "updatedAt", "page")
+
     /** The pages map of a notebook doc, for adding pages in later transactions. */
     fun pagesOf(doc: Document): ObjectId = Reader(doc).map(ObjectId.ROOT, "pages", "pages")
 
@@ -228,6 +234,48 @@ object AutomergeSchema {
         val r = Reader(doc)
         r.header(LIBRARY)
         return r.map(ObjectId.ROOT, "folders", "folders") to r.map(ObjectId.ROOT, "notebooks", "notebooks")
+    }
+
+    /* ------------------------------ in-place edits ------------------------------ */
+    // Edits of single fields, so concurrent changes to other fields of the same object merge.
+
+    /** A page's map, or null when the doc has no such page. */
+    fun pageObjOrNull(doc: Document, pageId: String): ObjectId? {
+        val pages = pagesOf(doc)
+        return (doc.get(pages, pageId).orElse(null) as? AmValue.Map)?.id
+    }
+
+    /** The images map of a page, for adding images in a later transaction. */
+    fun imagesOf(doc: Document, pageId: String): ObjectId {
+        val r = Reader(doc)
+        val pages = r.map(ObjectId.ROOT, "pages", "pages")
+        val page = r.map(pages, pageId, "pages.$pageId")
+        return r.map(page, "images", "pages.$pageId.images")
+    }
+
+    fun setBackground(tx: Transaction, parent: ObjectId, key: String, b: AmBackground) = putBackground(tx, parent, key, b)
+
+    fun setDate(tx: Transaction, obj: ObjectId, key: String, d: Date) = tx.set(obj, key, d)
+
+    fun setOpenPageId(tx: Transaction, id: String?) = setStrOrNull(tx, ObjectId.ROOT, "openPageId", id)
+
+    /** Replaces the page order. Concurrent reorders resolve to one of them, then normalize on read. */
+    fun setPageOrder(tx: Transaction, order: List<String>) {
+        val list = tx.set(ObjectId.ROOT, "pageOrder", ObjectType.LIST)
+        order.forEachIndexed { i, id -> tx.insert(list, i.toLong(), NewValue.str(id)) }
+    }
+
+    /** A library entry's map, or null when the library has no such entry. */
+    fun entryObjOrNull(doc: Document, id: String): ObjectId? {
+        val (_, notebooks) = libraryMapsOf(doc)
+        return (doc.get(notebooks, id).orElse(null) as? AmValue.Map)?.id
+    }
+
+    /** Sets the given fields of a library entry; null leaves a field as it is. */
+    fun setEntryFields(tx: Transaction, entry: ObjectId, title: String?, folderId: String?, setFolder: Boolean, updatedAt: Date?) {
+        title?.let { tx.set(entry, "title", NewValue.str(it)) }
+        if (setFolder) setStrOrNull(tx, entry, "folderId", folderId)
+        updatedAt?.let { tx.set(entry, "updatedAt", it) }
     }
 
     /**
