@@ -1,8 +1,10 @@
 package com.ethran.notable.ui.components
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
@@ -11,7 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -21,6 +23,7 @@ import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.Page
 import com.ethran.notable.ui.noRippleClickable
+import com.ethran.notable.ui.theme.Ink
 import com.ethran.notable.ui.theme.InkaTheme
 
 @Composable
@@ -31,32 +34,35 @@ fun BreadCrumb(
     onSelectFolderId: (String?) -> Unit
 ) {
     Row(
-        modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier = modifier.horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
             text = stringResource(R.string.home_view_name),
             fontSize = fontSize.sp,
-            textDecoration = TextDecoration.Underline,
+            fontFamily = FontFamily.Serif,
+            color = Ink,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .padding(end = 2.dp)
-                .noRippleClickable { onSelectFolderId(null) })
+                .noRippleClickable { onSelectFolderId(null) }
+                .padding(vertical = 10.dp, horizontal = 2.dp))
 
         folders.forEach { f ->
             Icon(
-                imageVector = Icons.Filled.ChevronRight, contentDescription = null,
+                imageVector = Icons.Filled.ChevronRight, contentDescription = null, tint = Ink,
                 modifier = Modifier.padding(horizontal = 2.dp)
             )
             Text(
                 text = f.title,
                 fontSize = fontSize.sp,
-                textDecoration = TextDecoration.Underline,
+                fontFamily = FontFamily.Serif,
+                color = Ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.noRippleClickable { onSelectFolderId(f.id) })
+                modifier = Modifier.noRippleClickable { onSelectFolderId(f.id) }
+                    .padding(vertical = 10.dp, horizontal = 2.dp))
         }
     }
 }

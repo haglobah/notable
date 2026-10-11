@@ -10,24 +10,29 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.Badge
 import androidx.compose.material.BadgedBox
+import androidx.compose.material.Divider
 import androidx.compose.material.Icon
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +75,10 @@ import com.ethran.notable.ui.dialogs.FolderConfigDialog
 import com.ethran.notable.ui.dialogs.NotebookConfigDialog
 import com.ethran.notable.ui.dialogs.PdfImportChoiceDialog
 import com.ethran.notable.ui.noRippleClickable
+import com.ethran.notable.ui.theme.Ink
+import com.ethran.notable.ui.theme.Paper
+import com.ethran.notable.ui.theme.PaperInset
+import com.ethran.notable.ui.theme.PaperLine
 import com.ethran.notable.ui.viewmodels.LibraryUiState
 import com.ethran.notable.ui.viewmodels.LibraryViewModel
 import compose.icons.FeatherIcons
@@ -164,75 +173,82 @@ fun LibraryContent(
     onImportXopp: (Uri) -> Unit,
     onPreviewMissing: (String) -> Unit
 ) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Paper)) {
         Topbar {
-            Row(Modifier.fillMaxWidth()) {
-                Spacer(modifier = Modifier.weight(1f))
-                BadgedBox(
-                    badge = {
-                        if (!uiState.isLatestVersion) Badge(
-                            backgroundColor = Color.Black,
-                            modifier = Modifier.offset((-12).dp, 10.dp)
-                        )
-                    }) {
-                    Icon(
-                        imageVector = FeatherIcons.Settings, contentDescription = "Settings",
-                        Modifier
-                            .padding(8.dp)
-                            .noRippleClickable(onClick = onNavigateToSettings)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.h5,
+                    color = Ink,
+                    modifier = Modifier.weight(1f)
+                )
+                BadgedBox(badge = {
+                    if (!uiState.isLatestVersion) Badge(
+                        backgroundColor = Ink,
+                        modifier = Modifier.offset((-4).dp, 4.dp)
                     )
+                }) {
+                    Box(
+                        modifier = Modifier.size(48.dp)
+                            .noRippleClickable(onClick = onNavigateToSettings),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(FeatherIcons.Settings, "Settings", tint = Ink,
+                            modifier = Modifier.size(24.dp))
+                    }
                 }
             }
-            Row(Modifier.padding(10.dp)) {
-                BreadCrumb(
-                    folders = uiState.breadcrumbFolders, onSelectFolderId = onNavigateToFolder
-                )
+        }
+        NotebookGrid(
+            appRepository = appRepository,
+            exportEngine = exportEngine,
+            syncScheduler = syncScheduler,
+            books = uiState.books,
+            isImporting = uiState.isImporting,
+            syncBadges = uiState.syncBadges,
+            onNavigateToEditor = onNavigateToEditor,
+            onDeleteEmptyBook = onDeleteEmptyBook,
+            onCreateNewNotebook = onCreateNewNotebook,
+            onImportPdf = onImportPdf,
+            onImportXopp = onImportXopp,
+            onPreviewMissing = onPreviewMissing,
+            modifier = Modifier.weight(1f),
+            header = {
+                Column {
+                    BreadCrumb(
+                        folders = uiState.breadcrumbFolders,
+                        fontSize = 28,
+                        onSelectFolderId = onNavigateToFolder
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    FolderList(
+                        appRepository = appRepository,
+                        folders = uiState.folders,
+                        onNavigateToFolder = onNavigateToFolder,
+                        onCreateNewFolder = onCreateNewFolder
+                    )
+                    Spacer(Modifier.height(28.dp))
+                    ShowPagesRow(
+                        appRepository = appRepository,
+                        pages = uiState.singlePages,
+                        currentPageId = null,
+                        title = stringResource(R.string.home_quick_pages),
+                        onSelectPage = goToPage,
+                        showAddQuickPage = true,
+                        onCreateNewQuickPage = onCreateNewQuickPage,
+                        onPreviewMissing = onPreviewMissing
+                    )
+                    Spacer(Modifier.height(28.dp))
+                    Divider(color = PaperLine)
+                }
             }
-
-        }
-
-        Column(Modifier.padding(10.dp)) {
-            Spacer(Modifier.height(10.dp))
-
-            FolderList(
-                appRepository = appRepository,
-                folders = uiState.folders,
-                onNavigateToFolder = onNavigateToFolder,
-                onCreateNewFolder = onCreateNewFolder
-            )
-
-            Spacer(Modifier.height(10.dp))
-            ShowPagesRow(
-                appRepository = appRepository,
-                pages = uiState.singlePages,
-                currentPageId = null,
-                title = stringResource(R.string.home_quick_pages), onSelectPage = goToPage,
-                showAddQuickPage = true,
-                onCreateNewQuickPage = onCreateNewQuickPage,
-                onPreviewMissing = onPreviewMissing
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            NotebookGrid(
-                appRepository = appRepository,
-                exportEngine = exportEngine,
-                syncScheduler = syncScheduler,
-                books = uiState.books,
-                isImporting = uiState.isImporting,
-                syncBadges = uiState.syncBadges,
-                onNavigateToEditor = onNavigateToEditor,
-                onDeleteEmptyBook = onDeleteEmptyBook,
-                onCreateNewNotebook = onCreateNewNotebook,
-                onImportPdf = onImportPdf,
-                onImportXopp = onImportXopp,
-                onPreviewMissing = onPreviewMissing
-            )
-        }
+        )
     }
-
-
 }
+
 
 @Composable
 fun FolderList(
@@ -241,7 +257,7 @@ fun FolderList(
     onNavigateToFolder: (String) -> Unit, onCreateNewFolder: () -> Unit
 ) {
     LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .autoEInkAnimationOnScroll()
@@ -250,16 +266,19 @@ fun FolderList(
             // Add new folder row
             Row(
                 Modifier
-                    .border(0.5.dp, Color.Black)
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .border(1.dp, PaperLine)
                     .noRippleClickable(onClick = onCreateNewFolder)
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = FeatherIcons.FolderPlus, contentDescription = "Add Folder",
-                    Modifier.height(20.dp)
+                    Modifier.height(20.dp), tint = Ink
                 )
                 Spacer(Modifier.width(10.dp))
-                Text(text = stringResource(R.string.home_add_new_folder))
+                Text(text = stringResource(R.string.home_add_new_folder), color = Ink,
+                    style = MaterialTheme.typography.body2)
             }
         }
 
@@ -278,15 +297,17 @@ fun FolderList(
                         .combinedClickable(
                             onClick = { onNavigateToFolder(folder.id) },
                             onLongClick = { isFolderSettingsOpen = true })
-                        .border(0.5.dp, Color.Black)
-                        .padding(10.dp, 5.dp)
+                        .background(PaperInset)
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = FeatherIcons.Folder, contentDescription = "Folder",
-                        Modifier.height(20.dp)
+                        Modifier.height(20.dp), tint = Ink
                     )
                     Spacer(Modifier.width(10.dp))
-                    Text(text = folder.title)
+                    Text(text = folder.title, color = Ink, style = MaterialTheme.typography.body2)
                 }
             }
         }
@@ -306,16 +327,25 @@ fun NotebookGrid(
     onCreateNewNotebook: () -> Unit,
     onImportPdf: (Uri, Boolean) -> Unit,
     onImportXopp: (Uri) -> Unit,
-    onPreviewMissing: (String) -> Unit
+    onPreviewMissing: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    header: @Composable () -> Unit = {}
 ) {
-    Text(text = stringResource(R.string.home_notebooks))
-    Spacer(Modifier.height(10.dp))
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(100.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.autoEInkAnimationOnScroll()
+        columns = GridCells.Adaptive(148.dp),
+        contentPadding = PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        modifier = modifier.autoEInkAnimationOnScroll()
     ) {
+        item(span = { GridItemSpan(maxLineSpan) }) { header() }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Text(
+                text = stringResource(R.string.home_notebooks),
+                style = MaterialTheme.typography.h6,
+                color = Ink
+            )
+        }
         item {
             NotebookImportPanel(
                 onCreateNewNotebook = onCreateNewNotebook,
@@ -396,9 +426,9 @@ fun NotebookImportPanel(
 
     Box(
         modifier = modifier
-            .width(100.dp)
+            .fillMaxWidth()
             .aspectRatio(3f / 4f)
-            .border(1.dp, Color.Gray, RectangleShape),
+            .border(1.dp, PaperLine, RectangleShape),
     ) {
         Column(
             modifier = Modifier.fillMaxSize()
@@ -409,14 +439,15 @@ fun NotebookImportPanel(
                 modifier = Modifier
                     .weight(1f) // Takes half the height
                     .fillMaxWidth()
-                    .background(Color.LightGray.copy(alpha = 0.3f))
-                    .border(2.dp, Color.Black, RectangleShape)
+                    .background(Paper)
                     .noRippleClickable(onClick = onCreateNewNotebook)
             ) {
-                Icon(
-                    imageVector = FeatherIcons.FilePlus, contentDescription = "Create Notebook",
-                    tint = Color.Gray, modifier = Modifier.size(40.dp)
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(FeatherIcons.FilePlus, null, tint = Ink, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.library_new_notebook),
+                        style = MaterialTheme.typography.body2, color = Ink)
+                }
             }
 
             val launcher = rememberLauncherForActivityResult(
@@ -442,14 +473,14 @@ fun NotebookImportPanel(
                     snackState.showOrUpdateSnack(SnackConf(text = "Importing failed: ${e.message}"))
                 }
             }
+            Divider(color = PaperLine, modifier = Modifier.padding(horizontal = 16.dp))
             // Import Notebook (Bottom Half)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .background(Color.LightGray.copy(alpha = 0.3f))
-                    .border(2.dp, Color.Black, RectangleShape)
+                    .background(Paper)
                     .noRippleClickable {
                         launcher.launch(
                             arrayOf(
@@ -462,12 +493,12 @@ fun NotebookImportPanel(
                     }
 
             ) {
-                Icon(
-                    imageVector = FeatherIcons.Upload,
-                    contentDescription = "Import Notebook",
-                    tint = Color.Gray,
-                    modifier = Modifier.size(40.dp),
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(FeatherIcons.Upload, null, tint = Ink, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.library_import),
+                        style = MaterialTheme.typography.body2, color = Ink)
+                }
             }
         }
     }

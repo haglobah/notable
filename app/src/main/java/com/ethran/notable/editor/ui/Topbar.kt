@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.ethran.notable.ui.theme.PaperLine
 
 @Composable
 fun Topbar(content: @Composable () -> Unit) {
@@ -22,7 +22,7 @@ fun Topbar(content: @Composable () -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Color.Black)
+                .background(PaperLine)
         )
     }
 }

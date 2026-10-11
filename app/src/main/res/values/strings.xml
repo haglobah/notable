@@ -290,4 +290,10 @@
     <string name="toolbar_element_divider">Divider</string>
     <string name="toolbar_eraser">Eraser</string>
 
+    <string name="library_new_notebook">New notebook</string>
+    <string name="library_import">Import</string>
+    <plurals name="notebook_page_count">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
 </resources>

@@ -2,7 +2,9 @@ package com.ethran.notable.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple200 = Color(0xFFBB86FC)
-val Purple500 = Color(0xFF6200EE)
-val Purple700 = Color(0xFF3700B3)
-val Teal200 = Color(0xFF03DAC5)
+// Neutral, opaque surfaces keep fine lines legible on e-ink displays.
+val Ink = Color(0xFF191919)
+val Paper = Color.White
+val PaperInset = Color(0xFFF2F2F2)
+val SecondaryInk = Color(0xFF595959)
+val PaperLine = Color(0xFFB8B8B8)

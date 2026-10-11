@@ -252,7 +252,7 @@ private fun SettingsTabRow(tabs: List<String>, selectedTab: Int, onTabSelected: 
         indicator = { tabPositions ->
             TabRowDefaults.Indicator(
                 Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                color = MaterialTheme.colors.onSurface.copy(alpha = 0.2f)
+                color = MaterialTheme.colors.onSurface
             )
         },
         divider = {
