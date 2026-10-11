@@ -49,11 +49,14 @@ class DocFirstMirror(
     override suspend fun <T> create(change: LocalChange, room: suspend () -> T): T = lock.withLock {
         val o = outbox() ?: return@withLock room()
         val w = writer()
+        val debt = DocDebt.of(change)
+        // An earlier failed edit of the same rows stays owed: this creation doesn't replay it.
+        val owedBefore = o.owes(debt)
         // Recorded first: a crash right after the Room write must not leave a Room-only row.
         withContext(io) { o.record(change) }
         val result = room()
         if (w != null) docStep(WRITE_FAILED) { w.write(change) }?.let { r ->
-            withContext(io) { o.done(DocDebt.of(change)) }
+            if (!owedBefore) withContext(io) { o.done(debt) }
             settle(w, r)
         }
         result

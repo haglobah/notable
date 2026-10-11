@@ -21,6 +21,7 @@ import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.deletePage
 import com.ethran.notable.ui.components.ScaledPopup
 import com.ethran.notable.ui.noRippleClickable
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 
@@ -51,12 +52,8 @@ fun PageMenu(
                     Modifier
                         .padding(10.dp)
                         .noRippleClickable {
-                            scope.launch {
-                                appRepository.bookRepository.changePageIndex(
-                                    notebookId,
-                                    pageId,
-                                    index - 1
-                                )
+                            scope.launch(Dispatchers.IO) {
+                                appRepository.edits.movePage(notebookId, pageId, index - 1)
                             }
                         }
                 ) {
@@ -67,12 +64,8 @@ fun PageMenu(
                     Modifier
                         .padding(10.dp)
                         .noRippleClickable {
-                            scope.launch {
-                                appRepository.bookRepository.changePageIndex(
-                                    notebookId,
-                                    pageId,
-                                    index + 1
-                                )
+                            scope.launch(Dispatchers.IO) {
+                                appRepository.edits.movePage(notebookId, pageId, index + 1)
                             }
                         }) {
                     Text("Move right")
@@ -81,7 +74,7 @@ fun PageMenu(
                     Modifier
                         .padding(10.dp)
                         .noRippleClickable {
-                            scope.launch {
+                            scope.launch(Dispatchers.IO) {
                                 appRepository.newPageInBook(notebookId, index + 1)
                             }
                         }) {
@@ -93,7 +86,7 @@ fun PageMenu(
                 Modifier
                     .padding(10.dp)
                     .noRippleClickable {
-                        scope.launch {
+                        scope.launch(Dispatchers.IO) {
                             appRepository.duplicatePage(pageId)
                         }
                     }) {

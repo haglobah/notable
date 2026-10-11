@@ -214,12 +214,17 @@ class CanvasObserverRegistry(
 
     /**
      * Strokes from another device (Automerge sync) for the open page: PageDataManager already
-     * merged them into the cache, so redraw. A changed background also reloads the page row.
+     * merged them into the cache, so redraw. A changed background also reloads the page row. A
+     * deleted page (here or elsewhere) makes the editor leave it.
      */
     private fun observeRemoteEdits() {
         observerScope.launch {
             pageDataManager.remoteApplied.collect { edit ->
                 if (edit.pageId != page.currentPageId) return@collect
+                if (edit.pageDeleted) {
+                    viewModel.onOpenPageDeleted(edit.pageId)
+                    return@collect
+                }
                 log.d("remote edit on open page: +${edit.upsertStrokes.size} -${edit.deleteStrokes.size} strokes")
                 if (edit.pageChanged) page.refreshCurrentPage()
                 pageDataManager.recomputeHeight(edit.pageId)

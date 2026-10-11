@@ -70,7 +70,7 @@ class PagesViewModel @Inject constructor(
 
     fun reorderPage(bookId: String, pageId: String, toIndex: Int) {
         viewModelScope.launch(Dispatchers.IO) {
-            appRepository.bookRepository.changePageIndex(bookId, pageId, toIndex)
+            appRepository.edits.movePage(bookId, pageId, toIndex)
         }
     }
 

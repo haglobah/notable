@@ -7,7 +7,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /**
- * A change to one page that arrived from another device and is already written to Room.
+ * A change to one page that arrived from another device and is already written to Room; or a
+ * page deleted on this device outside the editor ([pageDeleted], see [LibraryEdits]).
  * [PageDataManager] applies it to its cache, so an open editor shows it without a reload.
  * Deletions are explicit: ids the other device removed, never "whatever isn't in the doc".
  */

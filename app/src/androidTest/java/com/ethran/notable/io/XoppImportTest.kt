@@ -40,9 +40,11 @@ class XoppImportTest {
 
         val xoppFile = XoppFile(context, pageRepo, bookRepo, appEventBus)
 
-        importEngine = ImportEngine(
-            context, pageRepo, bookRepo, strokeRepo, imageRepo, appEventBus
-        ).apply {
+        val edits = com.ethran.notable.data.LibraryEdits(
+            bookRepo, pageRepo, com.ethran.notable.data.db.FolderRepository(db.folderDao()), strokeRepo, imageRepo,
+            com.ethran.notable.data.ContentMirror.None,
+        )
+        importEngine = ImportEngine(context, edits, appEventBus).apply {
             this.xoppFile = xoppFile
         }
     }

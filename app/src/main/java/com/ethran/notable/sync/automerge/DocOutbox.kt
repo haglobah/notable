@@ -62,6 +62,16 @@ sealed interface DocDebt {
             is LocalChange.OpenPageChanged -> OpenPage(change.notebookId)
             is LocalChange.FolderUpserted -> FolderRow(change.folder.id)
             is LocalChange.FolderDeleted -> FolderRow(change.id)
+            is LocalChange.NotebookCreated -> NotebookRow(change.id)
+            is LocalChange.NotebookRenamed -> NotebookRow(change.id)
+            is LocalChange.NotebookMoved -> NotebookRow(change.id)
+            is LocalChange.NotebookBackgroundChanged -> NotebookRow(change.id)
+            // The notebook row lists the page; its replay adds pages the doc lacks, then the order.
+            is LocalChange.PageAdded -> NotebookRow(change.notebookId)
+            is LocalChange.PageMoved -> NotebookRow(change.notebookId)
+            is LocalChange.PageBackgroundChanged -> PageRow(change.pageId, change.notebookId)
+            is LocalChange.FolderRenamed -> FolderRow(change.id)
+            is LocalChange.FolderMoved -> FolderRow(change.id)
         }
     }
 }
@@ -97,6 +107,10 @@ class DocOutbox(
 
     @Synchronized
     fun debts(): List<DocDebt> = debts.values.toList()
+
+    /** True when a debt for the same rows as [debt] waits. */
+    @Synchronized
+    fun owes(debt: DocDebt): Boolean = debt.key in debts
 
     /** Adds [change]'s debt, merged with one for the same rows. @throws IOException when it can't be stored. */
     @Synchronized

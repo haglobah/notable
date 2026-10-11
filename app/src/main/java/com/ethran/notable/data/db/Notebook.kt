@@ -75,6 +75,19 @@ interface NotebookDao {
     @Query("UPDATE notebook SET pageIds=:pageIds, updatedAt=:updatedAt WHERE id=:id")
     suspend fun setPageIds(id: String, pageIds: List<String>, updatedAt: Date)
 
+    @Query("UPDATE notebook SET title=:title, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun setTitle(id: String, title: String, updatedAt: Date)
+
+    @Query("UPDATE notebook SET parentFolderId=:folderId, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun setParentFolder(id: String, folderId: String?, updatedAt: Date)
+
+    @Query("UPDATE notebook SET defaultBackgroundType=:type, defaultBackground=:value, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun setDefaultBackground(id: String, type: String, value: String, updatedAt: Date)
+
+    /** Device-local: the docs don't hold it, so it's written to Room alone. */
+    @Query("UPDATE notebook SET linkedExternalUri=:uri WHERE id=:id")
+    suspend fun setLinkedExternalUri(id: String, uri: String?)
+
     @Insert
     suspend fun create(notebook: Notebook): Long
 
@@ -89,6 +102,11 @@ interface NotebookDao {
     suspend fun delete(id: String)
 }
 
+/**
+ * Room access for notebooks. Writes here are Room-only: app code changes the library through
+ * [com.ethran.notable.data.LibraryEdits], which puts each edit into the Automerge docs first. The
+ * WebDAV sync still writes here directly until it is removed (plan Phase 5).
+ */
 class BookRepository @Inject constructor(
     private val notebookDao: NotebookDao,
     private val pageDao: PageDao
@@ -172,6 +190,18 @@ class BookRepository @Inject constructor(
         log.i("Cleaned $id $pageId")
     }
 
+    /** Puts [pageId] right after [afterPageId] (first when null, last when it isn't listed). */
+    suspend fun placePage(id: String, pageId: String, afterPageId: String?) {
+        val notebook = notebookDao.getById(id) ?: return
+        notebookDao.setPageIds(id, notebook.pageIds.placed(pageId, afterPageId), Date())
+    }
+
+    suspend fun setTitle(id: String, title: String) = notebookDao.setTitle(id, title, Date())
+    suspend fun setParentFolder(id: String, folderId: String?) = notebookDao.setParentFolder(id, folderId, Date())
+    suspend fun setDefaultBackground(id: String, type: String, value: String) =
+        notebookDao.setDefaultBackground(id, type, value, Date())
+    suspend fun setLinkedExternalUri(id: String, uri: String?) = notebookDao.setLinkedExternalUri(id, uri)
+
     suspend fun changePageIndex(id: String, pageId: String, index: Int) {
         val notebook = notebookDao.getById(id) ?: return
         val pageIds = notebook.pageIds.toMutableList()
@@ -215,6 +245,13 @@ fun Notebook.newPage(): Page {
         background = defaultBackground,
         backgroundType = defaultBackgroundType
     )
+}
+
+/** This order with [pageId] right after [afterPageId]: first when null, last when it isn't listed. */
+fun List<String>.placed(pageId: String, afterPageId: String?): List<String> {
+    val rest = filter { it != pageId }
+    val at = if (afterPageId == null) 0 else rest.indexOf(afterPageId).let { if (it < 0) rest.size else it + 1 }
+    return rest.take(at) + pageId + rest.drop(at)
 }
 
 fun Notebook.getPageIndex(pageId: String): Int {

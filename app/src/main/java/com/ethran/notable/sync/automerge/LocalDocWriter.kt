@@ -1,6 +1,7 @@
 package com.ethran.notable.sync.automerge
 
 import com.ethran.notable.data.LocalChange
+import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.Notebook
 import com.ethran.notable.data.db.Page
 import org.automerge.ChangeHash
@@ -97,11 +98,25 @@ class LocalDocWriter(
                 true
             }
         } ?: NONE
-        is LocalChange.FolderUpserted -> editLibrary { doc, tx ->
-            val (folders, _) = AutomergeSchema.libraryMapsOf(doc)
-            AutomergeSchema.putFolder(tx, folders, mapping.folder(change.folder))
-        }
+        is LocalChange.FolderUpserted -> upsertFolder(change.folder)
         is LocalChange.FolderDeleted -> deleteFolder(change.id)
+        is LocalChange.NotebookCreated -> local.notebook(change.id)?.let { upsertNotebook(it) } ?: NONE
+        is LocalChange.NotebookRenamed -> editEntry(change.id, structural = true) { e, tx ->
+            AutomergeSchema.setEntryFields(tx, e, change.title, null, false, null)
+        }
+        is LocalChange.NotebookMoved -> editEntry(change.id, structural = true) { e, tx ->
+            AutomergeSchema.setEntryFields(tx, e, null, change.folderId, true, null)
+        }
+        is LocalChange.NotebookBackgroundChanged -> notebookBackground(change)
+        is LocalChange.PageAdded -> placePage(change.notebookId, change.pageId, change.afterPageId, add = true)
+        is LocalChange.PageMoved -> placePage(change.notebookId, change.pageId, change.afterPageId, add = false)
+        is LocalChange.PageBackgroundChanged -> pageBackground(change)
+        is LocalChange.FolderRenamed -> editFolder(change.id) { f, tx ->
+            AutomergeSchema.setFolderFields(tx, f, change.title, null, false, Date(change.at))
+        }
+        is LocalChange.FolderMoved -> editFolder(change.id) { f, tx ->
+            AutomergeSchema.setFolderFields(tx, f, null, change.parentId, true, Date(change.at))
+        }
     }
 
     /**
@@ -207,20 +222,87 @@ class LocalDocWriter(
     private fun deletePage(page: Page): WriteReceipt {
         if (page.notebookId == null) return deleteEntry(page.id)
         val url = docUrlOf(page.notebookId) ?: return NONE
-        return commit(url) { doc, tx ->
+        val r = commit(url) { doc, tx ->
             val pages = AutomergeSchema.pagesOf(doc)
-            if (!doc.get(pages, page.id).isPresent) return@commit false
-            tx.delete(pages, page.id)
-            val order = AutomergeSchema.readNotebookShell(doc).pageOrder
-            if (page.id in order) AutomergeSchema.setPageOrder(tx, order - page.id)
+            val present = doc.get(pages, page.id).isPresent
+            val listed = page.id in AutomergeSchema.rawPageOrder(doc).second
+            if (!present && !listed) return@commit false
+            if (present) tx.delete(pages, page.id)
+            if (listed) AutomergeSchema.removeFromPageOrder(doc, tx, page.id)
             true
+        }
+        return r + bumpedIf(r, page.notebookId)
+    }
+
+    /**
+     * Puts [pageId] after [after] in its notebook's order. With [add], a page the doc lacks is
+     * first added with its Room content; without it (a move), a page the doc no longer has (deleted
+     * elsewhere) stays deleted.
+     */
+    private fun placePage(notebookId: String, pageId: String, after: String?, add: Boolean): WriteReceipt {
+        val (url, migrated) = if (add) ensureDoc(notebookId) else (docUrlOf(notebookId) to NONE)
+        if (url == null) return migrated
+        val c = commit(url) { doc, tx ->
+            if (AutomergeSchema.pageObjOrNull(doc, pageId) == null && !(add && putFullPage(doc, tx, pageId))) return@commit false
+            AutomergeSchema.placeInPageOrder(doc, tx, pageId, after)
+            true
+        }
+        return migrated + c + bumpedIf(c, notebookId)
+    }
+
+    private fun pageBackground(c: LocalChange.PageBackgroundChanged): WriteReceipt {
+        val page = local.pageRow(c.pageId) ?: return NONE
+        val (url, migrated) = docFor(page, create = true)
+        if (url == null) return migrated
+        val bg = mapping.background(c.type, c.value) // hash outside the doc
+        val done = commit(url) { doc, tx ->
+            val obj = AutomergeSchema.pageObjOrNull(doc, c.pageId) ?: return@commit false
+            AutomergeSchema.setBackground(tx, obj, "background", bg)
+            AutomergeSchema.setDate(tx, obj, "updatedAt", Date(c.at))
+            true
+        }
+        return migrated + done + bumpedIf(done, page.notebookId ?: page.id)
+    }
+
+    private fun notebookBackground(c: LocalChange.NotebookBackgroundChanged): WriteReceipt {
+        val (url, migrated) = ensureDoc(c.id)
+        if (url == null) return migrated
+        val bg = mapping.background(c.type, c.value) // hash outside the doc
+        val done = commit(url) { doc, tx ->
+            if (AutomergeSchema.readNotebookShell(doc).defaultBackground == bg) return@commit false
+            AutomergeSchema.setBackground(tx, ObjectId.ROOT, "defaultBackground", bg)
+            true
+        }
+        return migrated + done + bumpedIf(done, c.id)
+    }
+
+    /** Edits library entry [id] (migrating its notebook first if needed); [structural] bumps updatedAt. */
+    private fun editEntry(id: String, structural: Boolean, edit: (ObjectId, Transaction) -> Unit): WriteReceipt {
+        val (url, migrated) = ensureDoc(id)
+        if (url == null) return migrated
+        return migrated + editLibrary { doc, tx ->
+            val e = AutomergeSchema.entryObjOrNull(doc, id) ?: return@editLibrary
+            edit(e, tx)
+            if (structural) {
+                AutomergeSchema.setEntryFields(tx, e, null, null, false, Date(now()))
+                entryBumped[id] = now()
+            }
         }
     }
 
-    /** Adds [pageId] with all its Room content: strokes, images, background. */
-    private fun putFullPage(doc: Document, tx: Transaction, pageId: String) {
-        val data = local.page(pageId) ?: return
-        AutomergeSchema.putPage(tx, AutomergeSchema.pagesOf(doc), mapping.page(data))
+    private fun editFolder(id: String, edit: (ObjectId, Transaction) -> Unit): WriteReceipt = editLibrary { doc, tx ->
+        val f = AutomergeSchema.folderObjOrNull(doc, id) ?: return@editLibrary
+        edit(f, tx)
+    }
+
+    /** The doc of notebook or quick page [owner], migrating it from Room when the docs don't have it. */
+    private fun ensureDoc(owner: String): Pair<String?, WriteReceipt> = docUrlOf(owner)?.let { it to NONE } ?: ensureEntry(owner)
+
+    /** Adds [pageId] with all its Room content: strokes, images, background. False when Room lacks it. */
+    private fun putFullPage(doc: Document, tx: Transaction, pageId: String): Boolean {
+        val data = local.page(pageId) ?: return false
+        AutomergeSchema.putPage(tx, AutomergeSchema.pagesOf(doc), mapping.page(data).scaled(toDocUnits(doc)))
+        return true
     }
 
     /* ------------------------------ notebooks and the library ------------------------------ */
@@ -229,16 +311,27 @@ class LocalDocWriter(
         val known = docUrlOf(nb.id)
         val url = known ?: return migrated(nb)
         val bg = mapping.background(nb.defaultBackgroundType, nb.defaultBackground) // hash outside the doc
+        var structural = false
         val doc = commit(url) { doc, tx ->
             val shell = AutomergeSchema.readNotebookShell(doc)
             // Pages Room lists but the doc lacks were made here; add them before ordering.
             val pages = AutomergeSchema.pagesOf(doc)
-            for (id in nb.pageIds.distinct()) if (!doc.get(pages, id).isPresent) putFullPage(doc, tx, id)
-            val order = nb.pageIds.distinct().filter { doc.get(pages, it).isPresent }
-            if (order != shell.pageOrder) AutomergeSchema.setPageOrder(tx, order)
+            val present = shell.pages.keys.toHashSet()
+            for (id in nb.pageIds.distinct()) if (id !in present && putFullPage(doc, tx, id)) {
+                present += id
+                structural = true
+            }
+            val order = nb.pageIds.distinct().filter { it in present }
+            if (order != shell.pageOrder) {
+                AutomergeSchema.editPageOrder(doc, tx, order)
+                structural = true
+            }
             val open = nb.openPageId?.takeIf { it in order }
             if (open != shell.openPageId) AutomergeSchema.setOpenPageId(tx, open)
-            if (bg != shell.defaultBackground) AutomergeSchema.setBackground(tx, ObjectId.ROOT, "defaultBackground", bg)
+            if (bg != shell.defaultBackground) {
+                AutomergeSchema.setBackground(tx, ObjectId.ROOT, "defaultBackground", bg)
+                structural = true
+            }
             true
         }
         val entry = editLibrary { lib, tx ->
@@ -246,7 +339,7 @@ class LocalDocWriter(
             val cur = AutomergeSchema.readLibrary(lib).notebooks.getValue(nb.id)
             val renamed = cur.title != nb.title
             val moved = cur.folderId != nb.parentFolderId
-            val bump = renamed || moved || dueForBump(nb.id)
+            val bump = renamed || moved || structural || dueForBump(nb.id)
             if (!renamed && !moved && !bump) return@editLibrary
             AutomergeSchema.setEntryFields(
                 tx, e, nb.title.takeIf { renamed }, nb.parentFolderId, moved,
@@ -282,14 +375,41 @@ class LocalDocWriter(
     }
 
     /** Bumps the library entry's updatedAt for an edit on [page], at most once a minute. */
-    private fun touchOwningEntry(page: Page): WriteReceipt {
-        val id = page.notebookId ?: page.id
-        if (!dueForBump(id)) return NONE
+    private fun touchOwningEntry(page: Page): WriteReceipt = touchEntry(page.notebookId ?: page.id, force = false)
+
+    /** Bumps entry [id]'s updatedAt now if [edit] changed its doc. */
+    private fun bumpedIf(edit: WriteReceipt, id: String): WriteReceipt =
+        if (edit.commits.isEmpty()) NONE else touchEntry(id, force = true)
+
+    /**
+     * Bumps entry [id]'s updatedAt: with [force] now (structural edits are rare and should show at
+     * once), otherwise at most once a minute (see [dueForBump]).
+     */
+    private fun touchEntry(id: String, force: Boolean): WriteReceipt {
+        if (!force && !dueForBump(id)) return NONE
         return editLibrary { doc, tx ->
             val e = AutomergeSchema.entryObjOrNull(doc, id) ?: return@editLibrary
             AutomergeSchema.setEntryFields(tx, e, null, null, false, Date(now()))
             entryBumped[id] = now()
         }
+    }
+
+    /**
+     * A folder as Room holds it. A new one is put whole; an existing one gets only the fields that
+     * differ, so a move here and a rename elsewhere both survive the merge.
+     */
+    private fun upsertFolder(f: Folder): WriteReceipt = editLibrary { doc, tx ->
+        val obj = AutomergeSchema.folderObjOrNull(doc, f.id)
+        if (obj == null) {
+            val (folders, _) = AutomergeSchema.libraryMapsOf(doc)
+            AutomergeSchema.putFolder(tx, folders, mapping.folder(f))
+            return@editLibrary
+        }
+        val cur = AutomergeSchema.readLibrary(doc).folders.getValue(f.id)
+        val renamed = cur.title != f.title
+        val moved = cur.parentId != f.parentFolderId
+        if (!renamed && !moved) return@editLibrary
+        AutomergeSchema.setFolderFields(tx, obj, f.title.takeIf { renamed }, f.parentFolderId, moved, f.updatedAt)
     }
 
     /**
@@ -383,6 +503,11 @@ internal fun AmStroke.scaled(k: Double): AmStroke {
     val f = k.toFloat()
     val pts = decodeStrokePoints(points).map { it.copy(x = it.x * f, y = it.y * f) }
     return copy(size = size * k, left = left * k, top = top * k, right = right * k, bottom = bottom * k, points = encodeStrokePoints(pts))
+}
+
+internal fun AmPage.scaled(k: Double): AmPage {
+    if (k == 1.0) return this
+    return copy(strokes = strokes.mapValues { it.value.scaled(k) }, images = images.mapValues { it.value.scaled(k) })
 }
 
 internal fun AmImage.scaled(k: Double): AmImage {

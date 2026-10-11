@@ -26,6 +26,25 @@ sealed interface LocalChange {
     data class OpenPageChanged(val notebookId: String, val pageId: String?) : LocalChange
     data class FolderUpserted(val folder: Folder) : LocalChange
     data class FolderDeleted(val id: String) : LocalChange
+
+    /*
+     * Edits of one field, as the user made them. The doc applies each to its own current state, so
+     * an edit made elsewhere and merged, but not yet projected into Room, is never undone by a
+     * stale Room row.
+     */
+
+    /** A notebook whose rows (notebook, pages, strokes, images) were just written to Room: new or imported. */
+    data class NotebookCreated(val id: String) : LocalChange
+    data class NotebookRenamed(val id: String, val title: String) : LocalChange
+    data class NotebookMoved(val id: String, val folderId: String?) : LocalChange
+    data class NotebookBackgroundChanged(val id: String, val type: String, val value: String) : LocalChange
+    /** A page just written to Room (new or duplicated), placed after [afterPageId]; null: first. */
+    data class PageAdded(val notebookId: String, val pageId: String, val afterPageId: String?) : LocalChange
+    /** A page moved to right after [afterPageId]; null: first. */
+    data class PageMoved(val notebookId: String, val pageId: String, val afterPageId: String?) : LocalChange
+    data class PageBackgroundChanged(val pageId: String, val notebookId: String?, val type: String, val value: String, val at: Long) : LocalChange
+    data class FolderRenamed(val id: String, val title: String, val at: Long) : LocalChange
+    data class FolderMoved(val id: String, val parentId: String?, val at: Long) : LocalChange
 }
 
 /**

@@ -171,16 +171,19 @@ Known gaps in part B:
   re-applies the same diff.
 - A page that is loading when an edit commits can miss it, until it is reopened.
 - Deleting the page that is open in the editor leaves the editor showing it until it is closed.
+  Phase 4b: the editor now moves to the neighbouring page or the library (unit tests only, not on
+  device).
 - Changes arrive only while Notable is in the foreground on Onyx (see above). Decided
   2026-10-11: foreground-only sync, no foreground service (ADR-001).
 - Notebook doc changes bump no `updatedAt` in the doc, so "edited" dates in the library don't move.
+  Phase 4: stroke edits bump it once a minute, structural edits at once.
 - The WebDAV consent dialog still covers the Notable Sync section; it goes with WebDAV in Phase 5.
 - automerge-repo in Node logs `TimeoutNegativeWarning` on most client runs; not investigated.
 
 ## Phase 4 — Make Automerge authoritative
 
-- [ ] Route every editor write (strokes, images, pages, folders, notebooks) through the doc. Room
-      only receives projected changes.
+- [x] Route every editor write (strokes, images, pages, folders, notebooks) through the doc. Room
+      only receives projected changes. (Device check of 4a and 4b still open.)
   - [x] **4a: strokes and images** (`LocalDocWriter`, `DocFirstMirror`, `EditorWriteQueue`):
         doc commit on disk, then Room, then settle. Failed or early writes wait in `DocOutbox`;
         images are copied into `QueuedBlobStore` and upload when connected. With a cached
@@ -206,8 +209,19 @@ Known gaps in part B:
         `web/server/scripts/device-peer.ts` (`dump`, `add-stroke`, `blob`).
   - [ ] **Device check of 4a** on the Note Air 5C: not done, the device was not connected over
         adb (2026-10-11). See the handoff's "Next" for the steps.
-- [ ] Pages, notebooks and folders through the docs (create, rename, move, delete, reorder), and
-      imports (PDF, images as pages).
+- [x] **4b: pages, notebooks and folders through the docs** (create, rename, move, delete,
+      reorder, duplicate, background, open page, quick pages), and **imports** (PDF, XOPP with
+      their images). `data/LibraryEdits.kt` is the one entry point (via `AppRepository.edits`);
+      every Room write there runs inside a `ContentMirror` call, so on the same lock, outbox and
+      echo suppression as strokes. Edits carry one field (`NotebookRenamed`, `PageMoved` after a
+      page id, `FolderMoved`, ...), so a stale screen or an unprojected remote change is never
+      undone. `pageOrder` is edited in place (LCS), so reorders of different pages on two
+      devices both survive; folders are edited per field. Structural edits bump the library
+      entry's `updatedAt` at once. A delete beats a concurrent edit of the same page; the editor
+      showing a deleted page (here or remote) moves to its neighbour or the library.
+      `LibraryEditsTest`, new cases in `LocalDocWriterTest`, `DocFirstMirrorTest`. Unit tests
+      only; not on device.
+  - [ ] **Device check of 4b** (see the handoff's "Next").
 - [ ] Local-only mode without an account: automatic migration on first start.
 - [ ] Rebuild Room from the docs on demand (a debug action and a test).
 - [ ] Android "share as PDF" uses the same projection as the PWA.

@@ -227,6 +227,15 @@ class PageDataManager @Inject constructor(
         dataScope.launch {
             RemoteEdits.edits.collect { edits ->
                 for (edit in edits) {
+                    if (edit.pageDeleted) {
+                        // The open page stays cached until the editor has left it.
+                        val open = synchronized(lock) {
+                            if (edit.pageId != currentPage && edit.pageId in entries) removePageLocked(edit.pageId)
+                            edit.pageId == currentPage
+                        }
+                        if (open) _remoteApplied.tryEmit(edit)
+                        continue
+                    }
                     val applied = synchronized(lock) {
                         val entry = entries[edit.pageId] ?: return@synchronized false
                         if (!entry.loaded) {

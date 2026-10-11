@@ -67,6 +67,7 @@ import com.ethran.notable.ui.components.PagePreview
 import com.ethran.notable.ui.components.ScaledDialog
 import com.ethran.notable.ui.components.getFolderList
 import io.shipbook.shipbooksdk.ShipBook
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 private val log = ShipBook.getLogger("NotebookConfig")
@@ -113,20 +114,14 @@ fun NotebookConfigDialog(
             onChange = { backgroundType, background ->
                 if (background == null) {
                     if (book!!.defaultBackgroundType != backgroundType) {
-                        val updatedBook = book!!.copy(
-                            defaultBackgroundType = backgroundType
-                        )
-                        scope.launch {
-                            bookRepository.update(updatedBook)
+                        val value = book!!.defaultBackground
+                        scope.launch(Dispatchers.IO) {
+                            appRepository.edits.setNotebookBackground(bookId, backgroundType, value)
                         }
                     }
                 } else if (book!!.defaultBackgroundType != backgroundType || book!!.defaultBackground != background) {
-                    val updatedBook = book!!.copy(
-                        defaultBackgroundType = backgroundType,
-                        defaultBackground = background
-                    )
-                    scope.launch {
-                        bookRepository.update(updatedBook)
+                    scope.launch(Dispatchers.IO) {
+                        appRepository.edits.setNotebookBackground(bookId, backgroundType, background)
                     }
                 }
             }) {
@@ -139,8 +134,8 @@ fun NotebookConfigDialog(
             title = "Confirm Deletion",
             message = "Are you sure you want to delete \"${book!!.title}\"?",
             onConfirm = {
-                scope.launch {
-                    bookRepository.delete(bookId)
+                scope.launch(Dispatchers.IO) {
+                    appRepository.edits.deleteNotebook(bookId)
                 }
                 showDeleteDialog = false
                 onClose()
@@ -188,11 +183,9 @@ fun NotebookConfigDialog(
                 showMoveDialog = false
                 onClose()
                 log.i("folder: $selectedFolder")
-                val updatedBook = book!!.copy(parentFolderId = selectedFolder)
                 bookFolder = selectedFolder
-                scope.launch {
-                    // be careful, not to cause race condition.
-                    bookRepository.update(updatedBook)
+                scope.launch(Dispatchers.IO) {
+                    appRepository.edits.moveNotebook(bookId, selectedFolder)
                 }
             })
     }
@@ -262,9 +255,9 @@ fun NotebookConfigDialog(
                                     if (!focusState.isFocused) {
                                         log.i("loose focus")
                                         if (book!!.title != bookTitle) {
-                                            val updatedBook = book!!.copy(title = bookTitle)
-                                            scope.launch {
-                                                bookRepository.update(updatedBook)
+                                            val title = bookTitle
+                                            scope.launch(Dispatchers.IO) {
+                                                appRepository.edits.renameNotebook(bookId, title)
                                             }
                                         }
                                     }
@@ -323,9 +316,8 @@ fun NotebookConfigDialog(
                         linkedUriInit = book!!.linkedExternalUri,
                         defaultPath = defaultPath,
                         onLinkChanged = { newUri ->
-                            val updated = book!!.copy(linkedExternalUri = newUri)
-                            scope.launch {
-                                bookRepository.update(updated)
+                            scope.launch(Dispatchers.IO) {
+                                appRepository.edits.setNotebookLinkedUri(bookId, newUri)
                             }
                         })
 

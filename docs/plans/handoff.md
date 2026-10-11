@@ -31,6 +31,8 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - `LogoutGuard.kt`: logout never drops pending writes or files silently.
   - `NotableSyncClient.kt`: Hilt singleton, session, repo, dialer; the bound `ContentMirror`.
   - `data/EditorWriteQueue.kt`: the editor's serial write queue and `PendingLocalWrites`.
+  - `data/LibraryEdits.kt`: every folder, notebook, page and import write (via
+    `AppRepository.edits`), each through the `ContentMirror`.
   - `AndroidAdapters.kt`: Room, files, background-limit adapters.
 - Debug hook: `editor/DebugEditHook.kt` (adb broadcasts drive `PageView`/`History`). Node peer:
   `web/server/scripts/device-peer.ts`.
@@ -135,6 +137,38 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     `assembleDebug` builds.
 - **Device check not done:** no device on adb (USB) during the session.
 
+- Done, not committed (2026-10-11, Phase 4b; unit tests and `assembleDebug`, not on device):
+  - **One entry point.** `data/LibraryEdits.kt` (`AppRepository.edits`) holds every library and
+    page write: folders (create, rename, move, delete), notebooks (create, rename, move,
+    background, linked file, delete), pages (add, move, duplicate, background, delete, open
+    page), quick pages, and imports (`importNotebook` + `Import.page/strokes/images`, used by
+    `ImportEngine` for PDF and XOPP). Each Room write runs inside a `ContentMirror` call: edits and
+    deletions go to the doc first, creations write Room first (recorded in the outbox before). The
+    repositories' write methods are now Room-only primitives for `LibraryEdits` and WebDAV.
+  - **Write sites moved:** `LibraryViewModel` (folder, notebook create/delete), `FolderConfig`
+    (rename, delete), `NotebookConfig` (background, rename, move, linked file, delete),
+    `PagesViewModel` and `PageMenu` (reorder, add, duplicate, delete), `dbUtils.deletePage`,
+    `EditorViewModel` (page background, open page, "remove bad page", next page past the end),
+    `AppRepository` (add page, duplicate, quick page), `ImportEngine` (PDF, XOPP with images).
+  - **Field-level changes.** New `LocalChange`s: `NotebookCreated`, `NotebookRenamed`,
+    `NotebookMoved`, `NotebookBackgroundChanged`, `PageAdded`/`PageMoved` (after a page id),
+    `PageBackgroundChanged`, `FolderRenamed`, `FolderMoved`. The doc applies each to its current
+    state; the Room step uses field `UPDATE`s or re-reads `pageIds` under the mirror lock. So a
+    stale screen or an unprojected remote change is not undone.
+  - **Merges.** `pageOrder` is edited in place (LCS diff, `AutomergeSchema.editPageOrder`), so
+    reorders of different pages on two devices both survive. Folders are edited per field, so a
+    move and a concurrent rename both survive. A delete beats a concurrent edit of the same page.
+    Structural edits bump the library entry's `updatedAt` at once (strokes: once a minute).
+  - **Deleted open page.** `LibraryEdits` publishes `RemotePageEdit(pageDeleted)` for local
+    deletes; the projector does for remote page, notebook and quick-page deletes
+    (`LibraryProjection.edits`). `PageDataManager` drops the cache entry; the editor
+    (`EditorViewModel.onOpenPageDeleted`) shows the page now at that index, or the library.
+  - **Fixes on the way:** a page added from Room (`putFullPage`) is scaled to the doc's canvas
+    units; a creation no longer clears an earlier failed edit of the same row from the outbox.
+  - Tests: `LibraryEditsTest` (15), new cases in `LocalDocWriterTest` and `DocFirstMirrorTest`.
+    `sync.automerge.*`, `data.*`, `editor.*`: 275 pass, 2 live tests skipped, 0 fail. `assembleDebug`
+    and `compileDebugAndroidTestKotlin` build.
+
 Known gaps:
 
 - A projection that read the doc between a page-cut's remove and re-add, and applies after the
@@ -159,6 +193,26 @@ Known gaps:
 - A page or notebook debt replays the whole row (e.g. a retried rename also bumps the library
   entry's edited date). Harmless, but not the original edit's exact fields.
 - `RepoDocStore` and `UploadingBlobStore` are only used by `LiveServerMigrationTest` now.
+- **WebDAV still writes Room directly** (`NotebookSyncService`, `FolderSyncService`,
+  `SyncForceService`, `AppRepository.replaceDownloadedPage`/`commitNotebookSync`). Those changes
+  never reach the docs, and a later projection of the same rows overwrites them in Room. Don't use
+  both syncs on one device; WebDAV goes in Phase 5. Deleting a notebook still queues a WebDAV
+  deletion too (`NotebookConfig`).
+- A delete beats a concurrent edit of the same page: strokes drawn on a page that another device
+  deleted are lost. Exception: an edit that lands after the merge but before the projection puts
+  the page back with its Room content (nothing lost, the page reappears at the end).
+- A page move whose page was deleted elsewhere is dropped. A page placed after a page the doc no
+  longer has goes to the end.
+- An import runs its whole Room write under the mirror lock, so projections and editor writes
+  wait until it ends (long for big PDFs).
+- No intent for moving a quick page between folders (no UI for it here); `PageUpserted` handles it
+  in the writer. `moveFolder` has no UI yet.
+- Deleting a folder here doesn't announce its pages (the editor can't be open then); a remote
+  folder delete does, through its notebook entries.
+- The editor leaving a deleted page may still write a preview file for it.
+- `/home/beat/projects/notable` (main) has an uncommitted UI refresh that changes
+  `LibraryViewModel`, `NotebookConfig`, `HomeView` and adds `PaperActions.kt`. When merged, its
+  writes must go through `appRepository.edits`.
 - Signed out (no session), edits go to Room only by design; "Upload notebooks" copies only
   notebooks without a library entry, so edits to already uploaded notebooks made while signed out
   are not sent. (Logout deletes the local repo, so this only matters after logging in again.)
@@ -178,8 +232,12 @@ Known gaps:
    - the logout prompt with something pending;
    - latency p50 and max from the sync settings.
    If a check fails, fix it with a failing test first.
+   Then the same for 4b: create, rename, move and delete a folder and a notebook; add, move,
+   duplicate and delete pages; change a page and a notebook background; import a PDF and an XOPP;
+   each reaches `dump` and the PWA. Delete the open page from quick nav, and from the other side,
+   and see the editor move on. `device-peer.ts` needs ops for that (`delete-page`, `move-page`,
+   `delete-notebook`, `rename-folder`).
 2. The rest of Phase 4:
-   - pages, notebooks, folders and imports (PDF, images) through the docs;
    - local-only mode without an account (automatic migration on first start);
    - Android share-as-PDF from the same projection as the PWA;
    - EPUB import on Android.

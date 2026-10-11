@@ -3,12 +3,9 @@ package com.ethran.notable.io
 import android.content.Context
 import android.net.Uri
 import androidx.annotation.WorkerThread
-import com.ethran.notable.data.db.BookRepository
-import com.ethran.notable.data.db.ImageRepository
+import com.ethran.notable.data.LibraryEdits
 import com.ethran.notable.data.db.Notebook
-import com.ethran.notable.data.db.PageRepository
 import com.ethran.notable.data.db.PageWithData
-import com.ethran.notable.data.db.StrokeRepository
 import com.ethran.notable.data.events.AppEvent
 import com.ethran.notable.data.events.AppEventBus
 import com.ethran.notable.data.model.BackgroundType
@@ -65,10 +62,8 @@ data class ImportOptions(
  */
 class ImportEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val pageRepo: PageRepository,
-    private val bookRepo: BookRepository,
-    private val strokeRepo: StrokeRepository,
-    private val imageRepo: ImageRepository,
+    /** An import is one creation: Room first, then its doc (see [LibraryEdits.importNotebook]). */
+    private val edits: LibraryEdits,
     private val appEventBus: AppEventBus
 ) {
     private val log = ShipBook.getLogger("ImportEngine")
@@ -135,47 +130,47 @@ class ImportEngine @Inject constructor(
             defaultBackground = "blank",
             defaultBackgroundType = BackgroundType.Native.key
         )
-        bookRepo.createEmpty(book)
-
         val importedPageIds = mutableListOf<String>()
         var persistentError: DomainError? = null
 
-        xoppFile.importBook(
-            uri = uri,
-            onPageCreated = { page ->
-                try {
-                    // TODO: Handle conflicts with existing pages.
-                    pageRepo.create(page.copy(notebookId = book.id))
-                    bookRepo.addPage(book.id, page.id)
-                    importedPageIds.add(page.id)
-                } catch (e: Exception) {
-                    val errMessage = "Failed to import page ${page.id}: ${e.message}"
-                    appEventBus.emit(AppEvent.LogMessage("importBook", errMessage))
-                    val error = DomainError.DatabaseError(errMessage)
-                    persistentError = persistentError?.let { it + error } ?: error
+        edits.importNotebook(book) {
+            val rows = this
+            xoppFile.importBook(
+                uri = uri,
+                onPageCreated = { page ->
+                    try {
+                        // TODO: Handle conflicts with existing pages.
+                        rows.page(page)
+                        importedPageIds.add(page.id)
+                    } catch (e: Exception) {
+                        val errMessage = "Failed to import page ${page.id}: ${e.message}"
+                        appEventBus.emit(AppEvent.LogMessage("importBook", errMessage))
+                        val error = DomainError.DatabaseError(errMessage)
+                        persistentError = persistentError?.let { it + error } ?: error
+                    }
+                },
+                onStrokeBatch = { batch ->
+                    try {
+                        rows.strokes(batch)
+                    } catch (e: Exception) {
+                        val errMessage = "Failed to import stroke batch: ${e.message}"
+                        appEventBus.emit(AppEvent.LogMessage("importBook", errMessage))
+                        val error = DomainError.DatabaseError(errMessage)
+                        persistentError = persistentError?.let { it + error } ?: error
+                    }
+                },
+                onPageFinalized = { _, pageImages ->
+                    try {
+                        rows.images(pageImages)
+                    } catch (e: Exception) {
+                        val errMessage = "Failed to import page images: ${e.message}"
+                        appEventBus.emit(AppEvent.LogMessage("importBook", errMessage))
+                        val error = DomainError.DatabaseError(errMessage)
+                        persistentError = persistentError?.let { it + error } ?: error
+                    }
                 }
-            },
-            onStrokeBatch = { strokes ->
-                try {
-                    strokeRepo.create(strokes)
-                } catch (e: Exception) {
-                    val errMessage = "Failed to import stroke batch: ${e.message}"
-                    appEventBus.emit(AppEvent.LogMessage("importBook", errMessage))
-                    val error = DomainError.DatabaseError(errMessage)
-                    persistentError = persistentError?.let { it + error } ?: error
-                }
-            },
-            onPageFinalized = { _, images ->
-                try {
-                    imageRepo.create(images)
-                } catch (e: Exception) {
-                    val errMessage = "Failed to import page images: ${e.message}"
-                    appEventBus.emit(AppEvent.LogMessage("importBook", errMessage))
-                    val error = DomainError.DatabaseError(errMessage)
-                    persistentError = persistentError?.let { it + error } ?: error
-                }
-            }
-        )
+            )
+        }
 
         return persistentError?.let { AppResult.Error(it) } ?: AppResult.Success(importedPageIds)
     }
@@ -198,25 +193,21 @@ class ImportEngine @Inject constructor(
             defaultBackground = filePath,
             defaultBackgroundType = BackgroundType.AutoPdf.key
         )
-        bookRepo.createEmpty(book)
-
         val importedPageIds = mutableListOf<String>()
         var persistentError: DomainError? = null
 
-        importPdf(fileToSave, options) { pageData ->
-            try {
-                pageRepo.create(pageData.page.copy(notebookId = book.id))
-                if (pageData.strokes.isNotEmpty())
-                    strokeRepo.create(pageData.strokes)
-                if (pageData.images.isNotEmpty())
-                    imageRepo.create(pageData.images)
-                bookRepo.addPage(book.id, pageData.page.id)
-                importedPageIds.add(pageData.page.id)
-            } catch (e: Exception) {
-                val errMessage = "failed import book  ${e.message}"
-                appEventBus.emit(AppEvent.LogMessage("importBook", errMessage))
-                val error = DomainError.DatabaseError(errMessage)
-                persistentError = persistentError?.let { it + error } ?: error
+        edits.importNotebook(book) {
+            val rows = this
+            importPdf(fileToSave, options) { pageData ->
+                try {
+                    rows.page(pageData.page, pageData.strokes, pageData.images)
+                    importedPageIds.add(pageData.page.id)
+                } catch (e: Exception) {
+                    val errMessage = "failed import book  ${e.message}"
+                    appEventBus.emit(AppEvent.LogMessage("importBook", errMessage))
+                    val error = DomainError.DatabaseError(errMessage)
+                    persistentError = persistentError?.let { it + error } ?: error
+                }
             }
         }
 

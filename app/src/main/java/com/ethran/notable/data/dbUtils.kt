@@ -101,11 +101,6 @@ suspend fun deletePage(appRepository: AppRepository, pageId: String, filesDir: F
     val proxy = appRepository.kvProxy
     val settings = proxy.get(APP_SETTINGS_KEY, AppSettings.serializer())
 
-    // remove from book
-    if (page.notebookId != null) {
-        appRepository.bookRepository.removePage(page.notebookId, pageId)
-    }
-
     // remove from quick nav
     if (settings != null && settings.quickNavPages.contains(pageId)) {
         proxy.setKv(
@@ -114,7 +109,8 @@ suspend fun deletePage(appRepository: AppRepository, pageId: String, filesDir: F
             AppSettings.serializer()
         )
     }
-    appRepository.pageRepository.delete(pageId)
+    // From its notebook and Room, through the docs; an editor showing it leaves it.
+    appRepository.edits.deletePage(pageId, page.notebookId)
     coroutineScope {
         launch {
             val imgFileThumb = File(filesDir, "pages/previews/thumbs/$pageId")

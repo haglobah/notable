@@ -495,6 +495,8 @@ class NotableSyncClient @Inject constructor(
             if (url == s.libraryUrl) {
                 val plan = handle.withDocument { projector.prepareLibrary(it, url) }.get(60, TimeUnit.SECONDS)
                 val result = mirror.exclusive { projector.apply(plan) }
+                result.edits.forEach { dropPagePreviews(it.pageId) }
+                if (!RemoteEdits.publish(result.edits)) log.w("editor missed ${result.edits.size} deleted pages")
                 result.follow.forEach { e ->
                     runCatching { follow(s, e.docUrl) }.onFailure { err ->
                         _projection.value = _projection.value.copy(errors = _projection.value.errors + (e.docUrl to "${e.title}: ${err.message}"))

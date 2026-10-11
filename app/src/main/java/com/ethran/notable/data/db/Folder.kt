@@ -63,10 +63,17 @@ interface FolderDao {
     @Upsert
     suspend fun upsert(folder: Folder)
 
+    @Query("UPDATE folder SET title=:title, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun setTitle(id: String, title: String, updatedAt: Date)
+
+    @Query("UPDATE folder SET parentFolderId=:parentId, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun setParent(id: String, parentId: String?, updatedAt: Date)
+
     @Query("DELETE FROM folder WHERE id=:id")
     suspend fun delete(id: String)
 }
 
+/** Room access for folders; Room-only writes, see [BookRepository]. */
 class FolderRepository @Inject constructor(
     private val db: FolderDao
 ) {
@@ -116,6 +123,9 @@ class FolderRepository @Inject constructor(
         return db.get(folderId)
     }
 
+
+    suspend fun setTitle(id: String, title: String, updatedAt: Date) = db.setTitle(id, title, updatedAt)
+    suspend fun setParent(id: String, parentId: String?, updatedAt: Date) = db.setParent(id, parentId, updatedAt)
 
     suspend fun delete(id: String) {
         db.delete(id)

@@ -78,6 +78,9 @@ interface PageDao {
     @Query("UPDATE page SET updatedAt=:updatedAt WHERE id =:pageId")
     suspend fun touchUpdatedAt(pageId: String, updatedAt: Long)
 
+    @Query("UPDATE page SET backgroundType=:type, background=:value, updatedAt=:updatedAt WHERE id =:pageId")
+    suspend fun setBackground(pageId: String, type: String, value: String, updatedAt: Date)
+
     @Query("SELECT * FROM page WHERE notebookId is null AND parentFolderId is :folderId")
     fun getSinglePagesInFolder(folderId: String? = null): LiveData<List<Page>>
 
@@ -102,6 +105,7 @@ interface PageDao {
     suspend fun delete(pageId: String)
 }
 
+/** Room access for pages; Room-only writes, see [BookRepository]. */
 class PageRepository @Inject constructor(
     private val db: PageDao
 ) {
@@ -158,6 +162,9 @@ class PageRepository @Inject constructor(
     suspend fun update(page: Page) {
         return db.update(page)
     }
+
+    suspend fun setBackground(pageId: String, type: String, value: String, updatedAt: Date) =
+        db.setBackground(pageId, type, value, updatedAt)
 
     suspend fun delete(pageId: String) {
         return db.delete(pageId)

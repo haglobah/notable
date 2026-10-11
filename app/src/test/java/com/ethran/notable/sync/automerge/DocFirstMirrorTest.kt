@@ -202,6 +202,27 @@ class DocFirstMirrorTest {
     }
 
     @Test
+    fun `a creation does not clear an earlier failed edit of the same notebook`() = runBlocking {
+        val d = device()
+        val box = outbox()
+        val m = mirror(d, outbox = box)
+        failDocs = true
+        val rename = LocalChange.NotebookRenamed("nb1", "Renamed")
+        m.write(rename) { d.room.roomWrite(rename) }
+        assertEquals(1, box.size)
+        failDocs = false
+
+        d.room.sink.pages["p2"] = Page(id = "p2", notebookId = "nb1", createdAt = t0, updatedAt = t1)
+        val add = LocalChange.PageAdded("nb1", "p2", "p1")
+        m.create(add) { d.room.roomWrite(add) }
+        assertTrue("p2" in d.docs.notebook("nb1").pages)
+        assertEquals("the rename still waits", 1, box.size)
+
+        assertEquals(0, m.retryPending())
+        assertEquals("Renamed", d.docs.library().notebooks.getValue("nb1").title)
+    }
+
+    @Test
     fun `a debt that keeps failing does not block the others`() = runBlocking {
         val d = device()
         val box = outbox()

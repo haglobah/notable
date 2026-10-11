@@ -151,7 +151,12 @@ internal fun sameHeads(a: Array<ChangeHash>, b: Array<ChangeHash>): Boolean =
 /** automerge-java only creates ChangeHash itself; heads read back from disk come through here. */
 private class StoredChangeHash(bytes: ByteArray) : ChangeHash(bytes)
 
-data class LibraryProjection(val follow: List<AmNotebookEntry>, val warnings: List<String>)
+/** [edits]: pages that went with a deleted notebook or quick page, so an editor showing one can leave it. */
+data class LibraryProjection(
+    val follow: List<AmNotebookEntry>,
+    val warnings: List<String>,
+    val edits: List<RemotePageEdit> = emptyList(),
+)
 data class NotebookProjection(val edits: List<RemotePageEdit>, val warnings: List<String>)
 
 /**
@@ -226,6 +231,7 @@ class AutomergeProjector(
 
     fun apply(plan: LibraryPlan): LibraryProjection {
         val warnings = mutableListOf<String>()
+        val edits = mutableListOf<RemotePageEdit>()
         val lib = plan.library
         val touched = plan.touched
         sink.transaction {
@@ -234,9 +240,18 @@ class AutomergeProjector(
                 if (touched == null || "notebooks/${e.id}" in touched) updateEntryRow(e, lib, warnings)
             val known = state.entries()
             for (id in plan.deletedEntries) {
+                val nb = sink.notebook(id)
+                val quickPage = sink.page(id)?.takeIf { it.notebookId == null }
                 when {
-                    sink.notebook(id) != null -> sink.deleteNotebook(id)
-                    sink.page(id)?.notebookId == null && sink.page(id) != null -> sink.deletePage(id)
+                    nb != null -> {
+                        val pages = nb.pageIds.filter { sink.page(it)?.notebookId == id }
+                        sink.deleteNotebook(id)
+                        pages.forEach { edits += RemotePageEdit(it, pageDeleted = true) }
+                    }
+                    quickPage != null -> {
+                        sink.deletePage(id)
+                        edits += RemotePageEdit(id, pageDeleted = true)
+                    }
                 }
                 known[id]?.let { state.forget(it) }
             }
@@ -249,7 +264,7 @@ class AutomergeProjector(
         library = lib
         state.setEntries(lib.notebooks.mapValues { it.value.docUrl })
         state.setHeads(plan.url, plan.heads)
-        return LibraryProjection(lib.notebooks.values.toList(), warnings)
+        return LibraryProjection(lib.notebooks.values.toList(), warnings, edits)
     }
 
     fun projectLibrary(doc: Document, url: String) = apply(prepareLibrary(doc, url))

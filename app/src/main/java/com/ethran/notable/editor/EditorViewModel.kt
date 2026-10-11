@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.PageDataManager
 import com.ethran.notable.data.copyImageToDatabase
+import com.ethran.notable.data.pageAfterDeletion
 import com.ethran.notable.data.datastore.EditorSettingCacheManager
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.data.db.getPageIndex
@@ -460,20 +461,7 @@ class EditorViewModel @Inject constructor(
 
     private fun handleBackgroundChange(type: String, path: String?) {
         viewModelScope.launch(Dispatchers.IO) {
-            val page = appRepository.pageRepository.getById(currentPageId) ?: return@launch
-            val updatedPage = if (path == null) {
-                page.copy(
-                    backgroundType = type,
-                    updatedAt = Date()
-                )
-            } else {
-                page.copy(
-                    background = path,
-                    backgroundType = type,
-                    updatedAt = Date()
-                )
-            }
-            appRepository.pageRepository.update(updatedPage)
+            val updatedPage = appRepository.edits.setPageBackground(currentPageId, type, path) ?: return@launch
 
             // Calculate background page number
             val bgPageNum = when (val bgTypeObj = BackgroundType.fromKey(type)) {
@@ -650,7 +638,7 @@ class EditorViewModel @Inject constructor(
                     "Remove bad page" to {
                         viewModelScope.launch(Dispatchers.IO) {
                             if (bookId != null) {
-                                appRepository.bookRepository.removePage(bookId, pageId)
+                                appRepository.edits.deletePage(pageId, bookId)
                             }
                             sendUiEvent(EditorUiEvent.NavigateToLibrary(null))
                         }
@@ -663,6 +651,22 @@ class EditorViewModel @Inject constructor(
     // --------------------------------------------------------
     // Page navigation
     // --------------------------------------------------------
+
+    /**
+     * The open page was deleted, here (page overview, quick nav) or on another device. Shows the
+     * page now at its place in the notebook, or leaves for the library when none is left.
+     */
+    fun onOpenPageDeleted(pageId: String) {
+        if (pageId != currentPageId) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val book = bookId?.let { appRepository.bookRepository.getById(it) }
+            val next = pageAfterDeletion(book?.pageIds, _toolbarState.value.currentPageNumber)
+            log.i("open page $pageId was deleted; showing ${next ?: "the library"}")
+            snackDispatcher.showOrUpdateSnack(SnackConf(text = "This page was deleted", duration = 3000))
+            if (next != null) changePage(next)
+            else sendUiEvent(EditorUiEvent.NavigateToLibrary(book?.parentFolderId))
+        }
+    }
 
     private suspend fun getNextPageId(): String? {
         return if (bookId != null) {
@@ -706,10 +710,8 @@ class EditorViewModel @Inject constructor(
     private suspend fun updateOpenedPage(newPageId: String) {
         log.v("updateOpenedPage: $newPageId")
         Log.d("EditorView", "Update open page to $newPageId")
-        if (bookId != null) {
-            appRepository.bookRepository.setOpenPageId(bookId!!, newPageId)
-        }
-        if (newPageId != currentPageId) {
+        val changed = newPageId != currentPageId
+        if (changed) {
             // The View's LaunchedEffect will handle the full load once navigation syncs.
             Log.d("EditorView", "Page changed")
             _toolbarState.update { it.copy(pageId = newPageId) }
@@ -722,6 +724,8 @@ class EditorViewModel @Inject constructor(
             snackDispatcher.showOrUpdateSnack(snack)
             CanvasEventBus.restoreCanvas.emit(Unit)
         }
+        // After the switch: the doc commit (on disk) must not delay the page turn.
+        bookId?.let { appRepository.edits.setOpenPage(it, newPageId) }
     }
 
     /**

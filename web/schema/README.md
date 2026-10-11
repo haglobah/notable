@@ -46,6 +46,10 @@ Map keys are ids. Ids are not repeated inside entries.
 - `pageOrder` can be inconsistent after concurrent edits: it may name a deleted page, repeat a
   page, or miss one. Readers normalize it: they keep the first occurrence of each existing page,
   then append the missing pages, oldest first.
+- Writers edit `pageOrder` in place (delete and insert items), never replace the list. Then two
+  devices that move different pages at once both keep their move. Android does this
+  (`AutomergeSchema.editPageOrder`, `placeInPageOrder`). Folder and entry edits likewise set single
+  fields of an existing map, so a move and a concurrent rename both survive.
 
 ## Rules
 

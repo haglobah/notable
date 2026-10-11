@@ -89,7 +89,30 @@ internal class FakeRoom(val sink: FakeSink = FakeSink()) : ProjectionSink by sin
             is LocalChange.OpenPageChanged -> sink.notebooks[change.notebookId]?.let { sink.notebooks[it.id] = it.copy(openPageId = change.pageId) }
             is LocalChange.FolderUpserted -> sink.folders[change.folder.id] = change.folder
             is LocalChange.FolderDeleted -> sink.folders.remove(change.id)
+            is LocalChange.NotebookCreated -> Unit // the test put the rows first
+            is LocalChange.NotebookRenamed -> notebook(change.id) { it.copy(title = change.title) }
+            is LocalChange.NotebookMoved -> notebook(change.id) { it.copy(parentFolderId = change.folderId) }
+            is LocalChange.NotebookBackgroundChanged -> notebook(change.id) {
+                it.copy(defaultBackgroundType = change.type, defaultBackground = change.value)
+            }
+            is LocalChange.PageAdded -> notebook(change.notebookId) { it.copy(pageIds = placed(it.pageIds, change.pageId, change.afterPageId)) }
+            is LocalChange.PageMoved -> notebook(change.notebookId) { it.copy(pageIds = placed(it.pageIds, change.pageId, change.afterPageId)) }
+            is LocalChange.PageBackgroundChanged -> sink.pages[change.pageId]?.let {
+                sink.pages[it.id] = it.copy(backgroundType = change.type, background = change.value, updatedAt = Date(change.at))
+            }
+            is LocalChange.FolderRenamed -> sink.folders[change.id]?.let { sink.folders[it.id] = it.copy(title = change.title, updatedAt = Date(change.at)) }
+            is LocalChange.FolderMoved -> sink.folders[change.id]?.let { sink.folders[it.id] = it.copy(parentFolderId = change.parentId, updatedAt = Date(change.at)) }
         }
+    }
+
+    private fun notebook(id: String, edit: (Notebook) -> Notebook) {
+        sink.notebooks[id]?.let { sink.notebooks[id] = edit(it) }
+    }
+
+    private fun placed(order: List<String>, id: String, after: String?): List<String> {
+        val rest = order.filter { it != id }
+        val at = if (after == null) 0 else rest.indexOf(after).let { if (it < 0) rest.size else it + 1 }
+        return rest.take(at) + id + rest.drop(at)
     }
 }
 
@@ -132,8 +155,8 @@ internal class Device(
 
     /** Runs the projector over every doc, as the projection worker does after changes. */
     fun project(): List<com.ethran.notable.data.RemotePageEdit> {
-        projector.projectLibrary(docs.docs.getValue(MemoryLocalDocs.LIBRARY), MemoryLocalDocs.LIBRARY)
-        return docs.library().notebooks.values.flatMap { e ->
+        val lib = projector.projectLibrary(docs.docs.getValue(MemoryLocalDocs.LIBRARY), MemoryLocalDocs.LIBRARY)
+        return lib.edits + docs.library().notebooks.values.flatMap { e ->
             docs.docs[e.docUrl]?.let { projector.projectNotebook(it, e.docUrl).edits }.orEmpty()
         }
     }
@@ -531,5 +554,229 @@ class LocalDocWriterTest {
 
         assertEquals("one doc for nb1", 1, created.get())
         assertEquals(setOf("s1", "s2"), d.docs.notebook("nb1").pages.getValue("p1").strokes.keys)
+    }
+
+    /* ------------------------------ pages, notebooks, folders ------------------------------ */
+
+    /** A device whose Room has notebook nb1 with pages p1..p[n], migrated and projected once. */
+    private fun bookDevice(pages: Int = 4): Device = Device(tmp).apply {
+        val ids = (1..pages).map { "p$it" }
+        room.sink.notebooks["nb1"] = notebook("nb1", *ids.toTypedArray())
+        ids.forEach { room.sink.pages[it] = page(it, "nb1") }
+        assertEquals(listOf("nb1"), writer.migrateAll().migrated)
+        project()
+        room.sink.writes = 0
+    }
+
+    /** A second device that has synced [a]'s docs and projected them into its own Room. */
+    private fun peer(a: Device): Device = Device(tmp, a.docs.fork()).apply {
+        project()
+        room.sink.writes = 0
+    }
+
+    @Test
+    fun `reorders of different pages on two devices both survive, replayed from Room`() {
+        val a = bookDevice()
+        val b = peer(a)
+        a.edit(LocalChange.NotebookUpserted(notebook("nb1", "p2", "p3", "p4", "p1")))
+        b.edit(LocalChange.NotebookUpserted(notebook("nb1", "p3", "p1", "p2", "p4")))
+        a.docs.syncWith(b.docs)
+
+        for (d in listOf(a, b)) {
+            assertEquals(listOf("p3", "p2", "p4", "p1"), d.docs.notebook("nb1").pageOrder)
+            d.project()
+            assertEquals(listOf("p3", "p2", "p4", "p1"), d.room.sink.notebooks.getValue("nb1").pageIds)
+        }
+    }
+
+    @Test
+    fun `a folder moved on one device and renamed on another keeps both, replayed from Room`() {
+        val a = migratedDevice()
+        a.edit(LocalChange.FolderUpserted(Folder("f1", "Uni", null, t0, t1)))
+        a.edit(LocalChange.FolderUpserted(Folder("f2", "Sem 1", null, t0, t1)))
+        val b = peer(a)
+        a.edit(LocalChange.FolderUpserted(Folder("f2", "Sem 1", "f1", t0, t1)))
+        b.edit(LocalChange.FolderUpserted(Folder("f2", "Semester 1", null, t0, t1)))
+        a.docs.syncWith(b.docs)
+
+        for (d in listOf(a, b)) {
+            val f2 = d.docs.library().folders.getValue("f2")
+            assertEquals("Semester 1", f2.title)
+            assertEquals("f1", f2.parentId)
+            d.project()
+            assertEquals(Folder("f2", "Semester 1", "f1", t0, f2.updatedAt), d.room.sink.folders.getValue("f2"))
+        }
+    }
+
+    @Test
+    fun `deleting a page moves the library entry's edited date at once`() {
+        val d = bookDevice()
+        d.edit(LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))) // bumps now
+        d.clock += 5_000
+        d.edit(LocalChange.NotebookUpserted(notebook("nb1", "p1", "p2", "p3")))
+        d.edit(LocalChange.PageDeleted(page("p4", "nb1")))
+        assertEquals(Date(d.clock), d.docs.library().notebooks.getValue("nb1").updatedAt)
+    }
+
+    @Test
+    fun `a page reorder on two devices keeps both moves`() {
+        val a = bookDevice()
+        val b = peer(a)
+        a.edit(LocalChange.PageMoved("nb1", "p1", afterPageId = "p4"))
+        b.edit(LocalChange.PageMoved("nb1", "p3", afterPageId = null))
+        a.docs.syncWith(b.docs)
+
+        for (d in listOf(a, b)) {
+            assertEquals(listOf("p3", "p2", "p4", "p1"), d.docs.notebook("nb1").pageOrder)
+            d.project()
+            assertEquals(listOf("p3", "p2", "p4", "p1"), d.room.sink.notebooks.getValue("nb1").pageIds)
+        }
+    }
+
+    @Test
+    fun `a page moved here lands after the page named, not at an index`() {
+        val a = bookDevice()
+        val b = peer(a)
+        b.edit(LocalChange.PageMoved("nb1", "p4", afterPageId = null)) // b: p4 p1 p2 p3
+        a.docs.syncWith(b.docs) // merged, not projected on a yet
+        a.edit(LocalChange.PageMoved("nb1", "p1", afterPageId = "p2"))
+
+        assertEquals(listOf("p4", "p2", "p1", "p3"), a.docs.notebook("nb1").pageOrder)
+        a.project()
+        assertEquals(listOf("p4", "p2", "p1", "p3"), a.room.sink.notebooks.getValue("nb1").pageIds)
+    }
+
+    @Test
+    fun `a page deleted on one device and drawn on on another is gone on both, and the editor is told`() {
+        val a = bookDevice()
+        val b = peer(a)
+        a.edit(LocalChange.PageDeleted(page("p2", "nb1")))
+        b.edit(LocalChange.StrokesUpserted("p2", listOf(stroke("b1", "p2"))))
+        b.edit(LocalChange.PageBackgroundChanged("p2", "nb1", "native", "lined", b.clock))
+        a.docs.syncWith(b.docs)
+
+        for (d in listOf(a, b)) {
+            val nb = d.docs.notebook("nb1")
+            assertFalse("p2" in nb.pages)
+            assertEquals(listOf("p1", "p3", "p4"), nb.pageOrder)
+        }
+        val edits = b.project()
+        assertTrue("the open editor learns the page is gone: $edits", edits.any { it.pageId == "p2" && it.pageDeleted })
+        assertNull(b.room.sink.pages["p2"])
+        assertNull(b.room.sink.strokes["b1"])
+        assertEquals(listOf("p1", "p3", "p4"), b.room.sink.notebooks.getValue("nb1").pageIds)
+    }
+
+    @Test
+    fun `a folder moved on one device and renamed on another keeps both`() {
+        val a = migratedDevice()
+        a.edit(LocalChange.FolderUpserted(Folder("f1", "Uni", null, t0, t1)))
+        a.edit(LocalChange.FolderUpserted(Folder("f2", "Sem 1", null, t0, t1)))
+        val b = peer(a)
+        a.edit(LocalChange.FolderMoved("f2", "f1", a.clock))
+        b.edit(LocalChange.FolderRenamed("f2", "Semester 1", b.clock))
+        a.docs.syncWith(b.docs)
+
+        for (d in listOf(a, b)) {
+            d.project()
+            val f2 = d.room.sink.folders.getValue("f2")
+            assertEquals("Semester 1", f2.title)
+            assertEquals("f1", f2.parentFolderId)
+        }
+    }
+
+    @Test
+    fun `a rename here does not undo a move made elsewhere that is merged but not projected`() {
+        val a = migratedDevice()
+        a.edit(LocalChange.FolderUpserted(Folder("f1", "Uni", null, t0, t1)))
+        val b = peer(a)
+        b.edit(LocalChange.NotebookMoved("nb1", "f1"))
+        a.docs.syncWith(b.docs)
+        a.edit(LocalChange.NotebookRenamed("nb1", "Analysis"))
+
+        val e = a.docs.library().notebooks.getValue("nb1")
+        assertEquals("Analysis", e.title)
+        assertEquals("f1", e.folderId)
+    }
+
+    @Test
+    fun `structural edits move the library entry's edited date at once`() {
+        val d = bookDevice()
+        d.room.sink.pages["p5"] = page("p5", "nb1")
+        val steps = listOf<(Device) -> Unit>(
+            { it.create(LocalChange.PageAdded("nb1", "p5", afterPageId = "p1")) },
+            { it.edit(LocalChange.PageMoved("nb1", "p5", afterPageId = null)) },
+            { it.edit(LocalChange.PageBackgroundChanged("p5", "nb1", "native", "dotted", it.clock)) },
+            { it.edit(LocalChange.NotebookBackgroundChanged("nb1", "native", "lined")) },
+            { it.edit(LocalChange.NotebookRenamed("nb1", "Analysis")) },
+            { it.edit(LocalChange.PageDeleted(page("p5", "nb1"))) },
+        )
+        for (step in steps) {
+            d.clock += 5_000
+            step(d)
+            assertEquals(Date(d.clock), d.docs.library().notebooks.getValue("nb1").updatedAt)
+        }
+        val nb = d.docs.notebook("nb1")
+        assertEquals("lined", nb.defaultBackground.native)
+        assertEquals("Analysis", d.docs.library().notebooks.getValue("nb1").title)
+        d.project()
+        assertEquals("no echo", 0, d.room.sink.writes)
+    }
+
+    @Test
+    fun `a duplicated page lands after its original with its strokes, in the doc's units`() {
+        val small = Device(tmp, canvasWidth = 1404.0).apply {
+            room.sink.notebooks["nb1"] = notebook("nb1", "p1")
+            room.sink.pages["p1"] = page("p1", "nb1")
+            writer.migrateAll()
+            project()
+        }
+        val big = peer(small) // draws on 1860 px; the doc is in 1404 px units
+        big.room.sink.pages["p1copy"] = page("p1copy", "nb1")
+        big.room.sink.strokes["c1"] = stroke("c1", "p1copy").copy(left = 186f)
+        big.create(LocalChange.PageAdded("nb1", "p1copy", afterPageId = "p1"))
+
+        val nb = big.docs.notebook("nb1")
+        assertEquals(listOf("p1", "p1copy"), nb.pageOrder)
+        assertEquals(186 * 1404.0 / 1860.0, nb.pages.getValue("p1copy").strokes.getValue("c1").left, 1e-3)
+        big.project()
+        assertEquals("no echo", 0, big.room.sink.writes)
+    }
+
+    @Test
+    fun `an imported notebook reaches the docs with all its pages, strokes and images`() {
+        val d = migratedDevice()
+        d.blobs.files["/pdf/book.pdf"] = byteArrayOf(7, 7)
+        d.blobs.files["/img/a.png"] = byteArrayOf(1)
+        d.room.sink.notebooks["imp"] = notebook("imp", "i1", "i2", title = "Book")
+            .copy(defaultBackgroundType = "autoPdf", defaultBackground = "/pdf/book.pdf")
+        d.room.sink.pages["i1"] = page("i1", "imp").copy(backgroundType = "autoPdf", background = "/pdf/book.pdf")
+        d.room.sink.pages["i2"] = page("i2", "imp").copy(backgroundType = "autoPdf", background = "/pdf/book.pdf")
+        d.room.sink.strokes["x1"] = stroke("x1", "i2")
+        d.room.sink.images["m1"] = Image("m1", 1, 2, 3, 4, "/img/a.png", "i1", t0, t1)
+        d.room.sink.writes = 0
+        d.create(LocalChange.NotebookCreated("imp"))
+
+        val entry = d.docs.library().notebooks.getValue("imp")
+        assertEquals("Book", entry.title)
+        assertEquals(AmSource.Pdf(sha256Hex(byteArrayOf(7, 7))), entry.source)
+        val nb = d.docs.notebook("imp")
+        assertEquals(listOf("i1", "i2"), nb.pageOrder)
+        assertEquals(setOf("x1"), nb.pages.getValue("i2").strokes.keys)
+        assertEquals(setOf("m1"), nb.pages.getValue("i1").images.keys)
+        d.project()
+        assertEquals("no echo", 0, d.room.sink.writes)
+    }
+
+    @Test
+    fun `a notebook deleted elsewhere tells the open editor its pages are gone`() {
+        val a = bookDevice(pages = 2)
+        val b = peer(a)
+        a.edit(LocalChange.NotebookDeleted("nb1"))
+        a.docs.syncWith(b.docs)
+
+        val edits = b.project()
+        assertEquals(setOf("p1", "p2"), edits.filter { it.pageDeleted }.map { it.pageId }.toSet())
+        assertNull(b.room.sink.notebooks["nb1"])
     }
 }

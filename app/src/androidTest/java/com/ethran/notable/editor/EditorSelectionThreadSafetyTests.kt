@@ -174,6 +174,10 @@ class EditorSelectionThreadSafetyTests {
             notebookSyncStateRepository = notebookSyncStateRepository,
             pageSyncStateRepository = pageSyncStateRepository,
             kvProxy = kvProxy,
+            edits = com.ethran.notable.data.LibraryEdits(
+                bookRepository, pageRepository, folderRepository, strokeRepository, imageRepository,
+                com.ethran.notable.data.ContentMirror.None,
+            ),
             db = db,
         )
 

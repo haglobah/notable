@@ -160,14 +160,13 @@ class LibraryViewModel @Inject constructor(
 
     fun createNewFolder() {
         viewModelScope.launch(Dispatchers.IO) {
-            val folder = Folder(parentFolderId = _folderId.value)
-            folderRepository.create(folder)
+            appRepository.edits.createFolder(_folderId.value)
         }
     }
 
     fun deleteEmptyBook(bookId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            bookRepository.delete(bookId)
+            appRepository.edits.deleteNotebook(bookId)
         }
     }
 
@@ -179,7 +178,7 @@ class LibraryViewModel @Inject constructor(
                 defaultBackground = settings.defaultNativeTemplate,
                 defaultBackgroundType = BackgroundType.Native.key
             )
-            bookRepository.create(notebook)
+            appRepository.edits.createNotebook(notebook)
             _newlyCreatedBookId.value = notebook.id
         }
     }

@@ -16,12 +16,10 @@ import com.ethran.notable.data.db.PageSyncStateRepository
 import com.ethran.notable.data.db.Stroke
 import com.ethran.notable.data.db.StrokeRepository
 import com.ethran.notable.data.db.getPageIndex
-import com.ethran.notable.data.db.newPage
 import com.ethran.notable.data.events.AppEvent
 import com.ethran.notable.data.model.BackgroundType
 import io.shipbook.shipbooksdk.ShipBook
 import java.util.Date
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,6 +35,8 @@ class AppRepository @Inject constructor(
     val notebookSyncStateRepository: NotebookSyncStateRepository,
     val pageSyncStateRepository: PageSyncStateRepository,
     val kvProxy: KvProxy,
+    /** Library and page changes, through the docs. Use these, not the repositories' writes. */
+    val edits: LibraryEdits,
     private val db: AppDatabase
 ) {
     /**
@@ -95,12 +95,9 @@ class AppRepository @Inject constructor(
         val index = getNextPageIdFromBookAndPage(notebookId, pageId)
         if (index != null)
             return index
-        val book = bookRepository.getById(notebookId = notebookId)
-        // creating a new page
-        val page = book!!.newPage()
-        pageRepository.create(page)
-        bookRepository.addPage(notebookId, page.id)
-        return page.id
+        val book = bookRepository.getById(notebookId = notebookId)!!
+        return edits.addPage(notebookId, book.pageIds.size)
+            ?: throw NoSuchElementException("Notebook with ID '$notebookId' not found.")
     }
 
     suspend fun getNextPageIdFromBookAndPage(
@@ -127,43 +124,7 @@ class AppRepository @Inject constructor(
     }
 
     suspend fun duplicatePage(pageId: String) {
-        val pageWithData = pageRepository.getWithDataById(pageId)
-        if (pageWithData == null) {
-            log.w("duplicatePage: Missing page Data.")
-            return
-        }
-        val duplicatedPage = pageWithData.page.copy(
-            id = UUID.randomUUID().toString(),
-            scroll = 0,
-            createdAt = Date(),
-            updatedAt = Date()
-        )
-        pageRepository.create(duplicatedPage)
-        strokeRepository.create(pageWithData.strokes.map {
-            it.copy(
-                id = UUID.randomUUID().toString(),
-                pageId = duplicatedPage.id,
-                updatedAt = Date(),
-                createdAt = Date()
-            )
-        })
-        imageRepository.create(pageWithData.images.map {
-            it.copy(
-                id = UUID.randomUUID().toString(),
-                pageId = duplicatedPage.id,
-                updatedAt = Date(),
-                createdAt = Date()
-            )
-        })
-        val notebookId = pageWithData.page.notebookId
-        if (notebookId != null) {
-            val book = bookRepository.getById(notebookId) ?: return
-            val pageIndex = book.getPageIndex(pageWithData.page.id)
-            if (pageIndex == -1) return
-            val pageIds = book.pageIds.toMutableList()
-            pageIds.add(pageIndex + 1, duplicatedPage.id)
-            bookRepository.update(book.copy(pageIds = pageIds))
-        }
+        if (edits.duplicatePage(pageId) == null) log.w("duplicatePage: Missing page Data.")
     }
 
     suspend fun isObservable(notebookId: String?): Boolean {
@@ -189,33 +150,20 @@ class AppRepository @Inject constructor(
     }
 
     suspend fun createNewQuickPage(parentFolderId: String? = null): String? {
-        val page = Page(
-            notebookId = null,
-            background = GlobalAppSettings.current.defaultNativeTemplate,
-            backgroundType = BackgroundType.Native.key,
-            parentFolderId = parentFolderId
-        )
-        try {
-            pageRepository.create(page)
+        return try {
+            edits.createQuickPage(parentFolderId, GlobalAppSettings.current.defaultNativeTemplate)
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
             log.e("Failed to create page: ${e.message}")
-            // it should return something like a result
-            return null
+            null
         }
-        return page.id
     }
 
     suspend fun newPageInBook(notebookId: String, index: Int = 0): String? {
-        try {
-            val book = bookRepository.getById(notebookId)
-                ?: return null
-            val page = book.newPage()
-            pageRepository.create(page)
-            bookRepository.addPage(notebookId, page.id, index)
-            return page.id
+        return try {
+            edits.addPage(notebookId, index)
         } catch (e: Exception) {
             log.e("Failed to create page in book: ${e.message}")
-            return null
+            null
         }
     }
 

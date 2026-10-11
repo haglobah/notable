@@ -259,16 +259,82 @@ object AutomergeSchema {
 
     fun setOpenPageId(tx: Transaction, id: String?) = setStrOrNull(tx, ObjectId.ROOT, "openPageId", id)
 
-    /** Replaces the page order. Concurrent reorders resolve to one of them, then normalize on read. */
-    fun setPageOrder(tx: Transaction, order: List<String>) {
-        val list = tx.set(ObjectId.ROOT, "pageOrder", ObjectType.LIST)
-        order.forEachIndexed { i, id -> tx.insert(list, i.toLong(), NewValue.str(id)) }
+    /** The pageOrder list as stored: it may repeat a page or name a deleted one (see [normalizeOrder]). */
+    fun rawPageOrder(doc: Document): Pair<ObjectId, List<String>> {
+        val r = Reader(doc)
+        val v = r.get(ObjectId.ROOT, "pageOrder", "")
+        val id = (v as? AmValue.List)?.id ?: throw SchemaException("pageOrder: expected a list")
+        return id to doc.listItems(id).get().mapIndexed { i, item -> r.scalar(item, "pageOrder[$i]") }
+    }
+
+    /**
+     * Edits the pageOrder list in place into [target]. Items outside the longest common
+     * subsequence are deleted, the missing ones inserted; everything else stays untouched. So two
+     * devices that move different pages at the same time both keep their move after a merge,
+     * where replacing the whole list would keep only one of them.
+     */
+    fun editPageOrder(doc: Document, tx: Transaction, target: List<String>) {
+        val (list, current) = rawPageOrder(doc)
+        val kept = longestCommonSubsequence(current, target)
+        val keptSet = kept.toHashSet()
+        for (i in current.indices.reversed()) if (i !in keptSet) tx.delete(list, i.toLong())
+        var k = 0
+        target.forEachIndexed { pos, id ->
+            if (k < kept.size && current[kept[k]] == id) k++ else tx.insert(list, pos.toLong(), NewValue.str(id))
+        }
+    }
+
+    /** Deletes every occurrence of [pageId] from pageOrder. */
+    fun removeFromPageOrder(doc: Document, tx: Transaction, pageId: String) {
+        val (list, current) = rawPageOrder(doc)
+        for (i in current.indices.reversed()) if (current[i] == pageId) tx.delete(list, i.toLong())
+    }
+
+    /**
+     * Puts [pageId] right after [afterPageId] in pageOrder (first when null; last when the doc's
+     * order doesn't have [afterPageId] any more). Its other occurrences are deleted.
+     */
+    fun placeInPageOrder(doc: Document, tx: Transaction, pageId: String, afterPageId: String?) {
+        val (list, current) = rawPageOrder(doc)
+        for (i in current.indices.reversed()) if (current[i] == pageId) tx.delete(list, i.toLong())
+        val rest = current.filter { it != pageId }
+        val at = if (afterPageId == null) 0 else rest.indexOf(afterPageId).let { if (it < 0) rest.size else it + 1 }
+        tx.insert(list, at.toLong(), NewValue.str(pageId))
+    }
+
+    /** Indices into [a] of a longest common subsequence of [a] and [b], ascending. */
+    private fun longestCommonSubsequence(a: List<String>, b: List<String>): List<Int> {
+        val len = Array(a.size + 1) { IntArray(b.size + 1) }
+        for (i in a.indices.reversed()) for (j in b.indices.reversed())
+            len[i][j] = if (a[i] == b[j]) len[i + 1][j + 1] + 1 else maxOf(len[i + 1][j], len[i][j + 1])
+        val out = ArrayList<Int>()
+        var i = 0
+        var j = 0
+        while (i < a.size && j < b.size) when {
+            a[i] == b[j] -> { out += i; i++; j++ }
+            len[i + 1][j] >= len[i][j + 1] -> i++
+            else -> j++
+        }
+        return out
     }
 
     /** A library entry's map, or null when the library has no such entry. */
     fun entryObjOrNull(doc: Document, id: String): ObjectId? {
         val (_, notebooks) = libraryMapsOf(doc)
         return (doc.get(notebooks, id).orElse(null) as? AmValue.Map)?.id
+    }
+
+    /** A folder's map, or null when the library has no such folder. */
+    fun folderObjOrNull(doc: Document, id: String): ObjectId? {
+        val (folders, _) = libraryMapsOf(doc)
+        return (doc.get(folders, id).orElse(null) as? AmValue.Map)?.id
+    }
+
+    /** Sets the given fields of a folder; null leaves a field as it is. */
+    fun setFolderFields(tx: Transaction, folder: ObjectId, title: String?, parentId: String?, setParent: Boolean, updatedAt: Date?) {
+        title?.let { tx.set(folder, "title", NewValue.str(it)) }
+        if (setParent) setStrOrNull(tx, folder, "parentId", parentId)
+        updatedAt?.let { tx.set(folder, "updatedAt", it) }
     }
 
     /** Sets the given fields of a library entry; null leaves a field as it is. */

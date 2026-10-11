@@ -34,17 +34,21 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ethran.notable.data.LibraryEdits
 import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.FolderRepository
 import com.ethran.notable.ui.components.ScaledDialog
 import com.ethran.notable.ui.noRippleClickable
 import io.shipbook.shipbooksdk.ShipBook
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val log = ShipBook.getLogger("FolderConfig")
 
 @Composable
 fun FolderConfigDialog(folderRepository: FolderRepository,
+                       edits: LibraryEdits,
                        folderId: String,
                        onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -123,8 +127,9 @@ fun FolderConfigDialog(folderRepository: FolderRepository,
                                 if (!focusState.isFocused) {
                                     val currentFolder = folder
                                     if (currentFolder != null && currentFolder.title != folderTitle) {
-                                        scope.launch {
-                                            folderRepository.update(currentFolder.copy(title = folderTitle))
+                                        val title = folderTitle
+                                        scope.launch(Dispatchers.IO) {
+                                            edits.renameFolder(currentFolder.id, title)
                                         }
                                     }
                                 }
@@ -152,7 +157,7 @@ fun FolderConfigDialog(folderRepository: FolderRepository,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.noRippleClickable {
                         scope.launch {
-                            folderRepository.delete(folderId)
+                            withContext(Dispatchers.IO) { edits.deleteFolder(folderId) }
                             onClose()
                         }
                     })
