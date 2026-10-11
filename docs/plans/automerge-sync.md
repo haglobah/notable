@@ -30,7 +30,11 @@ usable and verified. Later phases depend on earlier ones.
       `web/server/README.md`.
 - [x] `web/flake.nix` builds the server, an OCI image and a NixOS module (`services.notable-server`)
       with a VM test. The PWA output comes in Phase 2.
-- [ ] noldor `modules/notable.nix`: systemd unit, Caddy vhost, `clan.core.state`. Deploy to formenos.
+- [x] noldor `modules/notable.nix`: systemd unit, Caddy vhost, `clan.core.state` with a SQLite
+      snapshot before backup. On branch `notable-sync` in `~/noldor-notable-sync`. The formenos system
+      builds with `--override-input notable path:…/web`.
+- [ ] Push `automerge-sync`, lock the `notable` input in noldor, add the DNS record for
+      `notable.hagenlocher.me`, deploy to formenos, and create Beat's account. Needs Beat's go.
 
 ## Phase 2 — PWA (read, upload, download)
 
