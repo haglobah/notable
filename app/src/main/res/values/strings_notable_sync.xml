@@ -9,6 +9,12 @@
     <string name="nsync_log_in">Log in</string>
     <string name="nsync_logging_in">Logging in…</string>
     <string name="nsync_log_out">Log out</string>
+    <string name="nsync_logout_pending">Not logged out: %1$d edits and %2$d files have not reached the server yet.</string>
+    <string name="nsync_logout_pending_reason">Waiting for sync stopped: %1$s.</string>
+    <string name="nsync_logout_wait">Sync first, then log out</string>
+    <string name="nsync_logout_waiting">Syncing…</string>
+    <string name="nsync_logout_anyway">Log out anyway</string>
+    <string name="nsync_logout_kept">Logged out. %1$d edits and %2$d files did not reach the server. They stay on this device and are sent the next time you log in to this account.</string>
     <string name="nsync_status_connected">Connected to %1$s as %2$s</string>
     <string name="nsync_status_connecting">Connecting to %1$s…</string>
     <string name="nsync_status_offline">Offline (%1$s). Retrying automatically.</string>

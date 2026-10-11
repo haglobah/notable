@@ -25,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +36,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.ethran.notable.R
 import com.ethran.notable.sync.automerge.BackgroundHealth
+import com.ethran.notable.sync.automerge.LogoutChoice
+import com.ethran.notable.sync.automerge.LogoutResult
+import com.ethran.notable.sync.automerge.PendingSync
 import com.ethran.notable.sync.automerge.MigrationState
 import com.ethran.notable.sync.automerge.ProjectionStatus
 import com.ethran.notable.sync.automerge.NotableSyncClient
@@ -59,12 +63,16 @@ fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
     val projection by client.projection.collectAsState()
     val health = remember(status) { client.backgroundHealth() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     var server by remember { mutableStateOf("https://notable.hagenlocher.me") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    /** A logout that stopped because edits or files wait for sync; offers wait or log out anyway. */
+    var logoutBlocked by remember { mutableStateOf<LogoutResult.StillPending?>(null) }
+    val keptText: (PendingSync) -> String = { k -> context.getString(R.string.nsync_logout_kept, k.writes, k.files) }
 
     EInkSection(title = stringResource(R.string.nsync_title), icon = Icons.Default.CloudSync) {
         Text(stringResource(R.string.nsync_intro), style = MaterialTheme.typography.body2)
@@ -102,14 +110,44 @@ fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
                 Spacer(Modifier.height(12.dp))
                 MigrationBlock(migration, enabled = s is SyncStatus.Connected, onMigrate = client::migrate)
                 Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = {
-                        busy = true
-                        scope.launch {
-                            error = client.logout()
-                            busy = false
+                val logOut: (LogoutChoice) -> Unit = { choice ->
+                    busy = true
+                    error = null
+                    scope.launch {
+                        when (val r = client.logout(choice)) {
+                            is LogoutResult.StillPending -> logoutBlocked = r
+                            is LogoutResult.LoggedOut -> {
+                                logoutBlocked = null
+                                error = listOfNotNull(
+                                    r.serverWarning,
+                                    if (r.kept.isEmpty) null else keptText(r.kept),
+                                ).joinToString("\n").ifEmpty { null }
+                            }
                         }
-                    },
+                        busy = false
+                    }
+                }
+                logoutBlocked?.let { b ->
+                    Notice(
+                        stringResource(R.string.nsync_logout_pending, b.pending.writes, b.pending.files) +
+                            (b.reason?.let { "\n" + stringResource(R.string.nsync_logout_pending_reason, it) } ?: "")
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { logOut(LogoutChoice.WaitForSync) },
+                        enabled = !busy,
+                        colors = eInkButtonColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(if (busy) R.string.nsync_logout_waiting else R.string.nsync_logout_wait)) }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { logOut(LogoutChoice.Anyway) },
+                        enabled = !busy,
+                        colors = eInkButtonColors(isSecondary = true),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.nsync_logout_anyway)) }
+                } ?: Button(
+                    onClick = { logOut(LogoutChoice.IfNothingPending) },
                     enabled = !busy && migration !is MigrationState.Running,
                     colors = eInkButtonColors(isSecondary = true),
                     modifier = Modifier.fillMaxWidth(),

@@ -181,6 +181,34 @@ Known gaps in part B:
 
 - [ ] Route every editor write (strokes, images, pages, folders, notebooks) through the doc. Room
       only receives projected changes.
+  - [x] **4a: strokes and images** (`LocalDocWriter`, `DocFirstMirror`, `EditorWriteQueue`):
+        doc commit on disk, then Room, then settle. Failed or early writes wait in `DocOutbox`;
+        images are copied into `QueuedBlobStore` and upload when connected. With a cached
+        library URL this works offline from launch. Sync settings show pending writes, pending
+        files, the last write error and pen-up → commit latency (p50, max).
+  - [x] **Logout guard** (`LogoutGuard.kt`). With pending writes or files, "Log out" stays
+        logged in and offers "Sync first, then log out" (waits up to 2 min for zero pending
+        while connected, plus 3 s for the repo to send) or "Log out anyway". "Anyway" keeps the
+        whole account folder (repo, outbox, queued files) and says how many edits and files did
+        not reach the server; the next login to the same account sends them. Room keeps the
+        edits either way. An outbox set aside as unreadable also keeps the folder.
+        `LogoutGuardTest`.
+  - [x] **Live JVM test** `LiveServerOfflineEditsTest` (opt-in, like `LiveServerMigrationTest`):
+        a repo on disk migrates online, then edits offline (stroke add and delete, an image, a
+        stroke recorded in the outbox before the writer existed), restarts online and drains
+        the file queue. A fresh repo reads exactly those strokes, the image and its blob from
+        the server. Passed against the live server on 2026-10-11 (11 s), account deleted.
+  - [x] **Debug hook** (`editor/DebugEditHook.kt`, debug builds only, registered while the
+        editor is open): `adb shell am broadcast -a com.ethran.notable.dev.DEBUG_EDIT --es op
+        <draw|erase|move|undo|redo|image|place|dump> ...` drives the real `PageView` and `History`
+        paths (`handleDraw`, `handleErase`, selection move as a tap outside, `History.undo/redo`,
+        the image picker path). Each op logs one `DebugEdit` line. Node peer for checks:
+        `web/server/scripts/device-peer.ts` (`dump`, `add-stroke`, `blob`).
+  - [ ] **Device check of 4a** on the Note Air 5C: not done, the device was not connected over
+        adb (2026-10-11). See the handoff's "Next" for the steps.
+- [ ] Pages, notebooks and folders through the docs (create, rename, move, delete, reorder), and
+      imports (PDF, images as pages).
+- [ ] Local-only mode without an account: automatic migration on first start.
 - [ ] Rebuild Room from the docs on demand (a debug action and a test).
 - [ ] Android "share as PDF" uses the same projection as the PWA.
 - [ ] EPUB import on Android with fixed layout parameters.

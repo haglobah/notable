@@ -211,22 +211,32 @@ class NotableSyncClient @Inject constructor(
     }
 
     /**
-     * Ends the session on the server and forgets it here, including this account's local repo.
-     * Returns a warning when the server could not be told; the local token is gone either way.
+     * Ends the session on the server and forgets it here. Edits and files that wait for sync are
+     * never dropped silently ([LogoutGuard]): with any pending, [LogoutChoice.IfNothingPending]
+     * stays logged in and says what waits; [LogoutChoice.WaitForSync] syncs first;
+     * [LogoutChoice.Anyway] logs out and keeps them (Room, and the account folder for the next
+     * login to this account). Without anything pending, the account's local repo is deleted.
      */
-    suspend fun logout(): String? = withContext(Dispatchers.IO) {
+    suspend fun logout(choice: LogoutChoice = LogoutChoice.IfNothingPending): LogoutResult = withContext(Dispatchers.IO) {
+        if (choice == LogoutChoice.WaitForSync) {
+            session?.wake?.trySend(Unit)
+            LogoutGuard.awaitSynced(projection, status, WAIT_FOR_SYNC_MS, QUIET_MS)?.let { return@withContext it }
+        }
         lock.withLock {
+            val pending = PendingSync.of(_projection.value)
+            if (!LogoutGuard.mayEnd(choice, pending)) return@withLock LogoutResult.StillPending(pending, null)
             val s = session
             val warning = s?.let {
                 runCatching { it.api.logout(it.account.token) }.exceptionOrNull()
                     ?.let { e -> "The server could not be reached, so its session stays valid until it expires: ${e.message}" }
             }
             disconnect()
-            s?.let { accountDir(it.account).deleteRecursively() }
+            val kept = s?.let { LogoutGuard.forgetAccountFiles(accountDir(it.account), pending) } ?: false
+            if (kept) log.w("logged out with ${pending.writes} edits and ${pending.files} files not synced; kept in ${s?.let { accountDir(it.account) }}")
             accounts.clear()
             _status.value = SyncStatus.SignedOut
             _migration.value = MigrationState.Idle
-            warning
+            LogoutResult.LoggedOut(warning, if (kept) pending else PendingSync(0, 0))
         }
     }
 
@@ -545,6 +555,10 @@ class NotableSyncClient @Inject constructor(
 
     companion object {
         private const val RETRY_MS = 15_000L
+        /** How long "wait and sync" at logout waits for pending edits and files. */
+        private const val WAIT_FOR_SYNC_MS = 120_000L
+        /** After nothing is pending, time for the repo to send its last commits. */
+        private const val QUIET_MS = 3_000L
 
         /** Stroke x coordinates span the shorter screen side (editor/drawing/backgrounds.kt). */
         fun canvasWidth(): Int = min(SCREEN_WIDTH, SCREEN_HEIGHT)

@@ -28,9 +28,12 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - `DocFirstMirror.kt`: the `ContentMirror` (doc, Room, settle, retry) and `LatencyStats`.
   - `DocOutbox.kt`: edits in Room that wait for the docs (`DocDebt`), on disk.
   - `QueuedBlobStore.kt`: files copied for sync, uploaded when connected.
+  - `LogoutGuard.kt`: logout never drops pending writes or files silently.
   - `NotableSyncClient.kt`: Hilt singleton, session, repo, dialer; the bound `ContentMirror`.
   - `data/EditorWriteQueue.kt`: the editor's serial write queue and `PendingLocalWrites`.
   - `AndroidAdapters.kt`: Room, files, background-limit adapters.
+- Debug hook: `editor/DebugEditHook.kt` (adb broadcasts drive `PageView`/`History`). Node peer:
+  `web/server/scripts/device-peer.ts`.
 - Editor: `docs/editor-data-flow.md`, `docs/editor-state-and-view.md`. The stroke and image write
   functions are in `data/PageDataManager.kt`.
 - Web: `web/schema` (shared schema, TS), `web/server` (sync, blobs, accounts), `web/app` (PWA),
@@ -112,6 +115,26 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - Tests: `DocOutboxTest`, `QueuedBlobStoreTest`, new cases in `DocFirstMirrorTest` and
     `LocalDocWriterTest`. All `sync.automerge.*` pass (125, the live test skipped).
 
+- Done, not committed (2026-10-11, the old Next list; unit and live JVM tests, not on device):
+  - **Logout guard.** `LogoutGuard.kt` + `NotableSyncClient.logout(choice)` + the sync section.
+    With pending writes or files, "Log out" stays logged in and shows the counts, with "Sync
+    first, then log out" (waits ≤ 2 min for zero pending while connected, then 3 s) and "Log out
+    anyway". "Anyway" keeps the whole account folder (repo, outbox, blobs) and reports the
+    counts; the next login to the same account sends them. Test: `LogoutGuardTest`.
+  - **Live test.** `LiveServerOfflineEditsTest` (env `NOTABLE_E2E_SERVER`, `_USER`, `_PASSWORD`):
+    offline edits, an outbox entry and a queued image reach the server on reconnect. Passed
+    against the live server; the throwaway account is deleted.
+  - **Debug hook.** `editor/DebugEditHook.kt`, registered from `EditorView` in debug builds:
+    `adb shell am broadcast -a com.ethran.notable.dev.DEBUG_EDIT --es op draw --ei x 200 --ei y 300
+    --ei w 400 --ei h 200 --ei n 3`. Ops: `draw`, `erase`, `move` (`dx`, `dy`), `undo`, `redo`,
+    `image --es path <file>` then `place`, `dump`. Results go to logcat, tag `DebugEdit`.
+  - **Node peer.** `web/server/scripts/device-peer.ts`: `dump`, `add-stroke <nb> <page> <x> <y>`,
+    `blob <sha>`; env `NOTABLE_SERVER`, `NOTABLE_USER`, `NOTABLE_PASSWORD`. Run from `web/` with
+    `nix shell nixpkgs#nodejs_24 -c node server/scripts/device-peer.ts dump`.
+  - Tests: `sync.automerge.*` and `editor.*` pass (175, the 2 live tests skipped without env);
+    `assembleDebug` builds.
+- **Device check not done:** no device on adb (USB) during the session.
+
 Known gaps:
 
 - A projection that read the doc between a page-cut's remove and re-add, and applies after the
@@ -119,8 +142,15 @@ Known gaps:
 - A remote change to a stroke whose local delete is queued is skipped in Room; the doc keeps the
   remote put (it wins over the delete), so Room lacks it until that stroke changes again. (For a
   delete in the outbox, the retry deletes it from the doc, so local wins there.)
-- Logout deletes the account folder with its outbox and queued blobs: edits not yet in the docs
-  stay in Room only. Logout should warn when `pendingWrites` or `pendingBlobs` is non-zero.
+- "Sync first" can't see whether the server has the repo's last commits (automerge-java 0.0.9
+  keeps peer sync state private); it waits for zero pending while connected, then 3 s. A clean
+  logout still deletes the repo, so a commit not yet sent is then in Room only.
+- A folder kept by "log out anyway" stays until the next login to that account; logging in to
+  another account never sends it. Edits made while signed out are Room-only (see below).
+- An editor write still queued at the moment of logout may land Room-only (the session is gone
+  when it runs).
+- If the server account is deleted and recreated under the same name, a kept folder's cached
+  library URL is stale; "Upload notebooks" refuses with "log out and in again".
 - An unreadable outbox file is moved aside and reported in the sync status; its edits are then
   Room-only. No reconcile from Room exists yet.
 - A debt that can never succeed (e.g. an image whose file is gone) is retried forever; it shows as
@@ -133,18 +163,25 @@ Known gaps:
   notebooks without a library entry, so edits to already uploaded notebooks made while signed out
   are not sent. (Logout deletes the local repo, so this only matters after logging in again.)
 
-## Next (Phase 4a remaining)
+## Next
 
-1. **Debug hook and device check.**
-   - A debug-only broadcast that drives `PageView` and `History`: draw, erase, move, undo/redo,
-     images.
-   - On device, check: server and PWA, a remote and a local edit merging, `am force-stop` right
-     after an edit, latency (sync settings show p50 and max), offline launch with a cached
-     library URL, an image inserted offline that uploads on reconnect, the pending counts.
-   - A live test for offline edits that sync on reconnect (pattern: `LiveServerMigrationTest`).
-   - Update the plan.
-2. Logout warns about pending writes and files (see Known gaps).
+1. **Device check of 4a** (Note Air 5C, `.dev` build only, a throwaway account; delete it and log
+   the `.dev` app out afterwards). Install `app/build/outputs/apk/debug/app-debug.apk`,
+   `pm enable com.ethran.notable.dev`, log in, open a notebook, then use `DEBUG_EDIT` and
+   `device-peer.ts`, with screencaps (`adb exec-out screencap -p`) for each:
+   - draw, erase, move, undo, redo, image: each reaches the server (`dump`) and the PWA;
+   - `add-stroke` while a local `draw` lands: both strokes on both sides;
+   - `am force-stop` right after a `draw`: the stroke is in Room and on the server after relaunch;
+   - offline launch (`svc wifi disable`) with the cached library URL: edits commit, pending is 0
+     writes; wifi back: they reach the server;
+   - an image inserted offline: "Files waiting to upload: 1", then uploaded (`blob <sha>`);
+   - the logout prompt with something pending;
+   - latency p50 and max from the sync settings.
+   If a check fails, fix it with a failing test first.
+2. The rest of Phase 4:
+   - pages, notebooks, folders and imports (PDF, images) through the docs;
+   - local-only mode without an account (automatic migration on first start);
+   - Android share-as-PDF from the same projection as the PWA;
+   - EPUB import on Android.
 
-After 4a: pages, notebooks, folders and imports through the docs; local-only mode without an
-account (automatic migration on first start); Android share-as-PDF using the same projection;
-EPUB import on Android. Then Phase 5, removing WebDAV.
+Then Phase 5, removing WebDAV.

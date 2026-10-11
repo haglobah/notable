@@ -130,6 +130,12 @@ fun EditorView(
             }
         }
 
+        // Debug builds: adb-driven edits through the real PageView and History (DebugEditHook).
+        if (com.ethran.notable.BuildConfig.DEBUG) DisposableEffect(page, history) {
+            val unregister = DebugEditHook(context, scope, page, history, viewModel, editorControlTower).register()
+            onDispose { unregister() }
+        }
+
         // Collect UI Events from ViewModel (navigation )
         LaunchedEffect(Unit) {
             viewModel.uiEvents.collect { event ->
