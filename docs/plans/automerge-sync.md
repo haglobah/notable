@@ -22,9 +22,12 @@ usable and verified. Later phases depend on earlier ones.
       Found two library quirks; the readers work around both:
       @automerge/automerge 3.5.0 stores zero and negative integers as float64, and
       automerge-java 0.0.9 `NewValue.integer()` stores F64.
-- [ ] `web/server`: accounts (argon2id, sessions, admin CLI, login rate limit).
-- [ ] `web/server`: automerge-repo sync and blob PUT/GET by sha256, with a per-doc owner check.
-      Write the isolation tests first.
+- [x] `web/server`: accounts (argon2id, sessions, admin CLI, login rate limit).
+- [x] `web/server`: automerge-repo sync and blob PUT/GET by sha256, with a per-doc owner check.
+      Isolation tests first. Two independent layers (an authenticated adapter and `shareConfig.access`),
+      each enough on its own. Mutation-checked. The Java samod client (0.0.9) syncs through it
+      with a Bearer token; another account's samod client gets "not found". See
+      `web/server/README.md`.
 - [ ] `web/flake.nix` builds the server and the PWA.
 - [ ] noldor `modules/notable.nix`: systemd unit, Caddy vhost, `clan.core.state`. Deploy to formenos.
 
@@ -128,6 +131,20 @@ The inputs were a generated 2-page PDF and a generated 2-chapter EPUB 3. No pers
   projection in Phase 4.
 
 ## Open items
+
+Server security, from the Phase 1 review:
+
+- **Claim window.** A doc belongs to whoever syncs it first. Anyone who learns a doc id before its
+  owner's first sync could claim it. Ids are random, so this needs a leak. A fix is to have the
+  client register the doc over HTTP before its first sync.
+- **No per-account quotas.** Doc count, doc size and blob bytes are unlimited. Needed before open
+  sign-up is enabled anywhere.
+- **Long-lived tokens.** Sessions expire after 180 idle days, with no scoping and no rotation
+  beyond logout or revoke. Consider rotation on use for the Android token.
+- **In-memory login rate limit.** It resets on restart. Behind Caddy it needs
+  `NOTABLE_TRUST_PROXY=1`, or every login shares one IP.
+- **Unexplained warning.** A Node `TimeoutNegativeWarning` appeared once during the manual
+  interop run, not in the tests. Not investigated.
 
 - How to compact docs whose history has grown (see ADR-001 consequences).
 - Pen rendering in the PWA: decide how closely it must match the Boox.

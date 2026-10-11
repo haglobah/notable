@@ -2,6 +2,6 @@
   "name": "notable-web",
   "private": true,
   "type": "module",
-  "workspaces": ["schema"],
+  "workspaces": ["schema", "server"],
   "engines": { "node": ">=24" }
 }
