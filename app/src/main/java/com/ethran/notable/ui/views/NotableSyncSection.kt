@@ -54,13 +54,14 @@ class NotableSyncViewModel @Inject constructor(val client: NotableSyncClient) : 
     }
 }
 
-/** Login, connection status, migration and background health for Automerge sync (ADR-001). */
+/** The device library, login, connection status, migration and background health for Automerge sync (ADR-001). */
 @Composable
 fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
     val client = viewModel.client
     val status by client.status.collectAsState()
     val migration by client.migration.collectAsState()
     val projection by client.projection.collectAsState()
+    val local by client.local.collectAsState()
     val health = remember(status) { client.backgroundHealth() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -78,9 +79,20 @@ fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
         Text(stringResource(R.string.nsync_intro), style = MaterialTheme.typography.body2)
         Spacer(Modifier.height(12.dp))
 
+        local.openError?.let {
+            Notice(stringResource(R.string.nsync_local_error, it))
+            Spacer(Modifier.height(12.dp))
+        }
+
         when (val s = status) {
             SyncStatus.SignedOut, is SyncStatus.AccountUnreadable -> {
                 if (s is SyncStatus.AccountUnreadable) Notice(stringResource(R.string.nsync_status_unreadable, s.reason))
+                val owner = local.owner
+                if (owner == null) Text(stringResource(R.string.nsync_local_own), style = MaterialTheme.typography.body2)
+                else Notice(stringResource(R.string.nsync_local_owned, owner.username, owner.serverUrl))
+                Spacer(Modifier.height(12.dp))
+                MigrationBlock(migration, enabled = local.openError == null, onMigrate = client::migrate)
+                Spacer(Modifier.height(12.dp))
                 EInkTextField(stringResource(R.string.nsync_server), server, { server = it })
                 Spacer(Modifier.height(8.dp))
                 EInkTextField(stringResource(R.string.nsync_username), username, { username = it })
@@ -214,6 +226,7 @@ private fun MigrationBlock(state: MigrationState, enabled: Boolean, onMigrate: (
         is MigrationState.Done -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val r = state.report
             Text(stringResource(R.string.nsync_migrate_done, r.migrated.size, r.alreadyDone.size, r.failed.size))
+            if (r.merged.isNotEmpty()) Text(stringResource(R.string.nsync_migrate_merged, r.merged.size))
             r.failed.forEach { Notice(stringResource(R.string.nsync_migrate_failed_item, it.title, it.reason)) }
             r.warnings.forEach { Notice(stringResource(R.string.nsync_migrate_missing_pages, it.id, it.missingPages.size)) }
         }

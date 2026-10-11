@@ -1048,8 +1048,8 @@ class PageDataManager @Inject constructor(
     }
 
     /**
-     * Queues one content write: doc commit (on disk), then [room], then settle; Room only without
-     * a sync session. The page and notebook are taken now, not when the write runs.
+     * Queues one content write: doc commit (on disk), then [room], then settle, with or without
+     * an account. The page and notebook are taken now, not when the write runs.
      */
     private fun enqueueContentWrite(op: String, change: LocalChange, room: suspend () -> Unit) {
         val page = pageFromDb

@@ -67,6 +67,8 @@ data class MigrationReport(
     val alreadyDone: List<String>,
     val failed: List<MigrationFailure>,
     val warnings: List<MigrationWarning>,
+    /** Notebooks the account already had; this device's pages and strokes were added to them. */
+    val merged: List<String> = emptyList(),
 )
 
 /**

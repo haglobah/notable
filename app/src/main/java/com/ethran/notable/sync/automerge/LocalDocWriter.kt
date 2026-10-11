@@ -25,7 +25,16 @@ interface LocalDocs {
     fun <T> edit(url: String, block: (Document) -> T): T
     /** Stores [doc] as a new doc; returns once all of it is on disk. */
     fun createDoc(doc: Document): String
+
+    /**
+     * Reads [url] as stored on this device, without asking other peers for it. A doc the repo looks
+     * up while connected is synced with the server, so a doc that must stay here is read this way.
+     */
+    fun <T> peek(url: String, block: (Document) -> T): T = edit(url, block)
 }
+
+/** Notebook or quick page [id] has a doc made here ([localDocUrl]) and another in the library. */
+data class LocalCopy(val id: String, val localDocUrl: String, val libraryDocUrl: String)
 
 /** Heads before and after a local commit; see [LocalDocWriter.settle]. */
 data class WriteReceipt(val commits: List<Commit>) {
@@ -50,7 +59,7 @@ class LocalDocWriter(
     private val docs: LocalDocs,
     private val local: LocalLibrary,
     blobs: BlobStore,
-    migrationState: MigrationStateStore,
+    private val migrationState: MigrationStateStore,
     private val projection: ProjectionStateStore,
     private val canvasWidth: Double,
     private val now: () -> Long = System::currentTimeMillis,
@@ -146,6 +155,65 @@ class LocalDocWriter(
 
     /** Copies everything in Room that has no doc yet; see [RoomToAutomergeMigration.run]. */
     fun migrateAll(onProgress: (MigrationProgress) -> Unit = {}): MigrationReport = migration.run(onProgress)
+
+    /**
+     * Notebooks and quick pages this device made a doc for while the library lists another doc for
+     * them: the account already had them when this device's own library was attached to it (the
+     * same Room ids, e.g. synced through WebDAV, or uploaded before a logout deleted the repo).
+     * Only those Room still has; one deleted here isn't merged back.
+     */
+    fun localCopies(): List<LocalCopy> {
+        val lib = docs.edit(docs.libraryUrl()) { AutomergeSchema.readLibrary(it) }
+        return migrationState.load().mapNotNull { (id, url) ->
+            val listed = lib.notebooks[id]?.docUrl ?: return@mapNotNull null
+            val quickPage = local.pageRow(id)?.let { it.notebookId == null } ?: false
+            val inRoom = quickPage || local.notebook(id) != null
+            if (listed == url || !inRoom) null else LocalCopy(id, url, listed)
+        }
+    }
+
+    /**
+     * Adds what each of [localCopies] has to the library's doc of that notebook: pages it lacks (at
+     * the end of the order), and strokes and images its pages lack. Nothing is deleted, so neither
+     * side loses content; deletions made in the local copy don't carry over. The library's doc is
+     * the notebook's from then on. [fetch] gets that doc into the repo first (from the server).
+     * Returns the ids merged.
+     */
+    fun mergeLocalCopies(fetch: (String) -> Unit): List<String> = localCopies().map { c ->
+        fetch(c.libraryDocUrl)
+        // Peeked: looking it up through the repo would send this device's copy to the server.
+        val from = docs.peek(c.localDocUrl) { AutomergeSchema.readNotebook(it) }
+        commit(c.libraryDocUrl) { doc, tx ->
+            val k = (AutomergeSchema.canvasWidthOf(doc) ?: AutomergeProjector.DEFAULT_CANVAS_WIDTH) /
+                (from.canvasWidth ?: AutomergeProjector.DEFAULT_CANVAS_WIDTH)
+            val pages = AutomergeSchema.pagesOf(doc)
+            val added = mutableListOf<String>()
+            var changed = false
+            for (id in from.pageOrder) {
+                val page = from.pages[id] ?: continue
+                if (AutomergeSchema.pageObjOrNull(doc, id) == null) {
+                    AutomergeSchema.putPage(tx, pages, page.scaled(k))
+                    added += id
+                    continue
+                }
+                val strokes = AutomergeSchema.strokesOf(doc, id)
+                page.strokes.values.filter { !doc.get(strokes, it.id).isPresent }.forEach {
+                    AutomergeSchema.putStroke(tx, strokes, it.scaled(k))
+                    changed = true
+                }
+                val images = AutomergeSchema.imagesOf(doc, id)
+                page.images.values.filter { !doc.get(images, it.id).isPresent }.forEach {
+                    AutomergeSchema.putImage(tx, images, it.scaled(k))
+                    changed = true
+                }
+            }
+            if (added.isNotEmpty()) AutomergeSchema.editPageOrder(doc, tx, AutomergeSchema.rawPageOrder(doc).second + added)
+            changed || added.isNotEmpty()
+        }
+        migrationState.record(c.id, c.libraryDocUrl)
+        docUrls[c.id] = c.libraryDocUrl
+        c.id
+    }
 
     /** Call after the Room write of [receipt]'s change returned. */
     fun settle(receipt: WriteReceipt) {

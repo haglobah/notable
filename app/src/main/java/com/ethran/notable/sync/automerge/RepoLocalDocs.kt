@@ -156,14 +156,25 @@ class RepoLocalDocs(
     }
 
     override fun createDoc(doc: Document): String {
-        val mark = storage.mark()
-        val handle = get(repo.create(doc.save()))
+        val handle = createDurably(repo, storage, doc)
         val url = handle.url.toString()
         handles[url] = handle
-        val id = docId(handle)
-        storage.awaitHeads(id, doc.heads.toList(), mark)
-        storage.awaitIdle(id)
         return url
+    }
+
+    /** Loads the doc's stored chunks (snapshots, then incrementals) without the repo. */
+    override fun <T> peek(url: String, block: (Document) -> T): T {
+        val id = url.removePrefix("automerge:")
+        val chunks = get(storage.loadRange(StorageKey(id)))
+        val ordered = chunks.entries.sortedBy { if (it.key.parts.getOrNull(1) == DurableStorage.SNAPSHOT) 0 else 1 }
+        if (ordered.isEmpty()) throw IllegalStateException("doc $url is not stored on this device")
+        val bytes = java.io.ByteArrayOutputStream().apply { ordered.forEach { write(it.value) } }.toByteArray()
+        val doc = Document.load(bytes)
+        return try {
+            block(doc)
+        } finally {
+            doc.free()
+        }
     }
 
     private class Edit<T>(val result: T, val heads: List<ChangeHash>?, val mark: Long)
@@ -179,16 +190,26 @@ class RepoLocalDocs(
         handles.putIfAbsent(url, found.get()) ?: found.get()
     }
 
-    /** The storage key's first part: the URL without its scheme. */
-    private fun docId(handle: DocHandle) = handle.url.toString().removePrefix("automerge:")
+    companion object {
+        private const val TIMEOUT_S = 60L
 
-    private fun <T> get(f: CompletableFuture<T>): T = try {
-        f.get(TIMEOUT_S, TimeUnit.SECONDS)
-    } catch (e: ExecutionException) {
-        throw e.cause ?: e
-    }
+        /** Stores [doc] as a new doc of [repo]; returns once all of it is on disk. */
+        fun createDurably(repo: Repo, storage: DurableStorage, doc: Document): DocHandle {
+            val mark = storage.mark()
+            val handle = get(repo.create(doc.save()))
+            val id = docId(handle)
+            storage.awaitHeads(id, doc.heads.toList(), mark)
+            storage.awaitIdle(id)
+            return handle
+        }
 
-    private companion object {
-        const val TIMEOUT_S = 60L
+        /** The storage key's first part: the URL without its scheme. */
+        private fun docId(handle: DocHandle) = handle.url.toString().removePrefix("automerge:")
+
+        internal fun <T> get(f: CompletableFuture<T>): T = try {
+            f.get(TIMEOUT_S, TimeUnit.SECONDS)
+        } catch (e: ExecutionException) {
+            throw e.cause ?: e
+        }
     }
 }

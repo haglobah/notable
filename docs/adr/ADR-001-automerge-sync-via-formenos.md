@@ -126,6 +126,36 @@ and the metrics stack. Server work must stay small.
   happens with the app open, and the PWA shows whatever has reached the server.
 - A foreground service stays possible later if the delay turns out to matter.
 
+### Local-only mode and accounts on one device (2026-10-11)
+
+- **Every device has one library, with or without an account.** It lives in
+  `files/notable-sync/library/` (repo, outbox, queued files, `library.json`). Without an account
+  it is the device's own: its library doc is made on the first start, Room is copied into it
+  automatically, and every write goes to its docs first. Nothing is sent anywhere. There is no
+  Room-only write path any more; a write waits until the library is open, and fails before
+  touching Room if it can't open.
+- **The first login attaches it.** The library is recorded as that account's, and its library doc
+  becomes the account's (from `/me`). The copy of Room runs again into the account's library: a
+  notebook with a doc here keeps that doc, so the copy only adds its entry, and sync uploads the
+  doc under the same URL (the server gives it to the first account that syncs it). No notebook
+  gets a second doc. The device's old library doc is never looked up again, so it never reaches
+  the server.
+- **A notebook the account already has** (same Room id, e.g. synced through WebDAV, or uploaded
+  before a logout deleted the repo) keeps the account's doc. This device's pages, strokes and
+  images that the account's doc lacks are added to it; nothing is deleted on either side. The
+  account's title, folder and page order win. The device's own copy stays on the device, read
+  from disk without the repo so it isn't uploaded.
+- **A logout keeps the library.** It stays the account's and becomes the device's library without
+  a connection; edits keep going to its docs and go up at the next login to that account.
+- **A login to a different account is refused** while the library belongs to another one, with a
+  message naming the owner. Merging silently would put one account's notebooks into another's;
+  the other account also couldn't sync docs the first one owns on the server. Refusing loses
+  nothing: the library, Room and the login of the owner stay as they were. The same holds for an
+  account deleted and recreated under the same name (its library doc differs). Moving a library
+  to another account would need an explicit action; there is none yet.
+- Folders of accounts logged in before this change (`files/notable-sync/<hash>/`) are adopted as
+  the library of the logged-in account on the first start.
+
 ### WebDAV
 
 - WebDAV sync is removed once the new sync covers folders, notebooks, pages, strokes, images and

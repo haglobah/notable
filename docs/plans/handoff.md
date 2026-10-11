@@ -28,8 +28,11 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - `DocFirstMirror.kt`: the `ContentMirror` (doc, Room, settle, retry) and `LatencyStats`.
   - `DocOutbox.kt`: edits in Room that wait for the docs (`DocDebt`), on disk.
   - `QueuedBlobStore.kt`: files copied for sync, uploaded when connected.
-  - `LogoutGuard.kt`: logout never drops pending writes or files silently.
-  - `NotableSyncClient.kt`: Hilt singleton, session, repo, dialer; the bound `ContentMirror`.
+  - `LogoutGuard.kt`: logout never leaves pending writes or files behind silently.
+  - `DeviceLibrary.kt`: the device's one library (`files/notable-sync/library/`), whose it is,
+    login decisions (attach, same, refused), adoption of old per-account folders.
+  - `NotableSyncClient.kt`: Hilt singleton; opens the device library (with or without an
+    account), login, logout, dialer, migration; the bound `ContentMirror`.
   - `data/EditorWriteQueue.kt`: the editor's serial write queue and `PendingLocalWrites`.
   - `data/LibraryEdits.kt`: every folder, notebook, page and import write (via
     `AppRepository.edits`), each through the `ContentMirror`.
@@ -169,6 +172,31 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     `sync.automerge.*`, `data.*`, `editor.*`: 275 pass, 2 live tests skipped, 0 fail. `assembleDebug`
     and `compileDebugAndroidTestKotlin` build.
 
+- Done, not committed (2026-10-11, Phase 4 "local-only mode"; unit tests and `assembleDebug`,
+  not on device, not against the live server):
+  - **One device library** (`DeviceLibrary.kt`, ADR-001 "Local-only mode"): `files/notable-sync/
+    library/` with `library.json` (`libraryUrl`, `owner`, `migrate`). Without an account the first
+    start makes a library doc of its own and copies Room into it (`migrate` stays set until a run
+    copies everything, so a crash resumes; progress and errors show as a snackbar and in
+    Settings → Sync). An old `<hash>/` folder of the logged-in account is adopted.
+  - **No Room-only writes.** `DocFirstMirror` waits for the first open (`awaitLibrary`) and throws
+    before Room when no library is open. Writes during login/logout wait for the switch
+    (`mirror.exclusive`) and use the new session.
+  - **Login** (`NotableSyncClient.login`): `DeviceLibrary.decideLogin` → `Attach` (device's own
+    library: owner and the account's library URL saved, copy due), `Same`, or `Refused`
+    (another owner, or the same name with another library doc; the new session is revoked and
+    `LibraryOwnedElsewhere` shown). Once connected the copy runs into the account's library:
+    docs made here are reused (no second doc), then `LocalDocWriter.mergeLocalCopies` adds this
+    device's pages, strokes and images to notebooks the account already had (reading the local
+    copy with `LocalDocs.peek`, from disk, so it isn't uploaded).
+  - **Logout** keeps the library (owner stays) and reopens it without an account.
+    `LogoutGuard.forgetAccountFiles` is gone.
+  - Tests: `DeviceLibraryTest` (9), `LocalOnlyLibraryTest` (5: first start, crash resume, attach
+    with the server's doc count checked, a notebook the account had, logout + refused login),
+    `FakeSyncServer` (an in-process automerge-repo peer over in-memory transports), new cases in
+    `DocFirstMirrorTest`, `RepoLocalDocsTest`. `sync.automerge.*` and `data.*`: 249 pass, 2 live
+    tests skipped. `assembleDebug` builds.
+
 Known gaps:
 
 - A projection that read the doc between a page-cut's remove and re-add, and applies after the
@@ -177,14 +205,27 @@ Known gaps:
   remote put (it wins over the delete), so Room lacks it until that stroke changes again. (For a
   delete in the outbox, the retry deletes it from the doc, so local wins there.)
 - "Sync first" can't see whether the server has the repo's last commits (automerge-java 0.0.9
-  keeps peer sync state private); it waits for zero pending while connected, then 3 s. A clean
-  logout still deletes the repo, so a commit not yet sent is then in Room only.
-- A folder kept by "log out anyway" stays until the next login to that account; logging in to
-  another account never sends it. Edits made while signed out are Room-only (see below).
-- An editor write still queued at the moment of logout may land Room-only (the session is gone
-  when it runs).
-- If the server account is deleted and recreated under the same name, a kept folder's cached
-  library URL is stale; "Upload notebooks" refuses with "log out and in again".
+  keeps peer sync state private); it waits for zero pending while connected, then 3 s. The
+  library stays after logout, so an unsent commit goes up at the next login to that account.
+- A library belongs to the first account that logs in, for good: another account (or the same
+  name recreated on the server) is refused, and there is no action yet to move the library to
+  another account or start a fresh one. Reinstalling clears it (Room in shared storage stays,
+  and becomes the next library's content).
+- Old per-account folders other than the logged-in account's (`files/notable-sync/<hash>/`, kept
+  by "log out anyway" before this change) are left as they are: not adopted, not deleted.
+- Merging into a notebook the account already had: deletions, renames, moves and page order made
+  in the local copy don't carry over (the account's win); only missing pages, strokes and images
+  are added. Its local doc stays in the repo.
+- The copy of Room runs only when due (first start, first login, adoption) or from the "Copy
+  notebooks" button. While a run has failures (a missing file), it reruns at every start or
+  reconnect, with a snackbar each time.
+- A library that can't open makes every write fail ("Not saved"), shown in Settings → Sync; there
+  is no recovery action.
+- A library adopted without its URL and then logged out has no writer: writes wait in the outbox
+  until the next login. Without an account the projector can't fetch a blob missing on the
+  device; that notebook's projection fails and retries.
+- `NotableSyncClient`'s start/login/logout/open glue has no unit test; the flows are tested on
+  `DeviceLibrary`, `LocalDocWriter` and repos directly.
 - An unreadable outbox file is moved aside and reported in the sync status; its edits are then
   Room-only. No reconcile from Room exists yet.
 - A debt that can never succeed (e.g. an image whose file is gone) is retried forever; it shows as
@@ -213,9 +254,6 @@ Known gaps:
 - `/home/beat/projects/notable` (main) has an uncommitted UI refresh that changes
   `LibraryViewModel`, `NotebookConfig`, `HomeView` and adds `PaperActions.kt`. When merged, its
   writes must go through `appRepository.edits`.
-- Signed out (no session), edits go to Room only by design; "Upload notebooks" copies only
-  notebooks without a library entry, so edits to already uploaded notebooks made while signed out
-  are not sent. (Logout deletes the local repo, so this only matters after logging in again.)
 
 ## Next
 
@@ -237,8 +275,13 @@ Known gaps:
    each reaches `dump` and the PWA. Delete the open page from quick nav, and from the other side,
    and see the editor move on. `device-peer.ts` needs ops for that (`delete-page`, `move-page`,
    `delete-notebook`, `rename-folder`).
+   Then local-only mode: update the `.dev` build over a logged-in install (its folder is
+   adopted; Room-only notebooks are copied up on connect); log out, edit, log in again (the edit
+   arrives); try another account (refused, nothing changes); on a fresh `.dev` install with
+   notebooks in `notabledb-dev`, the first start copies them (snackbar), edits work offline with
+   no account, and the first login puts them in the account (`dump`: one doc per notebook).
+   Optionally a live JVM test of attaching, like `LiveServerOfflineEditsTest`.
 2. The rest of Phase 4:
-   - local-only mode without an account (automatic migration on first start);
    - Android share-as-PDF from the same projection as the PWA;
    - EPUB import on Android.
 

@@ -222,7 +222,19 @@ Known gaps in part B:
       `LibraryEditsTest`, new cases in `LocalDocWriterTest`, `DocFirstMirrorTest`. Unit tests
       only; not on device.
   - [ ] **Device check of 4b** (see the handoff's "Next").
-- [ ] Local-only mode without an account: automatic migration on first start.
+- [x] **Local-only mode without an account** (`DeviceLibrary.kt`, ADR-001 "Local-only mode").
+      One device library in `files/notable-sync/library/`, with or without an account. The first
+      start makes its library doc and copies Room into it automatically (progress and errors in
+      a snackbar and in Settings → Sync; due until a run copies everything, so a crash resumes).
+      Every write goes to the docs; the Room-only fallback is gone (a write waits for the
+      library to open, and fails before Room if it can't). The first login attaches the library
+      to the account: the copy runs again into the account's library, reusing every doc, and
+      sync uploads them. Notebooks the account had already get this device's pages, strokes
+      and images added (`LocalDocWriter.mergeLocalCopies`), nothing deleted. Logout keeps the
+      library. A login to another account is refused. Old per-account folders are adopted.
+      `DeviceLibraryTest`, `LocalOnlyLibraryTest` (real repos and an in-process sync peer,
+      `FakeSyncServer`, which counts the server's docs), new cases in `DocFirstMirrorTest` and
+      `RepoLocalDocsTest`. Unit tests only; not on device, not against the live server.
 - [ ] Rebuild Room from the docs on demand (a debug action and a test).
 - [ ] Android "share as PDF" uses the same projection as the PWA.
 - [ ] EPUB import on Android with fixed layout parameters.

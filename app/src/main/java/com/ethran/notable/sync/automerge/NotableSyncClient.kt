@@ -8,6 +8,8 @@ import com.ethran.notable.data.LocalChange
 import com.ethran.notable.data.PendingLocalWrites
 import com.ethran.notable.data.db.CryptoHelper
 import com.ethran.notable.data.RemoteEdits
+import com.ethran.notable.data.events.AppEvent
+import com.ethran.notable.data.events.AppEventBus
 import com.ethran.notable.data.db.FolderDao
 import com.ethran.notable.data.db.ImageDao
 import com.ethran.notable.data.db.NotebookDao
@@ -17,6 +19,7 @@ import com.ethran.notable.data.getDbDir
 import com.ethran.notable.di.ApplicationScope
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.shipbook.shipbooksdk.ShipBook
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,10 +43,7 @@ import org.automerge.repo.DialerHandle
 import org.automerge.repo.DocHandle
 import org.automerge.repo.ListenerRegistration
 import org.automerge.repo.Repo
-import org.automerge.repo.RepoConfig
-import org.automerge.repo.storage.FileSystemStorage
 import java.io.File
-import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -83,6 +83,15 @@ data class ProjectionStatus(
     val commitLatency: LatencySummary? = null,
 )
 
+/**
+ * The device library (see [DeviceLibrary]): whose it is ([owner], null while it is the device's
+ * own), and why it could not be opened ([openError]; edits can't be saved then).
+ */
+data class LocalLibraryStatus(val owner: LibraryOwner? = null, val openError: String? = null)
+
+/** A login refused because this device's library belongs to another account ([LoginDecision.Refused]). */
+class LibraryOwnedElsewhere(message: String) : Exception(message)
+
 sealed interface MigrationState {
     data object Idle : MigrationState
     data class Running(val progress: MigrationProgress) : MigrationState
@@ -91,12 +100,14 @@ sealed interface MigrationState {
 }
 
 /**
- * The Automerge sync client (ADR-001): the account, the local repo, and its WebSocket to the
- * server. One per process. The repo keeps docs on disk under `files/notable-sync/<account>/`.
+ * The Automerge sync client (ADR-001): the device library, the account, and the WebSocket to the
+ * server. One per process. The repo keeps docs on disk under `files/notable-sync/library/`
+ * ([DeviceLibrary]).
  *
- * It is also the [ContentMirror]: editor writes go into the docs first (see [DocFirstMirror]).
- * With a stored account that has synced once, that works offline from launch; without one,
- * edits go to Room only.
+ * It is also the [ContentMirror]: every write goes into the docs first (see [DocFirstMirror]),
+ * with or without an account. Without one, the library is the device's own and nothing is sent;
+ * Room is copied into it on the first start. The first login attaches it to that account, a
+ * logout keeps it, and a login to another account is refused.
  */
 @Singleton
 class NotableSyncClient @Inject constructor(
@@ -108,10 +119,12 @@ class NotableSyncClient @Inject constructor(
     private val strokeDao: StrokeDao,
     private val imageDao: ImageDao,
     private val pendingWrites: PendingLocalWrites,
+    private val events: AppEventBus,
     @param:ApplicationScope private val scope: CoroutineScope,
 ) : ContentMirror {
     private val root = File(context.filesDir, "notable-sync")
     private val accounts = AccountStore(File(root, "account.json"), KeystoreCipher(crypto))
+    private val library = DeviceLibrary(root)
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -126,6 +139,10 @@ class NotableSyncClient @Inject constructor(
 
     private val _projection = MutableStateFlow(ProjectionStatus())
     val projection: StateFlow<ProjectionStatus> = _projection.asStateFlow()
+    private val _local = MutableStateFlow(LocalLibraryStatus())
+    val local: StateFlow<LocalLibraryStatus> = _local.asStateFlow()
+    /** Completed once [start] tried to open the library; writes wait for it. */
+    private val firstOpen = CompletableDeferred<Unit>()
 
     private val lock = Mutex()
     @Volatile
@@ -137,10 +154,12 @@ class NotableSyncClient @Inject constructor(
         outbox = { session?.outbox },
         report = ::onWriteResult,
         latency = commitLatency,
+        awaitLibrary = { firstOpen.await() },
     )
 
+    /** The open device library; with an [account] (and its [api]) also connected to the server. */
     private class Session(
-        val account: StoredAccount, val api: ServerApi, val repo: Repo, val storage: DurableStorage, dir: File,
+        val account: StoredAccount?, val api: ServerApi?, val repo: Repo, val storage: DurableStorage, dir: File,
         /** Edits in Room that wait for the docs; see [DocFirstMirror]. */
         val outbox: DocOutbox,
         /** Files copied for sync that wait for the server. */
@@ -155,10 +174,11 @@ class NotableSyncClient @Inject constructor(
         val queue = Channel<String>(Channel.UNLIMITED)
         val handles = java.util.concurrent.ConcurrentHashMap<String, DocHandle>()
         val listeners = java.util.concurrent.ConcurrentHashMap<String, ListenerRegistration>()
-        val libraryUrlCache = LibraryUrlCache(File(dir, "library-url"))
         /** One per session, shared by the writer (settle) and the projector. */
         val projectionState = ProjectionStateStore(File(dir, "projection.json"))
         val migrationState = MigrationStateStore(File(dir, "migration.json"))
+        /** Room is still to be copied in; runs once the session can ([DeviceLibraryState.migrate]). */
+        @Volatile var migrateDue = false
         @Volatile var libraryUrl: String? = null
         @Volatile var writer: LocalDocWriter? = null
         var projector: AutomergeProjector? = null
@@ -182,40 +202,76 @@ class NotableSyncClient @Inject constructor(
         }
     }
 
-    /** Connects with the stored account, if any. Safe to call more than once. */
+    /**
+     * Opens the device library, and connects with the stored account, if any. Without an account
+     * the library is the device's own; on the first start it is made, and Room copied into it.
+     * Safe to call more than once.
+     */
     fun start() {
         scope.launch {
-            lock.withLock {
-                if (session != null) return@withLock
-                when (val load = accounts.load()) {
-                    AccountLoad.None -> _status.value = SyncStatus.SignedOut
-                    is AccountLoad.Unreadable -> _status.value = SyncStatus.AccountUnreadable(load.reason)
-                    is AccountLoad.Present -> connect(load.account)
+            try {
+                lock.withLock {
+                    if (session != null) return@withLock
+                    when (val load = accounts.load()) {
+                        AccountLoad.None -> openReporting(null)
+                        is AccountLoad.Unreadable -> {
+                            _status.value = SyncStatus.AccountUnreadable(load.reason)
+                            openReporting(null)
+                        }
+                        is AccountLoad.Present -> {
+                            val owner = library.state()?.owner
+                            if (owner == null || owner == LibraryOwner.of(load.account)) openReporting(load.account) else {
+                                // Not reached by login/logout; the library stays as it is, and the login decides again.
+                                _status.value = SyncStatus.AccountUnreadable(
+                                    "this device's library belongs to ${owner.username}, not ${load.account.username}"
+                                )
+                                openReporting(null)
+                            }
+                        }
+                    }
                 }
+            } finally {
+                firstOpen.complete(Unit)
             }
         }
     }
 
-    /** @throws ServerError or IllegalArgumentException (bad server address), for the UI to show. */
+    /**
+     * Logs in. The device library goes with the first account that logs in here: its notebooks are
+     * then copied into the account's library under their doc URLs, and sync sends them.
+     * @throws ServerError, IllegalArgumentException (bad server address), or [LibraryOwnedElsewhere]
+     *   when the library belongs to another account; for the UI to show.
+     */
     suspend fun login(serverUrl: String, username: String, password: String) = withContext(Dispatchers.IO) {
         val base = ServerApi.parseServerUrl(serverUrl)
         val api = ServerApi(http, base)
         val result = api.login(username.trim(), password)
-        api.me(result.token) // fails fast if the session is unusable
+        val me = api.me(result.token) // fails fast if the session is unusable
         lock.withLock {
-            disconnect()
             val account = StoredAccount(base.toString(), result.username, result.token)
-            accounts.save(account)
-            connect(account)
+            val decision = library.decideLogin(LibraryOwner.of(account), me.libraryDocUrl)
+            if (decision is LoginDecision.Refused) {
+                runCatching { api.logout(result.token) }
+                throw LibraryOwnedElsewhere(decision.reason)
+            }
+            mirror.exclusive {
+                disconnect()
+                // Attached before the account is saved: a crash in between leaves a logged-out
+                // library of this account, which the next login to it continues.
+                library.attach(LibraryOwner.of(account), me.libraryDocUrl)
+                accounts.save(account)
+                openReporting(account)
+            }
         }
     }
 
     /**
-     * Ends the session on the server and forgets it here. Edits and files that wait for sync are
-     * never dropped silently ([LogoutGuard]): with any pending, [LogoutChoice.IfNothingPending]
-     * stays logged in and says what waits; [LogoutChoice.WaitForSync] syncs first;
-     * [LogoutChoice.Anyway] logs out and keeps them (Room, and the account folder for the next
-     * login to this account). Without anything pending, the account's local repo is deleted.
+     * Ends the session on the server and forgets the login here. The device library stays: its
+     * docs are the library again without an account, and the next login to this account sends
+     * what didn't reach the server. Edits and files waiting for sync are never left behind
+     * silently ([LogoutGuard]): with any pending, [LogoutChoice.IfNothingPending] stays logged in
+     * and says what waits; [LogoutChoice.WaitForSync] syncs first; [LogoutChoice.Anyway] logs out
+     * and reports what stays on this device.
      */
     suspend fun logout(choice: LogoutChoice = LogoutChoice.IfNothingPending): LogoutResult = withContext(Dispatchers.IO) {
         if (choice == LogoutChoice.WaitForSync) {
@@ -226,101 +282,156 @@ class NotableSyncClient @Inject constructor(
             val pending = PendingSync.of(_projection.value)
             if (!LogoutGuard.mayEnd(choice, pending)) return@withLock LogoutResult.StillPending(pending, null)
             val s = session
-            val warning = s?.let {
-                runCatching { it.api.logout(it.account.token) }.exceptionOrNull()
+            val warning = s?.account?.let { account ->
+                runCatching { s.api?.logout(account.token) }.exceptionOrNull()
                     ?.let { e -> "The server could not be reached, so its session stays valid until it expires: ${e.message}" }
             }
-            disconnect()
-            val kept = s?.let { LogoutGuard.forgetAccountFiles(accountDir(it.account), pending) } ?: false
-            if (kept) log.w("logged out with ${pending.writes} edits and ${pending.files} files not synced; kept in ${s?.let { accountDir(it.account) }}")
-            accounts.clear()
-            _status.value = SyncStatus.SignedOut
-            _migration.value = MigrationState.Idle
-            LogoutResult.LoggedOut(warning, if (kept) pending else PendingSync(0, 0))
+            mirror.exclusive {
+                disconnect()
+                accounts.clear()
+                _status.value = SyncStatus.SignedOut
+                _migration.value = MigrationState.Idle
+                openReporting(null)
+            }
+            if (!pending.isEmpty) log.w("logged out with ${pending.writes} edits and ${pending.files} files not synced; kept in ${library.dir}")
+            LogoutResult.LoggedOut(warning, pending)
         }
     }
 
-    /** Copies the Room library into Automerge docs; see [RoomToAutomergeMigration]. */
+    /** Copies Room into the library's docs; see [RoomToAutomergeMigration]. */
     fun migrate() {
         if (_migration.value is MigrationState.Running) return
+        _migration.value = MigrationState.Running(MigrationProgress(0, 0, null))
         scope.launch(Dispatchers.IO) {
-            _migration.value = MigrationState.Running(MigrationProgress(0, 0, null))
             _migration.value = try {
-                MigrationState.Done(runMigration())
+                val report = runMigration()
+                announce(report)
+                MigrationState.Done(report)
             } catch (e: Exception) {
                 log.e("migration failed", e)
-                MigrationState.Failed(e.message ?: e.javaClass.simpleName)
+                val why = e.message ?: e.javaClass.simpleName
+                events.tryEmit(AppEvent.ImportCompleted(context.getString(com.ethran.notable.R.string.nsync_migrate_error, why)))
+                MigrationState.Failed(why)
             }
+        }
+    }
+
+    private fun progress(p: MigrationProgress) {
+        _migration.value = MigrationState.Running(p)
+        if (p.total > 0 && p.done < p.total)
+            events.tryEmit(AppEvent.ImportProgress(p.done + 1, p.total, context.getString(com.ethran.notable.R.string.nsync_migrate_snack)))
+    }
+
+    private fun announce(r: MigrationReport) {
+        val text = if (r.migrated.isEmpty() && r.failed.isEmpty() && r.merged.isEmpty()) null
+        else context.getString(com.ethran.notable.R.string.nsync_migrate_done, r.migrated.size, r.alreadyDone.size, r.failed.size)
+        events.tryEmit(AppEvent.ImportCompleted(text))
+    }
+
+    /**
+     * Copies Room into the session's library: durable through [RepoLocalDocs], and under the same
+     * lock as the writer's on-demand copy of a notebook, so no notebook gets two docs. Logged in,
+     * it runs connected, into the account's library: notebooks with a doc here keep it (the copy
+     * only lists them), and notebooks the account had already get this device's content
+     * ([LocalDocWriter.mergeLocalCopies]). A run with nothing left over clears the library's
+     * "copy due" mark.
+     */
+    private suspend fun runMigration(): MigrationReport {
+        val s = lock.withLock { session } ?: throw IllegalStateException(_local.value.openError ?: "The library on this device is not open")
+        val report = if (s.account == null) {
+            val writer = s.writer ?: throw IllegalStateException("The library on this device is not open")
+            writer.migrateAll(::progress)
+        } else {
+            withTimeoutOrNull(30_000) { status.first { it is SyncStatus.Connected || it is SyncStatus.AuthFailed } }
+            when (val st = status.value) {
+                is SyncStatus.Connected -> Unit
+                is SyncStatus.AuthFailed -> throw ServerError.Unauthorized()
+                else -> throw IllegalStateException("Not connected to the server (${st.javaClass.simpleName})")
+            }
+            val me = s.api!!.me(s.account.token)
+            val writer = withTimeoutOrNull(60_000) {
+                while (s.writer == null && session === s) delay(200)
+                s.writer
+            } ?: throw IllegalStateException("The library document has not arrived from the server yet")
+            if (s.libraryUrl != me.libraryDocUrl)
+                throw IllegalStateException("This device's library (${s.libraryUrl}) is not the server's (${me.libraryDocUrl}); log out and in again")
+            findWithRetry(s.repo, me.libraryDocUrl) ?: throw IllegalStateException("The library document has not arrived from the server yet")
+            val r = writer.migrateAll(::progress)
+            val merged = writer.mergeLocalCopies { url ->
+                findBlocking(s.repo, url) ?: throw IllegalStateException("The server did not send the account's copy of $url")
+            }
+            r.copy(merged = merged)
+        }
+        if (report.failed.isEmpty()) lock.withLock {
+            if (session === s) {
+                library.migrationDone()
+                s.migrateDue = false
+            }
+        }
+        return report
+    }
+
+    /** A doc not yet stored here arrives over the network; the first find may come back empty. */
+    private suspend fun findWithRetry(repo: Repo, url: String) = withContext(Dispatchers.IO) { findBlocking(repo, url) }
+
+    private fun findBlocking(repo: Repo, url: String): DocHandle? {
+        val parsed = AutomergeUrl.parse(url)
+        repeat(10) { attempt ->
+            val found = repo.find(parsed).get(30, TimeUnit.SECONDS)
+            if (found.isPresent) return found.get()
+            Thread.sleep(500L * (attempt + 1))
+        }
+        return null
+    }
+
+    /** [open], recording a failure for the sync status instead of throwing. Call with [lock] held. */
+    private fun openReporting(account: StoredAccount?) {
+        try {
+            open(account)
+        } catch (e: Exception) {
+            val why = e.message ?: e.javaClass.simpleName
+            log.e("the device library could not be opened", e)
+            _local.value = LocalLibraryStatus(owner = runCatching { library.state()?.owner }.getOrNull(), openError = why)
         }
     }
 
     /**
-     * Runs the session writer's migration: durable through [RepoLocalDocs], and under the same
-     * lock as the writer's on-demand migration of a notebook, so no notebook gets two docs.
+     * Opens the device library as the session; with [account], also connects to the server. Must
+     * be called with [lock] held, and with no session open.
      */
-    private suspend fun runMigration(): MigrationReport {
-        val s = lock.withLock { session } ?: throw IllegalStateException("Log in first")
-        withTimeoutOrNull(30_000) { status.first { it is SyncStatus.Connected || it is SyncStatus.AuthFailed } }
-        when (val st = status.value) {
-            is SyncStatus.Connected -> Unit
-            is SyncStatus.AuthFailed -> throw ServerError.Unauthorized()
-            else -> throw IllegalStateException("Not connected to the server (${st.javaClass.simpleName})")
-        }
-        val me = s.api.me(s.account.token)
-        val writer = withTimeoutOrNull(60_000) {
-            while (s.writer == null && session === s) delay(200)
-            s.writer
-        } ?: throw IllegalStateException("The library document has not arrived from the server yet")
-        if (s.libraryUrl != me.libraryDocUrl)
-            throw IllegalStateException("This device's library (${s.libraryUrl}) is not the server's (${me.libraryDocUrl}); log out and in again")
-        return writer.migrateAll { _migration.value = MigrationState.Running(it) }
-    }
-
-    /** A doc not yet stored here arrives over the network; the first find may come back empty. */
-    private suspend fun findWithRetry(repo: Repo, url: String) = withContext(Dispatchers.IO) {
-        val parsed = AutomergeUrl.parse(url)
-        repeat(10) { attempt ->
-            val found = repo.find(parsed).get(30, TimeUnit.SECONDS)
-            if (found.isPresent) return@withContext found.get()
-            kotlinx.coroutines.delay(500L * (attempt + 1))
-        }
-        null
-    }
-
-    /** Must be called with [lock] held. */
-    private fun connect(account: StoredAccount) {
-        val accountDir = accountDir(account)
-        val dir = File(accountDir, "repo").apply { mkdirs() }
-        val storage = DurableStorage(FileSystemStorage(dir.toPath()))
-        val repo = Repo.load(RepoConfig.builder().storage(storage).build())
-        val api = ServerApi(http, ServerApi.parseServerUrl(account.serverUrl))
+    private fun open(account: StoredAccount?) {
+        val opened = library.open(account?.let(LibraryOwner::of))
+        val state = opened.state
+        val dir = library.dir
+        val api = account?.let { ServerApi(http, ServerApi.parseServerUrl(it.serverUrl)) }
         val wake = Channel<Unit>(Channel.CONFLATED)
-        val blobs = QueuedBlobStore(File(accountDir, "blobs"), androidFileOpener(context)) { n ->
+        val blobs = QueuedBlobStore(File(dir, "blobs"), androidFileOpener(context)) { n ->
             _projection.update { it.copy(pendingBlobs = n) }
             if (n > 0) wake.trySend(Unit)
         }
-        val s = Session(account, api, repo, storage, accountDir, loadOutbox(accountDir), blobs, wake)
+        val s = Session(account, api, opened.repo, opened.storage, dir, loadOutbox(dir), blobs, wake)
+        s.migrateDue = state.migrate
         session = s
+        _local.value = LocalLibraryStatus(owner = state.owner)
         _projection.update { it.copy(pendingWrites = s.outbox.size, pendingBlobs = blobs.pendingCount()) }
         startBackground(s)
-        _status.value = SyncStatus.Connecting(account.serverUrl, account.username)
-        // Known from an earlier session: write and project from the local repo, before (or without) a connection.
-        val cached = try {
-            s.libraryUrlCache.load()
-        } catch (e: java.io.IOException) {
-            log.e("library URL cache unreadable; waiting for the server", e)
-            null
-        }
-        if (cached != null) {
-            useLibrary(s, cached)
+        // Known: write and project from the local repo, before (or without) a connection.
+        state.libraryUrl?.let {
+            useLibrary(s, it)
             startProjection(s)
         }
+        if (account == null || api == null) {
+            if (s.migrateDue) migrate()
+            return
+        }
+        _status.value = SyncStatus.Connecting(account.serverUrl, account.username)
         val dialer = OkHttpDialer(http, ServerApi.syncUrl(api.baseUrl), account.token, object : OkHttpDialer.Listener {
             override fun onOpen() {
                 if (session !== s) return
                 _status.value = SyncStatus.Connected(account.serverUrl, account.username)
                 startProjection(s)
                 s.wake.trySend(Unit)
+                if (s.migrateDue) migrate()
             }
 
             override fun onClosed(reason: String) {
@@ -335,10 +446,10 @@ class NotableSyncClient @Inject constructor(
                 scope.launch { lock.withLock { if (session === s) s.dialer?.close() } }
             }
         })
-        s.dialer = repo.dial(dialer, DialerConfig.defaults())
+        s.dialer = s.repo.dial(dialer, DialerConfig.defaults())
     }
 
-    /** The library doc is known: editor writes go to the docs from now on. */
+    /** The library doc is known: writes go to the docs from now on. */
     private fun useLibrary(s: Session, url: String) {
         s.libraryUrl = url
         s.writer = LocalDocWriter(
@@ -393,7 +504,9 @@ class NotableSyncClient @Inject constructor(
 
     private fun uploadBlobs(s: Session) {
         try {
-            val r = s.blobs.drain({ sha, size, open -> s.api.putBlob(s.account.token, sha, size, open) })
+            val api = s.api ?: return
+            val token = s.account?.token ?: return
+            val r = s.blobs.drain({ sha, size, open -> api.putBlob(token, sha, size, open) })
             _projection.update { it.copy(blobError = null) }
             warn(r.rejected.map { "File ${it.sha.take(12)} stays on this device and won't sync: ${it.reason}" })
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -418,14 +531,6 @@ class NotableSyncClient @Inject constructor(
         runCatching { s.repo.close() }
     }
 
-    /** One folder per server+user, so a second account never sees the first one's docs. */
-    private fun accountDir(account: StoredAccount): File {
-        val key = MessageDigest.getInstance("SHA-256")
-            .digest("${account.serverUrl}\n${account.username}".toByteArray())
-            .take(8).joinToString("") { "%02x".format(it) }
-        return File(root, key)
-    }
-
     /**
      * Server → Room (plan Phase 3 part B). One worker per session applies queued docs in order;
      * change listeners only enqueue, since automerge-java forbids blocking inside them. On every
@@ -438,15 +543,24 @@ class NotableSyncClient @Inject constructor(
         }
         s.projectionJob = scope.launch(Dispatchers.IO) {
             try {
-                val libraryUrl = s.libraryUrl ?: s.api.me(s.account.token).libraryDocUrl.also { url ->
-                    s.libraryUrlCache.save(url)
-                    if (session === s) useLibrary(s, url)
+                // Only a folder adopted from before local-only mode can lack it; the server tells it.
+                val libraryUrl = s.libraryUrl ?: s.api!!.me(s.account!!.token).libraryDocUrl.also { url ->
+                    lock.withLock {
+                        if (session !== s) return@launch
+                        library.setLibraryUrl(url)
+                        useLibrary(s, url)
+                    }
                 }
                 s.projector = AutomergeProjector(
                     sink = RoomProjectionSink(folderDao, notebookDao, pageDao, strokeDao, imageDao),
                     files = DownloadingProjectionFiles(
                         // A file of this device's not uploaded yet is still in the queue.
-                        download = { sha, dest -> if (!s.blobs.copyQueued(sha, dest)) s.api.getBlob(s.account.token, sha, dest) },
+                        download = { sha, dest ->
+                            if (!s.blobs.copyQueued(sha, dest)) {
+                                val api = s.api ?: throw java.io.IOException("file $sha is not on this device, and no account is logged in to fetch it")
+                                api.getBlob(s.account!!.token, sha, dest)
+                            }
+                        },
                         dir = File(getDbDir(), "sync-blobs").apply { mkdirs() },
                         open = androidFileOpener(context),
                     ),

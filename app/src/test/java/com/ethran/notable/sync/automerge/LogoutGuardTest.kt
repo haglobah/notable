@@ -1,7 +1,5 @@
 package com.ethran.notable.sync.automerge
 
-import com.ethran.notable.data.LocalChange
-import com.ethran.notable.data.PendingLocalWrites
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -10,15 +8,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
-import java.io.File
 
 class LogoutGuardTest {
-    @get:Rule
-    val tmp = TemporaryFolder()
-
     private val connected = SyncStatus.Connected("https://s", "u")
 
     @Test
@@ -33,39 +25,6 @@ class LogoutGuardTest {
             assertFalse(LogoutGuard.mayEnd(LogoutChoice.WaitForSync, p))
             assertTrue(LogoutGuard.mayEnd(LogoutChoice.Anyway, p))
         }
-    }
-
-    @Test
-    fun `a logout with nothing pending deletes the account folder`() {
-        val dir = accountDir()
-        val kept = LogoutGuard.forgetAccountFiles(dir, PendingSync(0, 0))
-        assertFalse(kept)
-        assertFalse(dir.exists())
-    }
-
-    @Test
-    fun `a logout anyway keeps the waiting edits and files for the next login`() {
-        val dir = accountDir()
-        val outbox = File(dir, "pending-doc-writes.json")
-        DocOutbox(outbox, PendingLocalWrites()).record(LocalChange.StrokesDeleted("p1", listOf("s1")))
-        val blobs = QueuedBlobStore(File(dir, "blobs"), { File(it).inputStream() })
-        val img = tmp.newFile("img.png").apply { writeBytes(byteArrayOf(1, 2, 3)) }
-        blobs.upload(img.path)
-
-        val kept = LogoutGuard.forgetAccountFiles(dir, PendingSync(1, 1))
-
-        assertTrue(kept)
-        assertEquals(listOf(DocDebt.Strokes("p1", setOf("s1"))), DocOutbox(outbox, PendingLocalWrites()).debts())
-        assertEquals(1, QueuedBlobStore(File(dir, "blobs"), { File(it).inputStream() }).pendingCount())
-        assertTrue("the repo holds commits the server may not have yet", File(dir, "repo/doc").isFile)
-    }
-
-    @Test
-    fun `an unreadable outbox set aside is never deleted by a logout`() {
-        val dir = accountDir()
-        File(dir, "pending-doc-writes.unreadable-1.json").writeText("garbage")
-        assertTrue(LogoutGuard.forgetAccountFiles(dir, PendingSync(0, 0)))
-        assertTrue(File(dir, "pending-doc-writes.unreadable-1.json").isFile)
     }
 
     @Test
@@ -98,11 +57,5 @@ class LogoutGuardTest {
         val left = LogoutGuard.awaitSynced(projection, status, timeoutMs = 100, quietMs = 10)
         assertEquals(PendingSync(0, 0), left?.pending)
         assertEquals("not connected to the server (no network)", left?.reason)
-    }
-
-    private fun accountDir(): File = tmp.newFolder("acct").apply {
-        File(this, "repo").mkdirs()
-        File(this, "repo/doc").writeText("x")
-        File(this, "library-url").writeText("automerge:abc")
     }
 }

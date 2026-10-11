@@ -90,6 +90,19 @@ class RepoLocalDocsTest {
     }
 
     @Test
+    fun `peek reads a doc as stored, snapshots and later edits alike`() {
+        val (repo, storage) = open(tmp.newFolder())
+        repo.use {
+            val docs = RepoLocalDocs(repo, storage, libraryUrl = "unused")
+            val url = docs.createDoc(Document().apply { startTransaction().apply { set(ObjectId.ROOT, "k", NewValue.str("v0")); commit() } })
+            repeat(40) { i ->
+                docs.edit(url) { d -> d.startTransaction().apply { set(ObjectId.ROOT, "k", NewValue.str("v${i + 1}")); commit() } }
+            }
+            assertEquals("v40", docs.peek(url) { d -> (d.get(ObjectId.ROOT, "k").get() as AmValue.Str).value })
+        }
+    }
+
+    @Test
     fun `a doc created from many changes is on disk when createDoc returns`() {
         val dir = tmp.newFolder()
         val (repo, storage) = open(dir)

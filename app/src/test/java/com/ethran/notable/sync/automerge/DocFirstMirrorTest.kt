@@ -26,7 +26,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.util.Collections
 
-/** Editor writes: doc commit, on disk, then Room, then settle; Room alone without a session. */
+/** Editor writes: doc commit, on disk, then Room, then settle; never Room alone. */
 class DocFirstMirrorTest {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -96,16 +96,39 @@ class DocFirstMirrorTest {
     }
 
     @Test
-    fun `without a session only Room is written`() = runBlocking {
+    fun `a write made before the library is open waits for it, then goes to the doc`() = runBlocking {
         val d = device()
         val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
-        val before = d.docStrokes().keys
-        val r = mirror(null).write(change) { d.room.roomWrite(change); "done" }
+        val opened = CompletableDeferred<Unit>()
+        var w: LocalDocWriter? = null
+        var o: DocOutbox? = null
+        val m = DocFirstMirror({ w }, { o }, { reported += it }, LatencyStats(), awaitLibrary = { opened.await() })
 
-        assertEquals("done", r)
+        val write = async(Dispatchers.IO) { m.write(change) { d.room.roomWrite(change); "done" } }
+        delay(200)
+        assertNull("nothing written while the library opens", d.room.sink.strokes["s2"])
+        w = d.writer
+        o = outbox()
+        opened.complete(Unit)
+
+        assertEquals("done", write.await())
         assertNotNull(d.room.sink.strokes["s2"])
-        assertEquals(before, d.docStrokes().keys)
-        assertTrue(log.isEmpty())
+        assertTrue("s2" in d.docStrokes())
+    }
+
+    @Test
+    fun `with no library open a write fails and Room is not touched`() = runBlocking {
+        val d = device()
+        val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
+        val creation = LocalChange.NotebookCreated("nb9")
+
+        val write = runCatching { mirror(null).write(change) { d.room.roomWrite(change) } }
+        val create = runCatching { mirror(null).create(creation) { d.room.sink.notebooks["nb9"] = Notebook(id = "nb9", title = "x", createdAt = t0, updatedAt = t1) } }
+
+        assertTrue(write.isFailure)
+        assertTrue(create.isFailure)
+        assertNull("no Room-only edit", d.room.sink.strokes["s2"])
+        assertNull(d.room.sink.notebooks["nb9"])
     }
 
     @Test

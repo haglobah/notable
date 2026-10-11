@@ -10,10 +10,13 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * [ContentMirror] over the session's [LocalDocWriter] (ADR-001: the docs are the source of truth).
+ * [ContentMirror] over the device library's [LocalDocWriter] (ADR-001: the docs are the source of
+ * truth, with or without an account).
  *
  * A write is: doc commit, which returns once it's on disk; Room write; settle, so the projector
- * doesn't apply the commit to Room again. Signed out ([outbox] gives null) only Room is written.
+ * doesn't apply the commit to Room again. A write waits until the device library is open
+ * ([awaitLibrary]); with none open ([outbox] gives null, e.g. it failed to open) the write fails
+ * before Room is touched. There is no Room-only write.
  *
  * A doc write that fails, or that can't run yet because the library isn't known ([writer] gives
  * null), is recorded in the [DocOutbox] before Room is written, and [retryPending] brings it to the
@@ -32,22 +35,31 @@ class DocFirstMirror(
     private val latency: LatencyStats,
     private val io: CoroutineContext = Dispatchers.IO,
     private val nanoTime: () -> Long = System::nanoTime,
+    private val awaitLibrary: suspend () -> Unit = {},
 ) : ContentMirror {
     private val lock = Mutex()
 
-    override suspend fun <T> write(change: LocalChange, queuedAtNanos: Long?, room: suspend () -> T): T = lock.withLock {
-        val o = outbox() ?: return@withLock room()
-        val w = writer() ?: return@withLock owe(o, change) { room() }
-        val receipt = docStep(WRITE_FAILED) { w.write(change) } ?: return@withLock owe(o, change) { room() }
+    override suspend fun <T> write(change: LocalChange, queuedAtNanos: Long?, room: suspend () -> T): T {
+        awaitLibrary()
+        return lock.withLock { write(change, queuedAtNanos, room, open()) }
+    }
+
+    private suspend fun <T> write(change: LocalChange, queuedAtNanos: Long?, room: suspend () -> T, o: DocOutbox): T {
+        val w = writer() ?: return owe(o, change) { room() }
+        val receipt = docStep(WRITE_FAILED) { w.write(change) } ?: return owe(o, change) { room() }
         if (queuedAtNanos != null) latency.record((nanoTime() - queuedAtNanos) / 1_000_000)
         val result = room()
         settle(w, receipt)
-        result
+        return result
     }
 
     /** Room first, because the doc is built from the new rows; then the doc, then settle. */
-    override suspend fun <T> create(change: LocalChange, room: suspend () -> T): T = lock.withLock {
-        val o = outbox() ?: return@withLock room()
+    override suspend fun <T> create(change: LocalChange, room: suspend () -> T): T {
+        awaitLibrary()
+        return lock.withLock { create(change, room, open()) }
+    }
+
+    private suspend fun <T> create(change: LocalChange, room: suspend () -> T, o: DocOutbox): T {
         val w = writer()
         val debt = DocDebt.of(change)
         // An earlier failed edit of the same rows stays owed: this creation doesn't replay it.
@@ -59,8 +71,11 @@ class DocFirstMirror(
             if (!owedBefore) withContext(io) { o.done(debt) }
             settle(w, r)
         }
-        result
+        return result
     }
+
+    /** The open library's outbox; fails the write when no library is open. */
+    private fun open(): DocOutbox = outbox() ?: throw java.io.IOException(NO_LIBRARY)
 
     /**
      * Brings the outbox's edits to the doc, oldest first. A pass stops at the first failure (a
@@ -108,6 +123,7 @@ class DocFirstMirror(
         const val WRITE_FAILED = "An edit is saved on this device and waits to be written for sync"
         const val RETRY_FAILED = "Edits waiting to be written for sync failed again"
         const val SETTLE_FAILED = "An edit synced, but this device may apply it to itself again"
+        const val NO_LIBRARY = "Not saved: the library on this device is not open"
     }
 }
 
