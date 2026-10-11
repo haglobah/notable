@@ -90,6 +90,7 @@ export async function startHarness(overrides: Partial<Config> = {}): Promise<Har
     publicOrigin: null,
     trustProxy: false,
     maxBlobBytes: 8 * 1024 * 1024,
+    staticDir: null,
     sessionIdleDays: 180,
     // Cheap hashing keeps tests fast; production uses the defaults in config.ts.
     argon2: { memory: 1024, passes: 1, parallelism: 1 },

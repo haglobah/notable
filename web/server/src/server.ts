@@ -1,3 +1,4 @@
+import { staticHandler } from "./static.ts"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { Duplex } from "node:stream"
 import { mkdirSync } from "node:fs"
@@ -57,6 +58,7 @@ export async function startServer(config: Config, log: (msg: string) => void = (
     },
   })
 
+  const serveStatic = config.staticDir ? staticHandler(config.staticDir) : null
   const loginByUser = new FailureLimiter(5, 15 * 60_000)
   const loginByIp = new FailureLimiter(30, 15 * 60_000)
   const libraryLocks = new Map<number, Promise<string>>()
@@ -174,6 +176,14 @@ export async function startServer(config: Config, log: (msg: string) => void = (
   const routes: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<void>> = {
     "GET /api/health": async (_req, res) => json(res, 200, { ok: true }),
 
+    // The PWA's service worker answers the Web Share Target POST. This only runs when it isn't
+    // installed yet; send the person back to the app, which explains how to add the file.
+    "POST /share-target": async (req, res) => {
+      req.resume()
+      res.writeHead(303, { location: "/?share=unavailable", "cache-control": "no-store" })
+      res.end()
+    },
+
     "POST /api/login": async (req, res) => {
       if (req.headers.origin && !originAllowed(req)) throw new HttpError(403, "origin not allowed")
       const { username, password } = credentials(await readJson(req))
@@ -220,7 +230,11 @@ export async function startServer(config: Config, log: (msg: string) => void = (
     "GET /api/me": async (req, res) => {
       const { user } = requireAuth(req, false)
       const libraryDocId = await ensureLibrary(user)
-      json(res, 200, { username: user.username, libraryDocUrl: stringifyAutomergeUrl(libraryDocId as DocumentId) })
+      json(res, 200, {
+        username: user.username,
+        libraryDocUrl: stringifyAutomergeUrl(libraryDocId as DocumentId),
+        maxBlobBytes: config.maxBlobBytes,
+      })
     },
   }
 
@@ -270,6 +284,7 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       if (route) return await route(req, res)
       const blob = /^\/api\/blobs\/([^/]+)$/.exec(path)
       if (blob && HASH.test(blob[1])) return await blobRoute(req, res, blob[1])
+      if (serveStatic && (await serveStatic(req, res, path))) return
       throw new HttpError(404, "not found")
     } catch (e) {
       if (res.headersSent) return void res.destroy()

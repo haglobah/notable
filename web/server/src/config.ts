@@ -11,6 +11,8 @@ export type Config = {
   /** Take the client IP from X-Forwarded-For (set when behind a reverse proxy on the same host). */
   trustProxy: boolean
   maxBlobBytes: number
+  /** The built PWA (web/app/dist), served from the same origin. Null serves only the API. */
+  staticDir: string | null
   sessionIdleDays: number
   argon2: Argon2Params
 }
@@ -53,6 +55,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     publicOrigin,
     trustProxy: bool(env.NOTABLE_TRUST_PROXY),
     maxBlobBytes: int(env, "NOTABLE_MAX_BLOB_MIB", 512) * 1024 * 1024,
+    staticDir: env.NOTABLE_STATIC_DIR || null,
     sessionIdleDays: int(env, "NOTABLE_SESSION_IDLE_DAYS", 180),
     argon2: argon2FromEnv(env),
   }

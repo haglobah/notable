@@ -17,6 +17,7 @@ let
     NOTABLE_OPEN_SIGNUP = if cfg.openSignup then "1" else "0";
     NOTABLE_TRUST_PROXY = if cfg.trustProxy then "1" else "0";
     NOTABLE_MAX_BLOB_MIB = toString cfg.maxBlobSizeMiB;
+    NOTABLE_STATIC_DIR = "${cfg.package}/share/notable/app";
   }
   // lib.optionalAttrs (cfg.publicOrigin != null) { NOTABLE_PUBLIC_ORIGIN = cfg.publicOrigin; }
   // cfg.environment;

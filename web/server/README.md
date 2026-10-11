@@ -26,6 +26,7 @@ printf 'a password\n' | NOTABLE_STATE_DIR=/var/lib/notable node src/cli.ts user 
 | `NOTABLE_TRUST_PROXY` | `0` | `1`: take the client IP from the last `X-Forwarded-For` entry. Needed behind a reverse proxy, or every login shares the proxy's IP for rate limiting. |
 | `NOTABLE_OPEN_SIGNUP` | `0` | `1`: allow `POST /api/signup` |
 | `NOTABLE_MAX_BLOB_MIB` | `512` | Largest file upload |
+| `NOTABLE_STATIC_DIR` | unset | The built PWA (`web/app/dist`). Served from the same origin, so the session cookie reaches `/api` and `/sync`. Unset serves only the API. The NixOS module sets it to the packaged app. |
 | `NOTABLE_SESSION_IDLE_DAYS` | `180` | A session unused this long expires |
 | `NOTABLE_ARGON2_MEMORY_KIB`, `NOTABLE_ARGON2_PASSES` | `19456`, `2` | argon2id cost (OWASP baseline). Existing hashes keep their own parameters. |
 
@@ -52,10 +53,12 @@ carry an allowed `Origin`.
 | `POST /api/login {username, password}` | `200 {token, username}` and sets the cookie. Returns `401` for a wrong password or an unknown user (same body, same argon2 cost). Returns `429` with `Retry-After` after 5 failures per username or 30 per IP in 15 minutes. |
 | `POST /api/signup {username, password}` | `201` like login. `404` unless open signup is enabled; `409` if the name is taken; `400` for a bad name or a password under 10 characters. |
 | `POST /api/logout` | `204`. Revokes this session and closes its sync sockets. |
-| `GET /api/me` | `{username, libraryDocUrl}`. The library doc is created on first use. |
+| `GET /api/me` | `{username, libraryDocUrl, maxBlobBytes}`. The library doc is created on first use. Clients check `maxBlobBytes` before uploading; the server's `413` still decides. |
 | `PUT /api/blobs/<sha256>` | `201`. The server streams the body to disk and verifies the hash. Returns `400` on a mismatch and `413` over the limit. |
 | `GET`/`HEAD /api/blobs/<sha256>` | The file, with `immutable` caching. Served as `application/octet-stream` with `CSP: sandbox` and `nosniff`, so uploaded bytes never run on this origin. A file you don't own returns `404`, the same as a missing one. |
 | `GET /sync` (WebSocket) | automerge-repo protocol v1. Returns `401` without a session. |
+| `POST /share-target` | `303` to `/?share=unavailable`. The PWA's service worker answers this Web Share Target POST; the server sees it only before the worker is installed. |
+| any other `GET`/`HEAD` | With `NOTABLE_STATIC_DIR`: the file, or `index.html` for paths without an extension (client routes). `/assets/*` is `immutable`; everything else, including `index.html` and `sw.js`, is `no-cache`. HTML carries a strict CSP (`script-src 'self' 'wasm-unsafe-eval'`, no `eval`). Paths that resolve outside the directory are `404`. |
 
 The file store keeps one copy per content. Uploading content that already exists only adds you as
 an owner.

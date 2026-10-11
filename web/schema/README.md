@@ -33,6 +33,9 @@ Map keys are ids. Ids are not repeated inside entries.
 - `blob` is the sha256 hex digest of a file in the server's blob store.
 - `background.type` is an Android `BackgroundType` key: `native`, `image`, `imagerepeating`,
   `coverImage`, `autoPdf`, or `pdfN`.
+- A PDF or EPUB added from the PWA gets one page per document page, with background `pdfN`
+  pointing at the source blob, like Android's PDF import. EPUB pages use `pdfN` too: MuPDF opens
+  either format, and an EPUB is laid out with its library entry's `source.layout` first.
 - `points` is Notable's SB2 stroke encoding, with pressure normalized to [0, 1]. See
   `src/sb2.ts` and `StrokePointConverter.kt`.
 - Strokes are immutable. Editing a stroke replaces its entry, and erasing deletes its key.

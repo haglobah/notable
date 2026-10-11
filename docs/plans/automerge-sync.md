@@ -38,11 +38,15 @@ usable and verified. Later phases depend on earlier ones.
 
 ## Phase 2 — PWA (read, upload, download)
 
-- [ ] Login, library view, and offline cache.
-- [ ] Upload a PDF or EPUB: write the blob, then create the notebook doc.
-- [ ] Reader: `mupdf.js` pages with the strokes drawn on top.
-- [ ] Download: generate the PDF projection on the client.
-- [ ] Manifest and service worker: installable on iOS and Android, plus an Android share target.
+- [x] Login, library view, and offline cache. `web/app` (Solid + Vite), served by the server from
+      the same origin (`NOTABLE_STATIC_DIR`, packaged in the flake, checked in the VM test).
+- [x] Upload a PDF or EPUB: MuPDF counts pages, then hash, blob PUT with progress, then the notebook
+      doc and library entry. Tested against a real server with a second client.
+- [ ] Reader: `mupdf.js` pages with the strokes drawn on top. (`/n/:notebookId` is a placeholder.)
+- [ ] Download: generate the PDF projection on the client. (The button is in place, disabled.)
+- [x] Manifest and service worker: installable, plus an Android share target. Checked in desktop
+      Chrome: the worker is active, the shell precached, and the library loads offline from
+      IndexedDB. Install and share on a real Android or iOS device are not checked yet.
 
 At the end of this phase, Beat can upload from a phone and read in any browser.
 

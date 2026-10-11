@@ -51,7 +51,9 @@ describe("accounts and sessions", () => {
     const { token, cookie } = await login(h, "dora", "a long enough password")
     const r1 = await fetch(`${h.base}/api/me`, { headers: bearer(token) })
     assert.equal(r1.status, 200)
-    assert.equal(((await r1.json()) as { username: string }).username, "dora")
+    const body = (await r1.json()) as { username: string; maxBlobBytes: number }
+    assert.equal(body.username, "dora")
+    assert.equal(body.maxBlobBytes, 8 * 1024 * 1024, "clients check the size limit before uploading")
     const r2 = await fetch(`${h.base}/api/me`, { headers: { cookie } })
     assert.equal(r2.status, 200)
     assert.equal((await fetch(`${h.base}/api/me`)).status, 401)

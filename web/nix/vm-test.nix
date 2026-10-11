@@ -74,6 +74,19 @@ self:
         status = upgrade_status(f"-H 'Authorization: Bearer {token}'")
         assert status == "101", f"authenticated upgrade got {status}"
 
+    with subtest("the PWA is served from the same origin"):
+        page = machine.succeed(f"curl -sf {api}/")
+        assert "<title>Notable</title>" in page, "index.html not served"
+        headers = machine.succeed(f"curl -sfI {api}/n/some-notebook")
+        assert "content-security-policy:" in headers.lower(), "client route lacks the app CSP"
+        assert "cache-control: no-cache" in headers.lower(), "app shell must be revalidated"
+        machine.succeed(f"curl -sf {api}/sw.js | grep -q 'const PRECACHE = \\[\"/\"'")
+        machine.succeed(f"curl -sf {api}/manifest.webmanifest | grep -q share_target")
+        asset = machine.succeed(f"curl -sf {api}/ | grep -o '/assets/index-[^\"]*\\.js' | head -1").strip()
+        assert asset, "no hashed entry script in index.html"
+        headers = machine.succeed(f"curl -sfI {api}{asset}").lower()
+        assert "immutable" in headers, f"{asset} should be immutable"
+
     with subtest("state survives a restart"):
         machine.succeed("systemctl restart notable-server.service")
         machine.wait_for_unit("notable-server.service")

@@ -23,21 +23,38 @@ buildNpmPackage {
       ../schema/src
       ../server/package.json
       ../server/src
+      ../app/package.json
+      ../app/index.html
+      ../app/vite.config.ts
+      ../app/tsconfig.json
+      ../app/public
+      ../app/src
     ];
   };
 
-  npmDepsHash = "sha256-IiMd7/JX8mtch3WQNGGXkEZ7SoUOaCpg7yHbYK6P/os=";
+  npmDepsHash = "sha256-SovRMUmywvp92YyEFI9yHUolBLssk2RNxAMre7pwPZ8=";
 
   nodejs = nodejs_24;
   nativeBuildInputs = [ makeWrapper ];
 
-  # Node 24 strips TypeScript types at load time, so there is nothing to build.
-  dontNpmBuild = true;
+  # The server needs no build (Node 24 strips TypeScript types at load time); the PWA does.
+  buildPhase = ''
+    runHook preBuild
+    npm run build --workspace @notable/app
+    runHook postBuild
+  '';
 
   installPhase = ''
     runHook preInstall
 
-    npm prune --omit=dev --no-audit --no-fund
+    # The PWA ships as static files; its dependencies are all devDependencies and go here.
+    mkdir -p $out/share/notable
+    cp -r app/dist $out/share/notable/app
+
+    # Reinstall only the server's production dependencies. Pruning keeps the app workspace's
+    # packages (Vite, Solid, MuPDF), which the server never loads.
+    rm -rf node_modules
+    npm ci --omit=dev --workspace @notable/server --ignore-scripts --offline --no-audit --no-fund
     # Nothing runs the .bin shims.
     find node_modules -name .bin -type d -prune -exec rm -rf {} +
 
@@ -46,7 +63,8 @@ buildNpmPackage {
     # Keep node_modules/@notable/* as relative symlinks into schema/ and server/: Node refuses to
     # strip types from files whose real path lies under node_modules.
     cp -a package.json node_modules schema server $lib/
-    grep -rlZ ${nodejs_24} $lib | xargs -0 -r sed -i "s#${nodejs_24}#${nodejs-slim_24}#g"
+    # Shebangs patched by npmConfigHook point at the full nodejs; none may survive the reinstall.
+    { grep -rlZ ${nodejs_24} $lib || true; } | xargs -0 -r sed -i "s#${nodejs_24}#${nodejs-slim_24}#g"
 
     makeWrapper ${nodejs-slim_24}/bin/node $out/bin/notable-server \
       --add-flags "--disable-warning=ExperimentalWarning $lib/server/src/main.ts"
@@ -62,7 +80,7 @@ buildNpmPackage {
   disallowedReferences = [ nodejs_24 ];
 
   meta = {
-    description = "Notable sync server: Automerge sync, file store and accounts";
+    description = "Notable sync server: Automerge sync, file store, accounts and the PWA";
     license = lib.licenses.gpl3Only;
     mainProgram = "notable-server";
     platforms = lib.platforms.linux;
