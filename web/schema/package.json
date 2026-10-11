@@ -1,0 +1,19 @@
+{
+  "name": "@notable/schema",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "fixtures": "node scripts/write-fixtures.ts"
+  },
+  "dependencies": {
+    "@automerge/automerge": "3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

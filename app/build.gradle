@@ -101,6 +101,9 @@ android {
 
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
+            // automerge-java's jar carries ~48 MB of desktop JNI libs as java resources; Android
+            // loads the ones from org.automerge:androidnative instead. JVM unit tests still see them.
+            excludes += 'native/**'
         }
         jniLibs {
             pickFirsts += ['**/*.so']
@@ -224,6 +227,7 @@ dependencies {
 
     // WebDAV sync dependencies
     implementation libs.androidx.work.runtime.ktx          // Background sync
+    implementation libs.automerge         // CRDT sync (docs/adr/ADR-001)
     implementation libs.okhttp              // HTTP/WebDAV client
 //    implementation("com.google.crypto.tink:tink-android:1.21.0")    // provides encryption for sync credentials
 

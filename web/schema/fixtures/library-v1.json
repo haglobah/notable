@@ -1,0 +1,69 @@
+{
+  "folders": {
+    "f-uni": {
+      "title": "Uni",
+      "parentId": null,
+      "createdAt": "2026-01-02T03:04:05.006Z",
+      "updatedAt": "2026-02-03T04:05:06.007Z"
+    },
+    "f-math": {
+      "title": "Mathe – Übung 🙂",
+      "parentId": "f-uni",
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "updatedAt": "2026-01-03T00:00:00.001Z"
+    }
+  },
+  "notebooks": {
+    "nb-pdf": {
+      "docUrl": "automerge:2j9knpCseyhnK8izDmLpGP5WMdZQ",
+      "title": "Paper: CRDTs",
+      "folderId": "f-math",
+      "kind": "notebook",
+      "source": {
+        "kind": "pdf",
+        "blob": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      },
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "updatedAt": "2026-03-02T11:30:00.250Z"
+    },
+    "nb-epub": {
+      "docUrl": "automerge:3vKwmUKvqZ3Hxw5dJm8sRqzLcfWZ",
+      "title": "Baroque Cycle",
+      "folderId": null,
+      "kind": "notebook",
+      "source": {
+        "kind": "epub",
+        "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+        "layout": {
+          "w": 595,
+          "h": 842.5,
+          "em": 12
+        }
+      },
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-01T00:00:00.000Z"
+    },
+    "nb-plain": {
+      "docUrl": "automerge:4XfQq6dNkqY7r2pTmHf4Yk3bBdV1",
+      "title": "Journal",
+      "folderId": "f-uni",
+      "kind": "notebook",
+      "source": {
+        "kind": "none"
+      },
+      "createdAt": "2026-05-01T00:00:00.000Z",
+      "updatedAt": "2026-05-05T00:00:00.000Z"
+    },
+    "qp-1": {
+      "docUrl": "automerge:5aBcDeFgHiJkLmNoPqRsTuVwXyZ1",
+      "title": "Quick page",
+      "folderId": "f-uni",
+      "kind": "quickPage",
+      "source": {
+        "kind": "none"
+      },
+      "createdAt": "2026-06-01T00:00:00.000Z",
+      "updatedAt": "2026-06-01T00:00:00.000Z"
+    }
+  }
+}

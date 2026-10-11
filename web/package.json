@@ -1,0 +1,7 @@
+{
+  "name": "notable-web",
+  "private": true,
+  "type": "module",
+  "workspaces": ["schema"],
+  "engines": { "node": ">=24" }
+}

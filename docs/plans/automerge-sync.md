@@ -17,8 +17,11 @@ usable and verified. Later phases depend on earlier ones.
 
 ## Phase 1 — Schema and server
 
-- [ ] Write the schema for the library and notebook docs (TS types and Kotlin classes) with a golden
-      fixture. Both test suites load the fixture.
+- [x] Write the schema for the library and notebook docs (TS types and Kotlin classes) with a golden
+      fixture. Both test suites load the fixture. See `web/schema/README.md`.
+      Found two library quirks; the readers work around both:
+      @automerge/automerge 3.5.0 stores zero and negative integers as float64, and
+      automerge-java 0.0.9 `NewValue.integer()` stores F64.
 - [ ] `web/server`: accounts (argon2id, sessions, admin CLI, login rate limit).
 - [ ] `web/server`: automerge-repo sync and blob PUT/GET by sha256, with a per-doc owner check.
       Write the isolation tests first.

@@ -1,0 +1,105 @@
+{
+  "notebookId": "nb-pdf",
+  "openPageId": "p-2",
+  "defaultBackground": {
+    "type": "autoPdf",
+    "native": null,
+    "blob": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+  },
+  "pageOrder": [
+    "p-1",
+    "p-2",
+    "p-3"
+  ],
+  "pages": {
+    "p-1": {
+      "background": {
+        "type": "autoPdf",
+        "native": null,
+        "blob": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      },
+      "strokes": {
+        "s-raw": {
+          "pen": "BALLPEN",
+          "color": -16777216,
+          "size": 3.5,
+          "bbox": [
+            300,
+            1190,
+            322.75,
+            1200.5
+          ],
+          "points": "U0ICDwgAAAAAEgAAAF9yeUBpU2lTaVNpU2lTaVNpUxIAAABjbmlGakhqSGpIakhqSGpIakgAAJIkJEm2bUmS27Zt2///4ufs8fb7AAUtKickIR4bGAAACQASABsAJAAtADYAPwA=",
+          "createdAt": "2026-03-01T10:01:00.000Z",
+          "updatedAt": "2026-03-01T10:01:00.000Z"
+        },
+        "s-lz4": {
+          "pen": "FOUNTAIN",
+          "color": -65536,
+          "size": 2,
+          "bbox": [
+            100,
+            2000,
+            249.5,
+            2074.75
+          ],
+          "points": "U0ICDywBAAABwwsAAJ9ZAgAAX3BSY0ICAP//QxBaXQJfc2VLcUACAP//Qy8AgAIA//9FHwoBAP8ZH/YBAP8Z8P//SwAACAAQABgAIAAoADAAOABAAEgAUABYAGAAaABwAHgAgACIAJAAmACgAKgAsAC4AMAAyADQANgA4ADoAPAA+AAAAQgBEAEYASABKAEwATgBQAFIAVABWAFgAWgBcAF4AYABiAGQAZgBoAGoAbABuAHAAcgB0AHYAeAB6AHwAfgBAAIIAhACGAIgAigCMAI4AkACSAJQAlgCYAJoAnACeAKAAogCkAKYAqACqAKwArgCwALIAtAC2ALgAugC8AL4AgADCAMQAxgDIAMoAzADOANAA0gDUANYA2ADaANwA3gDgAOIA5ADmAOgA6gDsAO4A8ADyAPQA9gD4APoA/AD+AMABAgEEAQYBCAEKAQwBDgEQARIBFAEWARgBGgEcAR4BIAEiASQBJgEoASoBLAEuATABMgE0ATYBOAE6ATwBPgEAAUIBRAFGAUgBSgFMAU4BUAFSAVQBVgFYAVoBXAFeAWABYgFkAWYBaAFqAWwBbgFwAXIBdAF2AXgBegF8AX4BQAGCAYQBhgGIAYoBjAGOAZABkgGUAZYBmAGaAZwBngGgAaIBpAGmAagBqgGsAa4BsAGyAbQBtgG4AboBvAG+AYABwgHEAcYByAHKAcwBzgHQAdIB1AHWAdgB2gHcAd4B4AHiAeQB5gHoAeoB7AHuAfAB8gH0AfYB+AH6AfwB/gHAAgICBAIGAggCCgIMAg4CEAISAhQCFgIYAhoCHAIeAiACIgIkAiYCKAIqAiwCLgIwAjICNAI2AjgCOgI8Aj4CAAJCAkQCRgJIAkoCTAJOAlACUgJUAlYCQ==",
+          "createdAt": "2026-03-01T10:02:00.000Z",
+          "updatedAt": "2026-03-01T10:03:00.000Z"
+        }
+      },
+      "images": {},
+      "createdAt": "2026-03-01T10:00:00.000Z",
+      "updatedAt": "2026-03-01T10:03:00.000Z"
+    },
+    "p-2": {
+      "background": {
+        "type": "native",
+        "native": "lined",
+        "blob": null
+      },
+      "strokes": {
+        "s-neg": {
+          "pen": "MARKER",
+          "color": 2130771712,
+          "size": 12.25,
+          "bbox": [
+            -5.5,
+            -0.25,
+            -4,
+            0.5
+          ],
+          "points": "U0ICDwIAAAAABQAAAGphQGtIBAAAAHBAdUMAAP//pllapwAA/v8=",
+          "createdAt": "2026-03-02T09:00:00.000Z",
+          "updatedAt": "2026-03-02T09:00:00.000Z"
+        }
+      },
+      "images": {
+        "img-1": {
+          "blob": "fd61a03af4f77d870fc21e05e7e80678095c92d808cfb3b5c279ee04c74aca13",
+          "rect": [
+            40,
+            -20,
+            640,
+            480
+          ],
+          "createdAt": "2026-03-02T09:05:00.000Z",
+          "updatedAt": "2026-03-02T09:06:00.000Z"
+        }
+      },
+      "createdAt": "2026-03-02T08:00:00.000Z",
+      "updatedAt": "2026-03-02T09:06:00.000Z"
+    },
+    "p-3": {
+      "background": {
+        "type": "pdf7",
+        "native": null,
+        "blob": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      },
+      "strokes": {},
+      "images": {},
+      "createdAt": "2026-03-02T11:00:00.000Z",
+      "updatedAt": "2026-03-02T11:30:00.250Z"
+    }
+  }
+}

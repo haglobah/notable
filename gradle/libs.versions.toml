@@ -1,4 +1,5 @@
 [versions]
+automerge = "0.0.9"
 activityCompose = "1.13.0"
 agp = "9.4.1"
 compose = "1.11.3"
@@ -47,6 +48,7 @@ ui = "1.11.4"
 workRuntimeKtx = "2.12.0"
 
 [libraries]
+automerge = { group = "org.automerge", name = "automerge", version.ref = "automerge" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-core-testing = { group = "androidx.arch.core", name = "core-testing", version.ref = "coreTesting" }
