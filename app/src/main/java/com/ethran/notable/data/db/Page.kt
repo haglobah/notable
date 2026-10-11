@@ -80,6 +80,10 @@ interface PageDao {
     @Query("SELECT * FROM page WHERE notebookId is null AND parentFolderId is :folderId")
     fun getSinglePagesInFolder(folderId: String? = null): LiveData<List<Page>>
 
+    /** All quick pages (no notebook), for the one-time Automerge migration. */
+    @Query("SELECT * FROM page WHERE notebookId IS NULL")
+    suspend fun getAllQuickPages(): List<Page>
+
     @Query("SELECT id FROM page WHERE notebookId = :notebookId")
     suspend fun getPageIdsForNotebook(notebookId: String): List<String>
 

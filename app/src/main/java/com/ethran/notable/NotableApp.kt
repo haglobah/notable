@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import com.onyx.android.sdk.base.utils.ResManager
 import com.onyx.android.sdk.rx.RxManager
+import com.ethran.notable.sync.automerge.NotableSyncClient
 import dagger.hilt.android.HiltAndroidApp
 import io.shipbook.shipbooksdk.ShipBook
 import org.lsposed.hiddenapibypass.HiddenApiBypass
@@ -12,10 +13,14 @@ import java.io.File
 import java.io.FileWriter
 import java.io.PrintWriter
 import java.util.concurrent.atomic.AtomicInteger
+import javax.inject.Inject
 import androidx.core.content.edit
 
 @HiltAndroidApp
 class NotableApp : Application() {
+
+    @Inject
+    lateinit var notableSync: NotableSyncClient
 
     override fun onCreate() {
         Log.i("NotableApp", "onCreate START")
@@ -32,6 +37,8 @@ class NotableApp : Application() {
         // first stroke render throws UninitializedPropertyAccessException.
         ResManager.init(this)
         checkHiddenApiBypass()
+        // Reconnects the Automerge sync account, if one is logged in (off the main thread).
+        notableSync.start()
         Log.i("NotableApp", "onCreate FINISH")
     }
 

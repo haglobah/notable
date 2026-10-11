@@ -1,5 +1,6 @@
 package com.ethran.notable.io
 
+import com.ethran.notable.BuildConfig
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -39,7 +40,7 @@ fun shareBitmap(context: Context, bitmap: Bitmap) {
     val bitmapFile = File(cachePath, "share.png")
     val contentUri = FileProvider.getUriForFile(
         context,
-        "com.ethran.notable.provider", //(use your app signature + ".provider" )
+        "${BuildConfig.APPLICATION_ID}.provider", // must match the manifest authority
         bitmapFile
     )
 
@@ -101,7 +102,7 @@ private fun saveBitmapToCache(context: Context, bitmap: Bitmap): Uri? {
     val bitmapFile = File(cachePath, "share.png")
     return FileProvider.getUriForFile(
         context,
-        "com.ethran.notable.provider", //(use your app signature + ".provider" )
+        "${BuildConfig.APPLICATION_ID}.provider", // must match the manifest authority
         bitmapFile
     )
 }

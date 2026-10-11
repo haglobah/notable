@@ -62,6 +62,12 @@ data class AmNotebook(
     /** Normalized on read: no dangling ids, no duplicates, every page present. */
     val pageOrder: List<String>,
     val pages: Map<String, AmPage>,
+    /**
+     * Page width in stroke coordinates: the drawing device's canvas width (its shorter screen
+     * side). Other devices scale strokes by `pageWidth / canvasWidth`. Null in docs written before
+     * it existed; readers then assume the Note Air 5C's 1860 px.
+     */
+    val canvasWidth: Double? = null,
 )
 
 /**

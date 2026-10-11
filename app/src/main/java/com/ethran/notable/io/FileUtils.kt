@@ -1,5 +1,6 @@
 package com.ethran.notable.io
 
+import com.ethran.notable.BuildConfig
 import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
@@ -35,7 +36,7 @@ private val fileUtilsLog = ShipBook.getLogger("FileUtilsLogger")
 fun getLinkedFilesDir(): File {
     val documentsDir =
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-    val dbDir = File(documentsDir, "/notable/Linked")
+    val dbDir = File(documentsDir, "/notable${BuildConfig.STORAGE_DIR_SUFFIX}/Linked")
     if (!dbDir.exists()) {
         dbDir.mkdirs()
     }

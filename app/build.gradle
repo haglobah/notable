@@ -30,6 +30,8 @@ android {
         ksp {
             arg('room.schemaLocation', "${project.projectDir}/schemas")
         }
+        // Suffix for the shared folders under Documents/ (database, PDFs, images, exports).
+        buildConfigField "String", "STORAGE_DIR_SUFFIX", '""'
     }
 
     signingConfigs {
@@ -65,6 +67,11 @@ android {
 
     buildTypes {
         debug {
+            // Installs next to the release app instead of replacing it. The database lives in
+            // shared storage (Documents/notabledb), so debug builds also get their own folders:
+            // a debug build must never open the real app's data.
+            applicationIdSuffix ".dev"
+            buildConfigField "String", "STORAGE_DIR_SUFFIX", '"-dev"'
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // signingConfig signingConfigs.debug
@@ -229,6 +236,7 @@ dependencies {
     implementation libs.androidx.work.runtime.ktx          // Background sync
     implementation libs.automerge         // CRDT sync (docs/adr/ADR-001)
     implementation libs.okhttp              // HTTP/WebDAV client
+    testImplementation libs.okhttp.mockwebserver
 //    implementation("com.google.crypto.tink:tink-android:1.21.0")    // provides encryption for sync credentials
 
     // Added so that R8 optimization don't fail

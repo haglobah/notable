@@ -43,6 +43,7 @@ object AutomergeSchema {
             set(ObjectId.ROOT, "notebookId", NewValue.str(notebook.notebookId))
             setStrOrNull(this, ObjectId.ROOT, "openPageId", notebook.openPageId)
             putBackground(this, ObjectId.ROOT, "defaultBackground", notebook.defaultBackground)
+            notebook.canvasWidth?.let { set(ObjectId.ROOT, "canvasWidth", NewValue.f64(it)) }
             val order = set(ObjectId.ROOT, "pageOrder", ObjectType.LIST)
             notebook.pageOrder.forEachIndexed { i, id -> insert(order, i.toLong(), NewValue.str(id)) }
             val pages = set(ObjectId.ROOT, "pages", ObjectType.MAP)
@@ -191,7 +192,25 @@ object AutomergeSchema {
             defaultBackground = readBackground(r, ObjectId.ROOT, "defaultBackground", ""),
             pageOrder = normalizeOrder(rawOrder, pages),
             pages = pages,
+            canvasWidth = readCanvasWidth(r),
         )
+    }
+
+    private fun readCanvasWidth(r: Reader): Double? {
+        if (!r.has(ObjectId.ROOT, "canvasWidth")) return null
+        val w = r.num(ObjectId.ROOT, "canvasWidth", "")
+        if (!(w > 0)) throw SchemaException("canvasWidth: expected a positive number, got $w")
+        return w
+    }
+
+    /** The pages map of a notebook doc, for adding pages in later transactions. */
+    fun pagesOf(doc: Document): ObjectId = Reader(doc).map(ObjectId.ROOT, "pages", "pages")
+
+    /** The folders and notebooks maps of a library doc, for edits in a transaction. */
+    fun libraryMapsOf(doc: Document): Pair<ObjectId, ObjectId> {
+        val r = Reader(doc)
+        r.header(LIBRARY)
+        return r.map(ObjectId.ROOT, "folders", "folders") to r.map(ObjectId.ROOT, "notebooks", "notebooks")
     }
 
     /**
@@ -261,6 +280,7 @@ object AutomergeSchema {
         }
 
         fun keys(obj: ObjectId): List<String> = doc.keys(obj).get().toList()
+        fun has(obj: ObjectId, key: String): Boolean = doc.get(obj, key).isPresent
 
         /** [path] is the full path of the map itself. */
         fun map(obj: ObjectId, key: String, path: String): ObjectId {

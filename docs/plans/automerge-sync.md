@@ -63,14 +63,48 @@ At the end of this phase, Beat can upload from a phone and read in any browser.
 
 ## Phase 3 — Android sync (strokes still written by Room)
 
-- [ ] Login screen in Notable, with the token in encrypted storage.
-- [ ] Repo client: connect to formenos, store docs locally, pull blobs.
-- [ ] Projector: notebook doc → Room, so remote changes show up in the editor.
-- [ ] One-time migration: Room → Automerge docs, keyed by existing UUIDs, idempotent.
-- [ ] Write `canvasWidth` (the device's shorter screen side, `SCREEN_WIDTH` in portrait) into every
-      notebook doc. Readers map strokes onto PDF and EPUB pages with it. Without it they assume
-      1860 px (Note Air 5C), which misplaces ink from any other screen size. The Kotlin model and
-      writer don't have the field yet; the Kotlin reader ignores it.
+- [x] Debug builds install as `com.ethran.notable.dev` ("Notable dev") next to the release app.
+      **The Room database lives in shared storage (`Documents/notabledb`)**, so debug builds also
+      use their own folders via `BuildConfig.STORAGE_DIR_SUFFIX`: `notabledb-dev`,
+      `notable-dev/Linked`, and exports under `notable-dev`. Without that, a debug build would open
+      the real app's database. The FileProvider authority is `${applicationId}.provider`.
+      `src/debug/google-services.json` reuses the release Firebase app for the `.dev` id, with
+      analytics turned off in debug.
+- [x] Login in Notable: a Notable Sync section at the top of Settings → Sync. The token is
+      encrypted with the app's Keystore AES-GCM key (`CryptoHelper`) in a private file. Logout
+      revokes the session on the server and deletes the account's local repo. An unreadable
+      saved login shows as such; it is not treated as logged out.
+- [x] Repo client (`NotableSyncClient`, a Hilt singleton started from `NotableApp`): automerge-java
+      Repo with `FileSystemStorage` under `files/notable-sync/<account>/`, and an OkHttp WebSocket
+      dialer with `Authorization: Bearer`. samod's default backoff handles reconnecting. A 401
+      on the upgrade stops dialing and shows "log in again"; it does not loop.
+- [ ] Projector: notebook doc → Room, so remote changes show up in the editor (part B).
+- [x] One-time migration: Room → Automerge docs, keyed by existing UUIDs, idempotent and resumable
+      (`migration.json` maps notebook → doc; the library entry marks a finished notebook).
+      Folders, notebooks and quick pages are copied. PDF and image files are uploaded as blobs from
+      paths or content URIs. Strokes are written in batches of 500 per transaction. A notebook
+      with a missing file fails on its own, with the file named, and stays local. Pages listed in
+      a notebook but missing in Room are reported. Run from Settings → Sync → Upload notebooks.
+- [x] Write `canvasWidth` (`min(SCREEN_WIDTH, SCREEN_HEIGHT)`) into every notebook doc. The Kotlin
+      model, writer and reader have it now.
+- [x] Onyx auto-freeze: the sync section reads `ApplicationExitInfo`. A recent
+      `REASON_PACKAGE_STATE_CHANGE` on an Onyx device means it was frozen, and the section says so
+      with steps. It also warns about background restriction and battery optimization.
+- [ ] Verify on the Boox: install the `.dev` build, log in, migrate a few notebooks, check them in
+      the PWA. Blocked on 2026-10-11: the Boox dropped off USB during the work. The same path ran
+      end to end from the JVM against the live server (`LiveServerMigrationTest`, opt-in via
+      `NOTABLE_E2E_*`). A fresh repo read everything back, a JS client read it with
+      `web/schema`, and the live PWA rendered the PDF and the notebook with the strokes in place.
+
+Known gaps in part A:
+
+- Pages that belong to a notebook in Room but are missing from `Notebook.pageIds` are not
+  migrated. The app keeps the two in step, so this should not happen.
+- A crash between `repo.create` and writing `migration.json` leaves an orphan doc on the server.
+  The rerun creates a new one. It's harmless, but uses space.
+- Two installs on one device both handle `notable://` links, so Android asks which app to use.
+- A debug build logged into the same WebDAV server as the release app shares its remote folder.
+  WebDAV paths have no suffix.
 
 ## Phase 4 — Make Automerge authoritative
 

@@ -1,5 +1,6 @@
 package com.ethran.notable.io
 
+import com.ethran.notable.BuildConfig
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentResolver
@@ -348,7 +349,7 @@ class ExportEngine @Inject constructor(
         val documentsDir =
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
 
-        val targetPath = listOfNotBlank("notable", subfolderPath).joinToString(File.separator)
+        val targetPath = listOfNotBlank("notable${BuildConfig.STORAGE_DIR_SUFFIX}", subfolderPath).joinToString(File.separator)
         val dir = File(documentsDir, targetPath)
         if (!dir.exists()) dir.mkdirs()
         return dir.toUri()

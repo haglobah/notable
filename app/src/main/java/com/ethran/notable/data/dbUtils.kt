@@ -1,5 +1,6 @@
 package com.ethran.notable.data
 
+import com.ethran.notable.BuildConfig
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
@@ -41,7 +42,7 @@ fun getDbDirOrNull(): File? {
 fun dbDirPath(): File {
     val documentsDir =
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-    return File(documentsDir, "notabledb")
+    return File(documentsDir, "notabledb${BuildConfig.STORAGE_DIR_SUFFIX}")
 }
 
 fun ensureImagesFolder(): File {

@@ -45,7 +45,7 @@
 
         <provider
             android:name="com.ethran.notable.editor.utils.Provider"
-            android:authorities="com.ethran.notable.provider"
+            android:authorities="${applicationId}.provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

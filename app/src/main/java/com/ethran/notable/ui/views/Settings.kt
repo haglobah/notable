@@ -182,10 +182,13 @@ fun SettingsContent(
 
                     2 -> ToolbarSettings(settings, onUpdateSettings, scrollState)
 
-                    3 -> SyncSettings(
-                        state = syncUiState,
-                        callbacks = syncCallbacks,
-                    )
+                    3 -> Column {
+                        NotableSyncSection()
+                        SyncSettings(
+                            state = syncUiState,
+                            callbacks = syncCallbacks,
+                        )
+                    }
 
                     4 -> DebugSettings(settings, onUpdateSettings, goToWelcome, goToSystemInfo)
                 }

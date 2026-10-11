@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Automerge sync (ADR-001). Kept apart from strings.xml so UI work there merges cleanly. -->
+<resources>
+    <string name="nsync_title">Notable Sync</string>
+    <string name="nsync_intro">Sync notebooks with your Notable server, and read or download them as PDFs from any browser.</string>
+    <string name="nsync_server">Server</string>
+    <string name="nsync_username">Username</string>
+    <string name="nsync_password">Password</string>
+    <string name="nsync_log_in">Log in</string>
+    <string name="nsync_logging_in">Logging in…</string>
+    <string name="nsync_log_out">Log out</string>
+    <string name="nsync_status_connected">Connected to %1$s as %2$s</string>
+    <string name="nsync_status_connecting">Connecting to %1$s…</string>
+    <string name="nsync_status_offline">Offline (%1$s). Retrying automatically.</string>
+    <string name="nsync_status_auth_failed">The server no longer accepts this login. Sync stopped. Log out and log in again.</string>
+    <string name="nsync_status_unreadable">The saved login can\'t be read (%1$s). Log in again.</string>
+    <string name="nsync_migrate_title">Upload existing notebooks</string>
+    <string name="nsync_migrate_body">Copies every notebook, quick page and folder on this device to the server. Safe to run again: anything already uploaded is skipped.</string>
+    <string name="nsync_migrate">Upload notebooks</string>
+    <string name="nsync_migrating">Uploading %1$d of %2$d: %3$s</string>
+    <string name="nsync_migrate_done">Uploaded %1$d, already there %2$d, failed %3$d.</string>
+    <string name="nsync_migrate_failed_item">%1$s: %2$s</string>
+    <string name="nsync_migrate_missing_pages">%1$s: %2$d pages listed in the notebook no longer exist and were left out.</string>
+    <string name="nsync_migrate_error">Upload stopped: %1$s. Run it again to continue.</string>
+    <string name="nsync_bg_frozen">Onyx froze Notable in the background, so sync only runs while Notable is open. To fix: long-press the Notable icon, open App Optimization (or Settings → Apps → App Management), and turn off “Freeze when in background”.</string>
+    <string name="nsync_bg_killed">Android stopped Notable when its package state changed, so background sync may not run.</string>
+    <string name="nsync_bg_restricted">Background activity is restricted for Notable, so sync only runs while it is open. Allow background activity in the app\'s system settings.</string>
+    <string name="nsync_bg_battery">Battery optimization may pause sync in the background. Exempt Notable in the battery settings for reliable sync.</string>
+</resources>
