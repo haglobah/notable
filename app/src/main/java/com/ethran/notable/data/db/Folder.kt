@@ -12,6 +12,7 @@ import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import io.shipbook.shipbooksdk.ShipBook
 import java.util.Date
 import java.util.UUID
@@ -57,6 +58,10 @@ interface FolderDao {
 
     @Update
     suspend fun update(folder: Folder)
+
+    /** Insert or update without REPLACE, so children don't cascade away. */
+    @Upsert
+    suspend fun upsert(folder: Folder)
 
     @Query("DELETE FROM folder WHERE id=:id")
     suspend fun delete(id: String)

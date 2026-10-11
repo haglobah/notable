@@ -36,6 +36,7 @@ import androidx.lifecycle.ViewModel
 import com.ethran.notable.R
 import com.ethran.notable.sync.automerge.BackgroundHealth
 import com.ethran.notable.sync.automerge.MigrationState
+import com.ethran.notable.sync.automerge.ProjectionStatus
 import com.ethran.notable.sync.automerge.NotableSyncClient
 import com.ethran.notable.sync.automerge.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -55,6 +56,7 @@ fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
     val client = viewModel.client
     val status by client.status.collectAsState()
     val migration by client.migration.collectAsState()
+    val projection by client.projection.collectAsState()
     val health = remember(status) { client.backgroundHealth() }
     val scope = rememberCoroutineScope()
 
@@ -96,6 +98,8 @@ fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
             else -> {
                 Text(statusText(s), fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(12.dp))
+                ProjectionBlock(projection, enabled = s is SyncStatus.Connected, onRebuild = client::rebuildFromServer)
+                Spacer(Modifier.height(12.dp))
                 MigrationBlock(migration, enabled = s is SyncStatus.Connected, onMigrate = client::migrate)
                 Spacer(Modifier.height(12.dp))
                 Button(
@@ -123,6 +127,33 @@ fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
             Notice(it)
         }
     }
+}
+
+/** Server → this device. The rebuild is a debug action: it re-applies every doc (upsert only). */
+@Composable
+private fun ProjectionBlock(state: ProjectionStatus, enabled: Boolean, onRebuild: () -> Unit) {
+    Text(stringResource(R.string.nsync_receive_title), fontWeight = FontWeight.Bold)
+    Text(stringResource(R.string.nsync_receive_body), style = MaterialTheme.typography.body2)
+    Spacer(Modifier.height(4.dp))
+    val last = state.lastAppliedAt?.let {
+        java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it))
+    }
+    Text(
+        when {
+            state.running -> stringResource(R.string.nsync_receive_running, state.docs)
+            last != null -> stringResource(R.string.nsync_receive_done, state.docs, last)
+            else -> stringResource(R.string.nsync_receive_waiting)
+        }
+    )
+    state.errors.forEach { (doc, why) -> Notice(stringResource(R.string.nsync_receive_error, doc, why)) }
+    state.warnings.takeLast(3).forEach { Notice(it) }
+    Spacer(Modifier.height(8.dp))
+    Button(
+        onClick = onRebuild,
+        enabled = enabled && !state.running,
+        colors = eInkButtonColors(isSecondary = true),
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text(stringResource(R.string.nsync_rebuild)) }
 }
 
 @Composable

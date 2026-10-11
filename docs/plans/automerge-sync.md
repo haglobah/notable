@@ -79,7 +79,47 @@ At the end of this phase, Beat can upload from a phone and read in any browser.
       Repo with `FileSystemStorage` under `files/notable-sync/<account>/`, and an OkHttp WebSocket
       dialer with `Authorization: Bearer`. samod's default backoff handles reconnecting. A 401
       on the upgrade stops dialing and shows "log in again"; it does not loop.
-- [ ] Projector: notebook doc → Room, so remote changes show up in the editor (part B).
+- [x] Projector: library and notebook docs → Room (part B), `sync/automerge/Projector.kt`.
+      - **Incremental.** Each doc's last projected heads are stored in `projection.json`. A change
+        is applied from `doc.diff(lastHeads, heads)`: only touched pages are read, and only changed
+        rows are written (`@Upsert`, which never cascades). A doc without heads (first sync, debug
+        rebuild) is projected in full.
+      - **Deletions are explicit.** A stroke, image, page, notebook or folder is deleted only when
+        the diff deletes its key. A full projection only upserts. A folder deleted elsewhere that
+        still has content here is kept, with a warning.
+      - **No echo.** The projector writes Room only. The migration skips notebooks that already
+        have a library entry, so projected rows never go back up.
+      - **Blobs** download on demand to `notabledb[-dev]/sync-blobs/<sha256>[.pdf]` (hash checked
+        before the rename). A row already pointing at a file with the same bytes keeps its path.
+        A missing blob fails only its notebook, without advancing its heads; it retries after 30 s.
+      - **Strokes are scaled** by `localCanvasWidth / doc.canvasWidth`. Unknown pens become
+        BALLPEN with a visible warning.
+      - **Quick pages** become Room pages without a notebook. Pages only Room knows keep their
+        place at the end of `pageIds`.
+      - One worker per session. Change listeners only enqueue, since automerge-java forbids
+        blocking in them. Every (re)connect re-queues all docs.
+      - Settings → Sync shows "Changes from other devices" (status, errors, warnings), plus a
+        debug "Re-apply everything from the server".
+- [x] Editor live update. `RemoteEdits` carries each applied page edit. `PageDataManager` merges
+      it into cached pages (explicit deletes only) and drops their stale screen bitmaps. The
+      editor redraws when the open page changes. The client deletes saved previews of remotely
+      edited pages, because preview freshness compares file time with `page.updatedAt`, and synced
+      rows carry the other device's timestamps.
+      - Fixed a pre-existing editor race: `PageView.loadPage` emitted the post-load redraw before
+        the canvas observers registered, so it was lost. Local pages hid it behind a saved preview;
+        synced pages have none and opened blank. It now draws directly when nobody listens yet.
+- [x] Verify part B on the Boox (2026-10-11), with a throwaway account (deleted) and a Node script
+      as the other device:
+      - A new notebook appeared in the library.
+      - A stroke added to the page open in the editor appeared without reopening.
+      - A remote erase disappeared live.
+      - A page reorder reached `Notebook.pageIds`.
+      - The debug rebuild left Room byte-identical.
+      - The real app's database checksum was unchanged.
+      - **Background:** with Notable in the background, no remote change arrived within 60 s.
+        Onyx logs a kernel `freeze` about 3 s after the app leaves the foreground, even with
+        `isFrozen=false` and the exempt standby bucket. Changes arrive within seconds of returning
+        to the foreground. In the foreground, idle, they arrive live.
 - [x] One-time migration: Room → Automerge docs, keyed by existing UUIDs, idempotent and resumable
       (`migration.json` maps notebook → doc; the library entry marks a finished notebook).
       Folders, notebooks and quick pages are copied. PDF and image files are uploaded as blobs from
@@ -120,6 +160,22 @@ Known gaps in part A:
 - Two installs on one device both handle `notable://` links, so Android asks which app to use.
 - A debug build logged into the same WebDAV server as the release app shares its remote folder.
   WebDAV paths have no suffix.
+
+Known gaps in part B:
+
+- **Strokes drawn on the Boox after the upload are not synced.** They stay in Room only. The
+  projector never deletes them, and a full rebuild keeps them. Notebooks created after the upload
+  go up with another "Upload notebooks"; edits to already uploaded notebooks wait for Phase 4.
+- No Room transaction around one doc's projection: Room transactions are suspend-scoped, and the
+  blocking sink would deadlock in one. Writes are idempotent and heads advance last, so a crash
+  re-applies the same diff.
+- A page that is loading when an edit commits can miss it, until it is reopened.
+- Deleting the page that is open in the editor leaves the editor showing it until it is closed.
+- Changes arrive only while Notable is in the foreground on Onyx (see above). Background
+  delivery needs a foreground service or Onyx's exemption; that's a Phase 4 decision.
+- Notebook doc changes bump no `updatedAt` in the doc, so "edited" dates in the library don't move.
+- The WebDAV consent dialog still covers the Notable Sync section; it goes with WebDAV in Phase 5.
+- automerge-repo in Node logs `TimeoutNegativeWarning` on most client runs; not investigated.
 
 ## Phase 4 — Make Automerge authoritative
 

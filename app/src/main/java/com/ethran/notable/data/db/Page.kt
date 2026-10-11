@@ -12,6 +12,7 @@ import androidx.room.Query
 import androidx.room.Relation
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.Upsert
 import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.utils.logCallStack
 import io.shipbook.shipbooksdk.Log
@@ -92,6 +93,10 @@ interface PageDao {
 
     @Update
     suspend fun update(page: Page)
+
+    /** Insert or update without REPLACE, so strokes and images don't cascade away. */
+    @Upsert
+    suspend fun upsert(page: Page)
 
     @Query("DELETE FROM page WHERE id = :pageId")
     suspend fun delete(pageId: String)

@@ -112,4 +112,35 @@ class ServerApiTest {
         assertThrows(IllegalArgumentException::class.java) { ServerApi.parseServerUrl("ftp://notable.example") }
         assertEquals("https://notable.example/", ServerApi.parseServerUrl(" https://notable.example ").toString())
     }
+
+    @Test
+    fun getBlob_streams_to_the_file_after_checking_the_hash() {
+        val bytes = "%PDF-1.7 hello".toByteArray()
+        val sha = sha256Hex(bytes)
+        server.enqueue(MockResponse.Builder().code(200).body(okio.Buffer().write(bytes)).build())
+        val dest = java.io.File.createTempFile("blob", ".pdf").apply { delete() }
+
+        api.getBlob("tok", sha, dest)
+
+        assertTrue(dest.readBytes().contentEquals(bytes))
+        val req = server.takeRequest()
+        assertEquals("/api/blobs/$sha", req.url.encodedPath)
+        assertEquals("Bearer tok", req.headers["Authorization"])
+    }
+
+    @Test
+    fun getBlob_rejects_bytes_that_do_not_match_and_leaves_no_file() {
+        respond(200, "not the right bytes")
+        val dest = java.io.File.createTempFile("blob", ".pdf").apply { delete() }
+        assertThrows(ServerError.Http::class.java) { api.getBlob("tok", "ab".repeat(32), dest) }
+        assertTrue(!dest.exists())
+        assertTrue(dest.parentFile!!.listFiles()!!.none { it.name.startsWith(dest.name) })
+    }
+
+    @Test
+    fun getBlob_404_is_a_missing_file() {
+        respond(404, """{"error":"not found"}""")
+        val dest = java.io.File.createTempFile("blob", ".pdf").apply { delete() }
+        assertThrows(MissingFileException::class.java) { api.getBlob("tok", "cd".repeat(32), dest) }
+    }
 }

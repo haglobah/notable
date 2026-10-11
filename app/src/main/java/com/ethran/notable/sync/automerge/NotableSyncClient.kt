@@ -4,14 +4,21 @@ import android.content.Context
 import com.ethran.notable.SCREEN_HEIGHT
 import com.ethran.notable.SCREEN_WIDTH
 import com.ethran.notable.data.db.CryptoHelper
+import com.ethran.notable.data.RemoteEdits
 import com.ethran.notable.data.db.FolderDao
+import com.ethran.notable.data.db.ImageDao
 import com.ethran.notable.data.db.NotebookDao
 import com.ethran.notable.data.db.PageDao
+import com.ethran.notable.data.db.StrokeDao
+import com.ethran.notable.data.getDbDir
 import com.ethran.notable.di.ApplicationScope
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +32,8 @@ import okhttp3.OkHttpClient
 import org.automerge.repo.AutomergeUrl
 import org.automerge.repo.DialerConfig
 import org.automerge.repo.DialerHandle
+import org.automerge.repo.DocHandle
+import org.automerge.repo.ListenerRegistration
 import org.automerge.repo.Repo
 import org.automerge.repo.RepoConfig
 import org.automerge.repo.storage.FileSystemStorage
@@ -49,6 +58,16 @@ sealed interface SyncStatus {
     data class AuthFailed(val server: String, val username: String) : SyncStatus
 }
 
+/** What the projection (server → this device) is doing; shown in the sync settings. */
+data class ProjectionStatus(
+    val running: Boolean = false,
+    val docs: Int = 0,
+    val lastAppliedAt: Long? = null,
+    /** docUrl (or "library") → why its last projection failed. Retried on the next change. */
+    val errors: Map<String, String> = emptyMap(),
+    val warnings: List<String> = emptyList(),
+)
+
 sealed interface MigrationState {
     data object Idle : MigrationState
     data class Running(val progress: MigrationProgress) : MigrationState
@@ -67,6 +86,8 @@ class NotableSyncClient @Inject constructor(
     private val folderDao: FolderDao,
     private val notebookDao: NotebookDao,
     private val pageDao: PageDao,
+    private val strokeDao: StrokeDao,
+    private val imageDao: ImageDao,
     @param:ApplicationScope private val scope: CoroutineScope,
 ) {
     private val root = File(context.filesDir, "notable-sync")
@@ -83,10 +104,20 @@ class NotableSyncClient @Inject constructor(
     private val _migration = MutableStateFlow<MigrationState>(MigrationState.Idle)
     val migration: StateFlow<MigrationState> = _migration.asStateFlow()
 
+    private val _projection = MutableStateFlow(ProjectionStatus())
+    val projection: StateFlow<ProjectionStatus> = _projection.asStateFlow()
+
     private val lock = Mutex()
     private var session: Session? = null
 
-    private class Session(val account: StoredAccount, val api: ServerApi, val repo: Repo, var dialer: DialerHandle?)
+    private class Session(val account: StoredAccount, val api: ServerApi, val repo: Repo, var dialer: DialerHandle?) {
+        var projectionJob: Job? = null
+        val queue = Channel<String>(Channel.UNLIMITED)
+        val handles = java.util.concurrent.ConcurrentHashMap<String, DocHandle>()
+        val listeners = java.util.concurrent.ConcurrentHashMap<String, ListenerRegistration>()
+        var libraryUrl: String? = null
+        var projector: AutomergeProjector? = null
+    }
 
     /** Connects with the stored account, if any. Safe to call more than once. */
     fun start() {
@@ -192,7 +223,9 @@ class NotableSyncClient @Inject constructor(
         _status.value = SyncStatus.Connecting(account.serverUrl, account.username)
         val dialer = OkHttpDialer(http, ServerApi.syncUrl(api.baseUrl), account.token, object : OkHttpDialer.Listener {
             override fun onOpen() {
-                if (session === s) _status.value = SyncStatus.Connected(account.serverUrl, account.username)
+                if (session !== s) return
+                _status.value = SyncStatus.Connected(account.serverUrl, account.username)
+                startProjection(s)
             }
 
             override fun onClosed(reason: String) {
@@ -214,6 +247,10 @@ class NotableSyncClient @Inject constructor(
     private fun disconnect() {
         val s = session ?: return
         session = null
+        s.projectionJob?.cancel()
+        s.listeners.values.forEach { runCatching { it.remove() } }
+        s.listeners.clear()
+        _projection.value = ProjectionStatus()
         runCatching { s.dialer?.close() }
         runCatching { s.repo.close() }
     }
@@ -224,6 +261,127 @@ class NotableSyncClient @Inject constructor(
             .digest("${account.serverUrl}\n${account.username}".toByteArray())
             .take(8).joinToString("") { "%02x".format(it) }
         return File(root, key)
+    }
+
+    /**
+     * Server → Room (plan Phase 3 part B). One worker per session applies queued docs in order;
+     * change listeners only enqueue, since automerge-java forbids blocking inside them. On every
+     * (re)connect all known docs are re-queued, which applies whatever arrived while offline.
+     */
+    private fun startProjection(s: Session) {
+        if (s.projectionJob?.isActive == true) {
+            s.handles.keys.forEach { s.queue.trySend(it) }
+            return
+        }
+        s.projectionJob = scope.launch(Dispatchers.IO) {
+            try {
+                val me = s.api.me(s.account.token)
+                s.libraryUrl = me.libraryDocUrl
+                s.projector = AutomergeProjector(
+                    sink = RoomProjectionSink(folderDao, notebookDao, pageDao, strokeDao, imageDao),
+                    files = DownloadingProjectionFiles(
+                        download = { sha, dest -> s.api.getBlob(s.account.token, sha, dest) },
+                        dir = File(getDbDir(), "sync-blobs").apply { mkdirs() },
+                        open = androidFileOpener(context),
+                    ),
+                    state = ProjectionStateStore(File(accountDir(s.account), "projection.json")),
+                    localCanvasWidth = canvasWidth().toDouble(),
+                )
+                follow(s, me.libraryDocUrl)
+                for (url in s.queue) {
+                    drainInto(s.queue, url).forEach { project(s, it) }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.e("projection stopped", e)
+                _projection.value = _projection.value.copy(running = false,
+                    errors = _projection.value.errors + ("library" to (e.message ?: e.javaClass.simpleName)))
+            }
+        }
+    }
+
+    /** Coalesces a burst of change events: each doc once, library first. */
+    private suspend fun drainInto(queue: Channel<String>, first: String): List<String> {
+        delay(250)
+        val urls = LinkedHashSet<String>().apply { add(first) }
+        while (true) urls += queue.tryReceive().getOrNull() ?: break
+        val s = session
+        return urls.sortedBy { if (it == s?.libraryUrl) 0 else 1 }
+    }
+
+    /** Finds [url] in the repo, listens for its changes, and queues a first projection. */
+    private suspend fun follow(s: Session, url: String) {
+        if (s.handles.containsKey(url)) return
+        val handle = findWithRetry(s.repo, url) ?: throw IllegalStateException("the server did not send $url")
+        if (s.handles.putIfAbsent(url, handle) != null) return
+        s.listeners[url] = handle.addChangeListener { s.queue.trySend(url) }
+        s.queue.trySend(url)
+    }
+
+    private suspend fun project(s: Session, url: String) {
+        val projector = s.projector ?: return
+        val handle = s.handles[url] ?: return
+        _projection.value = _projection.value.copy(running = true, docs = s.handles.size)
+        val key = if (url == s.libraryUrl) "library" else url
+        try {
+            if (url == s.libraryUrl) {
+                val plan = handle.withDocument { projector.prepareLibrary(it, url) }.get(60, TimeUnit.SECONDS)
+                val result = projector.apply(plan)
+                result.follow.forEach { e ->
+                    runCatching { follow(s, e.docUrl) }.onFailure { err ->
+                        _projection.value = _projection.value.copy(errors = _projection.value.errors + (e.docUrl to "${e.title}: ${err.message}"))
+                    }
+                }
+                warn(result.warnings)
+            } else {
+                val plan = handle.withDocument { projector.prepareNotebook(it, url) }.get(60, TimeUnit.SECONDS)
+                val result = projector.apply(plan)
+                result.edits.forEach { dropPagePreviews(it.pageId) }
+                if (!RemoteEdits.publish(result.edits)) log.w("editor cache missed ${result.edits.size} remote edits; pages reload on open")
+                warn(result.warnings)
+            }
+            _projection.value = _projection.value.copy(
+                running = false, docs = s.handles.size, lastAppliedAt = System.currentTimeMillis(),
+                errors = _projection.value.errors - key,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+            log.e("projecting $url failed", cause)
+            _projection.value = _projection.value.copy(running = false,
+                errors = _projection.value.errors + (key to (cause.message ?: cause.javaClass.simpleName)))
+            // Its heads were not advanced; try again later even if nothing else changes.
+            scope.launch { delay(30_000); if (session === s) s.queue.trySend(url) }
+        }
+    }
+
+    /**
+     * Saved previews count as fresh while newer than `page.updatedAt`, and synced rows carry the
+     * other device's timestamps (a stroke added elsewhere doesn't even bump them). A remotely
+     * edited page's previews would show the old content, so they go; they're redrawn on open.
+     */
+    private fun dropPagePreviews(pageId: String) {
+        for (dir in listOf("pages/previews/full", "pages/previews/thumbs")) {
+            File(context.filesDir, dir).listFiles { f -> f.name == pageId || f.name.startsWith("$pageId-") || f.name.startsWith("$pageId.") }
+                ?.forEach { if (!it.delete()) log.w("could not delete stale preview ${it.path}") }
+        }
+    }
+
+    private fun warn(w: List<String>) {
+        if (w.isEmpty()) return
+        w.forEach { log.w(it) }
+        _projection.value = _projection.value.copy(warnings = (_projection.value.warnings + w).takeLast(20))
+    }
+
+    /** Debug: forget what was projected and apply every doc again in full (upsert only). */
+    fun rebuildFromServer() {
+        scope.launch {
+            val s = lock.withLock { session } ?: return@launch
+            s.projector?.forgetAll()
+            s.handles.keys.forEach { s.queue.trySend(it) }
+        }
     }
 
     fun backgroundHealth(): BackgroundHealth = BackgroundHealth.of(readBackgroundSignals(context))

@@ -298,7 +298,16 @@ class PageView(
                 //  without seeing strokes, I have no idea why.
                 coroutineScope.launch(Dispatchers.Main) {
 //                    delay(100)
-                    CanvasEventBus.forceUpdate.emit(null)
+                    if (CanvasEventBus.forceUpdate.subscriptionCount.value == 0) {
+                        // The canvas observers aren't registered yet, so the emit below would be
+                        // lost and the strokes never drawn. That stayed hidden while a saved
+                        // preview already held them; synced pages arrive without one. Draw into
+                        // the page bitmap; the canvas shows it once it starts.
+                        logCache.d("No canvas observer yet; drawing loaded strokes directly")
+                        drawAreaScreenCoordinates(Rect(0, 0, windowedCanvas.width, windowedCanvas.height))
+                    } else {
+                        CanvasEventBus.forceUpdate.emit(null)
+                    }
                 }
 //                sleep(5000)
 

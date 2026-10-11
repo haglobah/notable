@@ -9,6 +9,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.Upsert
 import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
@@ -57,6 +58,13 @@ interface ImageDao {
 
     @Update
     suspend fun update(images: List<Image>)
+
+    /** Insert or update without REPLACE, so no cascade fires. Used by the Automerge projector. */
+    @Upsert
+    suspend fun upsert(images: List<Image>)
+
+    @Query("SELECT id FROM Image WHERE pageId = :pageId")
+    suspend fun idsForPage(pageId: String): List<String>
 
     @Query("DELETE FROM Image WHERE id IN (:ids)")
     suspend fun deleteAll(ids: List<String>)

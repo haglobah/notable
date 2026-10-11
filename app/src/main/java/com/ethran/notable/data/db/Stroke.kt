@@ -95,6 +95,13 @@ interface StrokeDao {
     @Update
     suspend fun update(strokes: List<Stroke>)
 
+    /** Insert or update without REPLACE, so no cascade fires. Used by the Automerge projector. */
+    @Upsert
+    suspend fun upsert(strokes: List<Stroke>)
+
+    @Query("SELECT id FROM stroke WHERE pageId = :pageId")
+    suspend fun idsForPage(pageId: String): List<String>
+
     @Query("DELETE FROM stroke WHERE id IN (:ids)")
     suspend fun deleteAll(ids: List<String>)
 

@@ -34,6 +34,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.launch
 import java.io.File
@@ -200,8 +202,42 @@ class PageDataManager @Inject constructor(
 
     val saveTopic = MutableSharedFlow<String>()
 
+    /** Ids of cached pages that just took a [RemotePageEdit]; the open editor redraws on these. */
+    private val _remoteApplied = MutableSharedFlow<RemotePageEdit>(extraBufferCapacity = 64)
+    val remoteApplied: SharedFlow<RemotePageEdit> = _remoteApplied.asSharedFlow()
+
     init {
         collectBackgroundFileChanges()
+        collectRemoteEdits()
+    }
+
+    /**
+     * Applies edits from other devices (already in Room) to cached pages, so the cache never shows
+     * an older version than the database. Pages not cached load the new rows when opened. A page
+     * still loading may miss an edit that committed during its read; reopening it reloads.
+     */
+    private fun collectRemoteEdits() {
+        dataScope.launch {
+            RemoteEdits.edits.collect { edits ->
+                for (edit in edits) {
+                    val applied = synchronized(lock) {
+                        val entry = entries[edit.pageId] ?: return@synchronized false
+                        if (!entry.loaded) {
+                            if (edit.pageId != currentPage) entry.bitmap = null
+                            return@synchronized false
+                        }
+                        // The saved screen bitmap shows the old content; drop it unless the
+                        // page is open, where the editor redraws from the merged strokes.
+                        if (edit.pageId != currentPage) entry.bitmap = null
+                        entry.strokes = entry.strokes!!.withRemote(edit).toMutableList()
+                        entry.images = entry.images!!.withRemoteImages(edit).toMutableList()
+                        recomputeEntrySizeLocked(entry)
+                        true
+                    }
+                    if (applied || edit.pageId == currentPage) _remoteApplied.tryEmit(edit)
+                }
+            }
+        }
     }
 
     /* ---------------- entry helpers (must hold [lock]) ---------------- */

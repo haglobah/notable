@@ -22,6 +22,13 @@
     <string name="nsync_migrate_failed_item">%1$s: %2$s</string>
     <string name="nsync_migrate_missing_pages">%1$s: %2$d pages listed in the notebook no longer exist and were left out.</string>
     <string name="nsync_migrate_error">Upload stopped: %1$s. Run it again to continue.</string>
+    <string name="nsync_receive_title">Changes from other devices</string>
+    <string name="nsync_receive_body">Notebooks and strokes from the server appear here while Notable runs. Strokes drawn on this device after the upload are not sent yet.</string>
+    <string name="nsync_receive_waiting">Waiting for the server…</string>
+    <string name="nsync_receive_running">Applying changes (%1$d documents)…</string>
+    <string name="nsync_receive_done">Up to date: %1$d documents, last change applied at %2$s.</string>
+    <string name="nsync_receive_error">Could not apply %1$s: %2$s. Retrying.</string>
+    <string name="nsync_rebuild">Re-apply everything from the server (debug)</string>
     <string name="nsync_bg_frozen">Onyx froze Notable in the background, so sync only runs while Notable is open. To fix: long-press the Notable icon on the Onyx home screen and choose “Unfreeze app”.</string>
     <string name="nsync_bg_killed">Android stopped Notable when its package state changed, so background sync may not run.</string>
     <string name="nsync_bg_restricted">Background activity is restricted for Notable, so sync only runs while it is open. Allow background activity in the app\'s system settings.</string>

@@ -180,11 +180,28 @@ object AutomergeSchema {
         else -> throw SchemaException("$p.kind: unknown source kind '$kind'")
     }
 
-    fun readNotebook(doc: Document): AmNotebook {
+    fun readNotebook(doc: Document): AmNotebook = readNotebook(doc, withContent = true)
+
+    /**
+     * The notebook without page content: every page with its background and timestamps, but empty
+     * strokes and images. Cheap on a large notebook; used to apply a diff.
+     */
+    fun readNotebookShell(doc: Document): AmNotebook = readNotebook(doc, withContent = false)
+
+    /** One page with its strokes and images, or null when the doc has no such page. */
+    fun readPage(doc: Document, pageId: String): AmPage? {
         val r = Reader(doc)
         r.header(NOTEBOOK)
         val pagesObj = r.map(ObjectId.ROOT, "pages", "pages")
-        val pages = r.keys(pagesObj).associateWith { readPage(r, r.map(pagesObj, it, "pages.$it"), it) }
+        if (!r.has(pagesObj, pageId)) return null
+        return readPage(r, r.map(pagesObj, pageId, "pages.$pageId"), pageId, withContent = true)
+    }
+
+    private fun readNotebook(doc: Document, withContent: Boolean): AmNotebook {
+        val r = Reader(doc)
+        r.header(NOTEBOOK)
+        val pagesObj = r.map(ObjectId.ROOT, "pages", "pages")
+        val pages = r.keys(pagesObj).associateWith { readPage(r, r.map(pagesObj, it, "pages.$it"), it, withContent) }
         val rawOrder = r.list(ObjectId.ROOT, "pageOrder", "").mapIndexed { i, v -> r.scalar(v, "pageOrder[$i]") }
         return AmNotebook(
             notebookId = r.str(ObjectId.ROOT, "notebookId", ""),
@@ -227,10 +244,14 @@ object AutomergeSchema {
         return ordered.toList()
     }
 
-    private fun readPage(r: Reader, o: ObjectId, id: String): AmPage {
+    private fun readPage(r: Reader, o: ObjectId, id: String, withContent: Boolean): AmPage {
         val p = "pages.$id"
         val strokes = r.map(o, "strokes", "$p.strokes")
         val images = r.map(o, "images", "$p.images")
+        if (!withContent) return AmPage(
+            id = id, background = readBackground(r, o, "background", p), strokes = emptyMap(), images = emptyMap(),
+            createdAt = r.date(o, "createdAt", p), updatedAt = r.date(o, "updatedAt", p),
+        )
         return AmPage(
             id = id,
             background = readBackground(r, o, "background", p),

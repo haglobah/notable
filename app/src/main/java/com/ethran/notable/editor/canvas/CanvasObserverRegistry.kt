@@ -79,6 +79,7 @@ class CanvasObserverRegistry(
         observeClearPage()
         observeRestartAfterConfChange()
         observeReloadFromDb()
+        observeRemoteEdits()
         observePenChanges()
         observeIsDrawingSnapshot()
         observeToolbar()
@@ -207,6 +208,22 @@ class CanvasObserverRegistry(
                 log.v("Configuration changed!")
                 drawCanvas.init()
                 drawCanvas.refreshManager.drawCanvasToView(null)
+            }
+        }
+    }
+
+    /**
+     * Strokes from another device (Automerge sync) for the open page: PageDataManager already
+     * merged them into the cache, so redraw. A changed background also reloads the page row.
+     */
+    private fun observeRemoteEdits() {
+        observerScope.launch {
+            pageDataManager.remoteApplied.collect { edit ->
+                if (edit.pageId != page.currentPageId) return@collect
+                log.d("remote edit on open page: +${edit.upsertStrokes.size} -${edit.deleteStrokes.size} strokes")
+                if (edit.pageChanged) page.refreshCurrentPage()
+                pageDataManager.recomputeHeight(edit.pageId)
+                CanvasEventBus.forceUpdate.emit(null)
             }
         }
     }

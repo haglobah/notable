@@ -9,6 +9,7 @@ import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import com.ethran.notable.data.model.BackgroundType
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.flow.Flow
@@ -79,6 +80,10 @@ interface NotebookDao {
 
     @Update
     suspend fun update(notebook: Notebook)
+
+    /** Insert or update without REPLACE, so pages don't cascade away. */
+    @Upsert
+    suspend fun upsert(notebook: Notebook)
 
     @Query("DELETE FROM notebook WHERE id=:id")
     suspend fun delete(id: String)

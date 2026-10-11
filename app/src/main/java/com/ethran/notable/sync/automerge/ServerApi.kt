@@ -78,11 +78,43 @@ class ServerApi(private val http: OkHttpClient, val baseUrl: HttpUrl) {
         call(req) { }
     }
 
+    /**
+     * Downloads `GET /api/blobs/<sha256>` into [dest] through a temp file, checking the hash
+     * before the rename, so [dest] only ever holds the right bytes.
+     * @throws MissingFileException when the server doesn't have it (or not for this account).
+     */
+    fun getBlob(token: String, sha256: String, dest: java.io.File) {
+        val req = Request.Builder().url(url("api/blobs/$sha256")).bearer(token).get().build()
+        val tmp = java.io.File(dest.absoluteFile.parentFile, dest.name + ".part")
+        try {
+            call(req, notFound = { throw MissingFileException("blob $sha256 (not on the server)") }) { res ->
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                dest.absoluteFile.parentFile?.mkdirs()
+                res.body.byteStream().use { input ->
+                    tmp.outputStream().use { out ->
+                        val buf = ByteArray(1 shl 16)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            digest.update(buf, 0, n)
+                            out.write(buf, 0, n)
+                        }
+                    }
+                }
+                val got = digest.digest().joinToString("") { "%02x".format(it) }
+                if (got != sha256) throw ServerError.Http(200, "blob $sha256: received bytes hash to $got")
+                if (!tmp.renameTo(dest)) throw IOException("could not move ${tmp.path} to ${dest.path}")
+            }
+        } finally {
+            tmp.delete()
+        }
+    }
+
     private fun url(path: String) = baseUrl.newBuilder().addPathSegments(path).build()
 
     private fun Request.Builder.bearer(token: String) = header("Authorization", "Bearer $token")
 
-    private fun <T> call(req: Request, login: Boolean = false, onOk: (Response) -> T): T {
+    private fun <T> call(req: Request, login: Boolean = false, notFound: (() -> Nothing)? = null, onOk: (Response) -> T): T {
         val res = try {
             http.newCall(req).execute()
         } catch (e: IOException) {
@@ -90,6 +122,7 @@ class ServerApi(private val http: OkHttpClient, val baseUrl: HttpUrl) {
         }
         res.use {
             if (it.isSuccessful) return onOk(it)
+            if (it.code == 404 && notFound != null) notFound()
             val detail = runCatching { parse(it)["error"]?.jsonPrimitive?.content }.getOrNull() ?: it.message
             throw when (it.code) {
                 401 -> if (login) ServerError.InvalidCredentials() else ServerError.Unauthorized()
