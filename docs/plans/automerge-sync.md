@@ -54,7 +54,8 @@ usable and verified. Later phases depend on earlier ones.
       Strokes become `/Ink` annotations with appearance streams, and the notebook doc is embedded.
       Tested in Node with qpdf and poppler; the downloaded file was also checked with poppler.
 - [ ] Open a downloaded PDF on the iPhone (Files/Safari) and in Firefox. Needs Beat's devices.
-- [ ] Install the PWA and share a PDF on a real Android phone; install on iOS. Needs Beat's devices.
+- [x] Install and use the PWA on iOS: Beat confirmed it works on the iPhone (2026-10-11).
+- [ ] Install the PWA and share a PDF on a real Android phone. Needs Beat's device.
 - [x] Manifest and service worker: installable, plus an Android share target. Checked in desktop
       Chrome: the worker is active, the shell precached, and the library loads offline from
       IndexedDB. Install and share on a real Android or iOS device are not checked yet.
