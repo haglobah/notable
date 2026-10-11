@@ -37,7 +37,7 @@ fun PagePreview(
     val context = LocalContext.current
 
     if (isPreview) {
-        Box(modifier = modifier.background(Color.LightGray))
+        Box(modifier = modifier.background(Color.White))
         return
     }
 
@@ -85,6 +85,6 @@ fun PagePreview(
         painter = painter,
         contentDescription = "Page Preview",
         contentScale = ContentScale.FillWidth,
-        modifier = modifier.background(Color.LightGray)
+        modifier = modifier.background(Color.White)
     )
 }

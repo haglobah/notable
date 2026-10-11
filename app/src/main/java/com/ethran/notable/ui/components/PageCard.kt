@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.ethran.notable.ui.theme.PaperLine
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.PlusCircle
@@ -50,7 +51,7 @@ fun PageCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .border(if (isOpen) 2.dp else 1.dp, Color.Black, RectangleShape)
+                .border(if (isOpen) 2.dp else 1.dp, if (isOpen) Color.Black else PaperLine, RectangleShape)
                 .clickable(
                     enabled = isReorderDragging,
                     interactionSource = remember { MutableInteractionSource() },
@@ -78,9 +79,9 @@ fun PageCard(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(6.dp)
-                    .background(Color.Black)
+                    .background(Color.White)
                     .padding(horizontal = 6.dp, vertical = 4.dp),
-                color = Color.White
+                color = Color.Black
             )
         }
         if (isEditMode) {
@@ -88,7 +89,7 @@ fun PageCard(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(14.dp),
+                    .padding(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -117,16 +118,16 @@ private fun IconPill(
 ) {
     Box(
         modifier = Modifier
-            .width(35.dp)
-            .height(35.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .width(40.dp)
+            .height(40.dp)
+            .clip(RoundedCornerShape(2.dp))
             .background(Color(0xFFFFFFFF))
-            .border(1.dp, Color.Black, RoundedCornerShape(6.dp))
+            .border(1.dp, Color.Black, RoundedCornerShape(2.dp))
             .then(Modifier.sizeIn(minWidth = 40.dp, minHeight = 40.dp))
-            .padding(6.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() }, indication = null
-            ) { onClick() },
+            ) { onClick() }
+            .padding(8.dp),
         contentAlignment = Alignment.Center
     ) {
         Icon(

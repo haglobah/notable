@@ -253,6 +253,21 @@ Notable is not distributed on Google Play or F-Droid. Official builds are provid
 
 ### Development Notes
 
+With Nix (flakes enabled), enter the flake-parts development shell:
+
+```bash
+nix develop
+./gradlew :app:compileDebugKotlin :app:lintDebug
+```
+
+The shell provides JDK 21 (matching CI), Android SDK platform 37, and build tools
+36.0.0. It sets `JAVA_HOME` and the Android SDK paths, and configures Gradle to use
+Nix's patched `aapt2`. Use the checked-in Gradle wrapper. The flake enables the
+Android SDK license acceptance required by Nixpkgs; it does not include an
+emulator or system images. The inputs are pinned in `flake.lock`.
+
+While the new flake files are still untracked, use `nix develop path:.`.
+
 - Edit the `DEBUG_STORE_FILE` in `/app/gradle.properties` to point to your local keystore file. This is typically located in the `.android` directory.
 - To debug on a BOOX device, enable developer mode. You can follow [this guide](https://imgur.com/a/i1kb2UQ).
 

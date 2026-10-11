@@ -197,9 +197,9 @@ fun PagesContent(
                 }) {
             LazyVerticalGrid(
                 state = gridState,
-                columns = GridCells.Adaptive(120.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                columns = GridCells.Adaptive(148.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
                 contentPadding = PaddingValues(end = 40.dp),
                 modifier = Modifier
                     .onGloballyPositioned { coords ->
@@ -387,7 +387,7 @@ private fun EditModeSwitch(
         Box(
             Modifier
                 .size(16.dp)
-                .background(if (isEditMode) Color.Green else Color.White, CircleShape)
+                .background(Color.White, CircleShape)
                 .border(1.dp, Color.Black, CircleShape)
         )
     }
@@ -409,4 +409,3 @@ fun PagesPreview() {
         onDuplicatePage = {},
         onAddPageAfter = {})
 }
-

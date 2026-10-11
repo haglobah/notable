@@ -12,24 +12,27 @@ import androidx.compose.ui.unit.Density
 import com.ethran.notable.data.datastore.GlobalAppSettings
 
 private val DarkColorPalette = darkColors(
-    primary = Purple200,
-    primaryVariant = Purple700,
-    secondary = Teal200
+    primary = Paper,
+    primaryVariant = PaperLine,
+    secondary = Paper,
+    background = Ink,
+    surface = Ink,
+    onPrimary = Ink,
+    onSecondary = Ink,
+    onBackground = Paper,
+    onSurface = Paper
 )
 
 private val LightColorPalette = lightColors(
-    primary = Purple500,
-    primaryVariant = Purple700,
-    secondary = Teal200
-
-    /* Other default colors to override
-    background = Color.White,
-    surface = Color.White,
-    onPrimary = Color.White,
-    onSecondary = Color.Black,
-    onBackground = Color.Black,
-    onSurface = Color.Black,
-    */
+    primary = Ink,
+    primaryVariant = SecondaryInk,
+    secondary = Ink,
+    background = Paper,
+    surface = Paper,
+    onPrimary = Paper,
+    onSecondary = Paper,
+    onBackground = Ink,
+    onSurface = Ink
 )
 
 @Composable

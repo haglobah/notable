@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.Icon
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,19 +22,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.db.Page
 import com.ethran.notable.editor.ui.PageMenu
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
 import com.ethran.notable.ui.noRippleClickable
+import com.ethran.notable.ui.theme.Ink
+import com.ethran.notable.ui.theme.PaperLine
 import com.onyx.android.sdk.extension.isNullOrEmpty
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.FilePlus
-import io.shipbook.shipbooksdk.ShipBook
 
 
 @Composable
@@ -49,12 +49,12 @@ fun ShowPagesRow(
 ) {
 
     if (title != null) {
-        Text(text = title)
-        Spacer(Modifier.height(10.dp))
+        Text(text = title, style = MaterialTheme.typography.h6, color = Ink)
+        Spacer(Modifier.height(16.dp))
     }
 
     LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .autoEInkAnimationOnScroll()
@@ -65,9 +65,9 @@ fun ShowPagesRow(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .width(100.dp)
+                        .width(112.dp)
                         .aspectRatio(3f / 4f)
-                        .border(1.dp, Color.Gray, RectangleShape)
+                        .border(1.dp, PaperLine, RectangleShape)
                         .noRippleClickable {
                             onCreateNewQuickPage()
 
@@ -75,8 +75,8 @@ fun ShowPagesRow(
                     Icon(
                         imageVector = FeatherIcons.FilePlus,
                         contentDescription = "Add Quick Page",
-                        tint = Color.Gray,
-                        modifier = Modifier.size(40.dp),
+                        tint = Ink,
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
@@ -97,11 +97,11 @@ fun ShowPagesRow(
                                     isPageSelected = true
                                 },
                             )
-                            .width(100.dp)
+                            .width(112.dp)
                             .aspectRatio(3f / 4f)
                             .border(
-                                if (currentPageId == pageId) 4.dp else 1.dp,
-                                Color.Black,
+                                if (currentPageId == pageId) 2.dp else 1.dp,
+                                if (currentPageId == pageId) Ink else PaperLine,
                                 RectangleShape
                             ),
                         pageId = pageId,
