@@ -62,7 +62,7 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
 
 - Phases 0–3 are done and deployed.
 - Phase 4a is in progress. Committed in `a177f2e2`: `LocalDocWriter` and the projector fixes.
-- Done, not committed yet (steps 1–3 of the old Next list; unit tests only, not on device):
+- Committed (steps 1–3 of the old Next list; unit tests only, not on device):
   - **Durability.** `RepoLocalDocs.kt`: `DurableStorage` records finished puts; `RepoLocalDocs.edit`
     waits for the new heads' incremental keys (or a later snapshot), `createDoc` also waits until
     the doc has no write in flight. A failed storage write fails the edit. `RepoLocalDocsTest`
@@ -98,9 +98,15 @@ Known gaps from steps 1–3:
 
 ## Next (Phase 4a remaining)
 
-1. **Images offline.** Queue the blob store: copy `content://` files into the account folder, and
+1. **Doc-write correctness** (before anything else):
+   - A failed doc write leaves the edit in Room only. Persist it and retry until it reaches the
+     doc; show it as pending in the sync status. Room must never hold an edit the doc will never get.
+   - "Upload notebooks" (`runMigration`): go through `RepoLocalDocs` (durable) and share one lock
+     with the writer's on-demand migration, so the same notebook can never get two docs. Test the
+     race.
+2. **Images offline.** Queue the blob store: copy `content://` files into the account folder, and
    upload when connected.
-2. **Debug hook and device check.**
+3. **Debug hook and device check.**
    - A debug-only broadcast that drives `PageView` and `History`: draw, erase, move, undo/redo,
      images.
    - On device, check: server and PWA, a remote and a local edit merging, `am force-stop` right
