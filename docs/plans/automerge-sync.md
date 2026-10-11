@@ -28,7 +28,8 @@ usable and verified. Later phases depend on earlier ones.
       each enough on its own. Mutation-checked. The Java samod client (0.0.9) syncs through it
       with a Bearer token; another account's samod client gets "not found". See
       `web/server/README.md`.
-- [ ] `web/flake.nix` builds the server and the PWA.
+- [x] `web/flake.nix` builds the server, an OCI image and a NixOS module (`services.notable-server`)
+      with a VM test. The PWA output comes in Phase 2.
 - [ ] noldor `modules/notable.nix`: systemd unit, Caddy vhost, `clan.core.state`. Deploy to formenos.
 
 ## Phase 2 — PWA (read, upload, download)

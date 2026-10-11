@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "notable-server": "./src/cli.ts" },
+  "bin": { "notable-server": "./src/main.ts", "notable-admin": "./src/cli.ts" },
   "scripts": {
     "start": "node src/main.ts",
     "test": "node --test --test-concurrency=1 test/*.test.ts",

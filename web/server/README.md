@@ -95,14 +95,14 @@ Known limits:
 ## Admin CLI
 
 ```
-notable-server user add <name>         # password on stdin (no echo on a TTY)
-notable-server user passwd <name>      # also logs the user out everywhere
-notable-server user del <name>         # type the name to confirm
-notable-server user list
-notable-server sessions revoke <name>
+notable-admin user add <name>         # password on stdin (no echo on a TTY)
+notable-admin user passwd <name>      # also logs the user out everywhere
+notable-admin user del <name>         # type the name to confirm
+notable-admin user list
+notable-admin sessions revoke <name>
 ```
 
-Use `node src/cli.ts …` until the Nix package wraps it.
+From a checkout, run `node src/cli.ts …` instead.
 
 The CLI works on the same database as a running server. Changes apply on the server's next
 request.
@@ -111,6 +111,101 @@ request.
 tombstones. A tombstoned id can never be claimed again, so nobody who learned a URL can take over
 the server's copy. The server's garbage collection (on start, and every 6 hours) then deletes the
 tombstoned docs and every file nobody owns. Devices keep their local copies.
+
+## Deployment
+
+`web/flake.nix` provides:
+
+| Output | What |
+|---|---|
+| `packages.<system>.notable-server` | `notable-server` and `notable-admin`, on Node 24 (slim) |
+| `packages.<system>.notable-server-image` | OCI image (`docker load < result`) |
+| `nixosModules.default` | `services.notable-server` |
+| `checks.<system>.vm` | NixOS VM test: admin CLI, login, library doc, files, sync upgrade, restart |
+
+The closure is about 290 MiB, almost all of it Node. The package itself is 56 MiB. 46 MiB of that is
+`@automerge/automerge`, which ships the same 3.6 MiB WASM file in six builds. With
+`nix.optimise.automatic`, identical files are hard-linked, so it costs about one copy on disk.
+
+### NixOS
+
+```nix
+{
+  inputs.notable.url = "github:haglobah/notable?dir=web";
+  # in the host configuration:
+  imports = [ inputs.notable.nixosModules.default ];
+  services.notable-server = {
+    enable = true;
+    publicOrigin = "https://notable.example.org";
+    trustProxy = true; # behind the reverse proxy below
+  };
+}
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `listenAddress`, `port` | `127.0.0.1`, `3030` | Where the server listens |
+| `stateDir` | `/var/lib/notable` | Everything to back up |
+| `publicOrigin` | `null` | Set it in production; see `NOTABLE_PUBLIC_ORIGIN` |
+| `openSignup` | `false` | Allow `POST /api/signup` |
+| `trustProxy` | `false` | Use `X-Forwarded-For` for rate limiting |
+| `maxBlobSizeMiB` | `512` | Upload limit |
+| `environment` | `{}` | Other `NOTABLE_*` variables |
+| `user`, `group` | `notable` | Service account |
+
+The module installs `notable-admin` system-wide. Run as root, it switches to the service user and
+uses the service's settings:
+
+```sh
+notable-admin user add alice   # then type the password
+```
+
+The service runs hardened: no capabilities, a read-only system, a private `/tmp` and a syscall
+filter. `systemd-analyze security` rates it 1.4.
+
+### Reverse proxy
+
+The server speaks plain HTTP. Terminate TLS in front of it and pass WebSocket upgrades through.
+
+Caddy:
+
+```
+notable.example.org {
+	request_body {
+		max_size 512MB
+	}
+	reverse_proxy 127.0.0.1:3030
+}
+```
+
+nginx:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3030;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_read_timeout 1h;
+    client_max_body_size 512m;
+}
+```
+
+Caddy sets `X-Forwarded-For` and handles upgrades on its own.
+
+### Container
+
+```sh
+nix build github:haglobah/notable?dir=web#notable-server-image && docker load < result
+docker run -d --name notable -v notable:/var/lib/notable -p 127.0.0.1:3030:3030 \
+  -e NOTABLE_PUBLIC_ORIGIN=https://notable.example.org -e NOTABLE_TRUST_PROXY=1 \
+  notable-server:0.1.0
+docker exec -i notable notable-admin user add alice
+```
+
+The image runs as uid 1000. State lives in the `/var/lib/notable` volume.
 
 ## Tests
 

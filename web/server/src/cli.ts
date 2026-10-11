@@ -10,7 +10,7 @@ import { Writable } from "node:stream"
 import { Accounts, AccountError } from "./accounts.ts"
 import { argon2FromEnv } from "./config.ts"
 
-const USAGE = `usage: notable-server <command>
+const USAGE = `usage: notable-admin <command>
 
   user add <name>         create an account; reads the password from stdin
   user passwd <name>      set a new password (logs the user out everywhere)
