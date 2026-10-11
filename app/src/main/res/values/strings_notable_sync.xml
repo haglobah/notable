@@ -29,6 +29,9 @@
     <string name="nsync_receive_done">Up to date: %1$d documents, last change applied at %2$s.</string>
     <string name="nsync_receive_error">Could not apply %1$s: %2$s. Retrying.</string>
     <string name="nsync_write_error">%1$s.</string>
+    <string name="nsync_pending_writes">Edits waiting to be written for sync: %1$d. Retrying every few seconds.</string>
+    <string name="nsync_pending_blobs">Files waiting to upload: %1$d.</string>
+    <string name="nsync_blob_error">Uploading files failed: %1$s. Retrying.</string>
     <string name="nsync_commit_latency">Saving an edit for sync: median %1$d ms, slowest %2$d ms (last %3$d edits).</string>
     <string name="nsync_rebuild">Re-apply everything from the server (debug)</string>
     <string name="nsync_bg_frozen">Onyx froze Notable in the background, so sync only runs while Notable is open. To fix: long-press the Notable icon on the Onyx home screen and choose “Unfreeze app”.</string>

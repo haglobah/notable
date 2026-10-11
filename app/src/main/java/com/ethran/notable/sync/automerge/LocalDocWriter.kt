@@ -104,6 +104,31 @@ class LocalDocWriter(
         is LocalChange.FolderDeleted -> deleteFolder(change.id)
     }
 
+    /**
+     * Makes the doc match what Room holds now for [debt]'s rows: rows Room has are written, rows
+     * it lacks are deleted. Room has the result of every local edit, so this is the edit (or
+     * edits) that failed earlier, whatever came after.
+     */
+    fun replay(debt: DocDebt): WriteReceipt = when (debt) {
+        is DocDebt.Strokes -> local.page(debt.pageId)?.let { data ->
+            val have = data.strokes.filter { it.id in debt.ids }
+            write(LocalChange.StrokesUpserted(debt.pageId, have)) +
+                write(LocalChange.StrokesDeleted(debt.pageId, (debt.ids - have.map { it.id }.toSet()).toList()))
+        } ?: NONE // the page is gone from Room; its deletion is a debt of its own, or done
+        is DocDebt.Images -> local.page(debt.pageId)?.let { data ->
+            val have = data.images.filter { it.id in debt.ids }
+            write(LocalChange.ImagesUpserted(debt.pageId, have)) +
+                write(LocalChange.ImagesDeleted(debt.pageId, (debt.ids - have.map { it.id }.toSet()).toList()))
+        } ?: NONE
+        is DocDebt.PageRow -> local.pageRow(debt.pageId)?.let { write(LocalChange.PageUpserted(it)) }
+            ?: write(LocalChange.PageDeleted(Page(id = debt.pageId, notebookId = debt.notebookId)))
+        is DocDebt.NotebookRow -> local.notebook(debt.id)?.let { write(LocalChange.NotebookUpserted(it)) }
+            ?: write(LocalChange.NotebookDeleted(debt.id))
+        is DocDebt.OpenPage -> local.notebook(debt.notebookId)?.let { write(LocalChange.OpenPageChanged(it.id, it.openPageId)) } ?: NONE
+        is DocDebt.FolderRow -> local.folders().firstOrNull { it.id == debt.id }?.let { write(LocalChange.FolderUpserted(it)) }
+            ?: write(LocalChange.FolderDeleted(debt.id))
+    }
+
     /** Copies everything in Room that has no doc yet; see [RoomToAutomergeMigration.run]. */
     fun migrateAll(onProgress: (MigrationProgress) -> Unit = {}): MigrationReport = migration.run(onProgress)
 

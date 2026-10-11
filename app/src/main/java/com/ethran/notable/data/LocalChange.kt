@@ -35,11 +35,12 @@ sealed interface LocalChange {
  *   runs [room]. A crash in between loses nothing: the projector applies the doc to Room on the
  *   next start.
  * - [create]: new notebooks, pages and quick pages. Runs [room] first, because the doc is built
- *   from the new Room rows, then commits. A crash in between leaves a Room-only row; the
- *   migration on the next start (or the next edit of that notebook) adds it to the docs.
+ *   from the new Room rows, then commits. The change is recorded for a retry before [room], so a
+ *   crash in between leaves no Room-only row.
  *
- * A doc write that fails is reported (see the sync settings) and the Room write still happens, so
- * no local edit is lost. Never call these from the main thread.
+ * A doc write that fails is recorded on disk and retried until it reaches the doc (shown as
+ * pending in the sync settings), and the Room write still happens, so no local edit is lost. If
+ * even the record fails, the call throws before [room] runs. Never call these from the main thread.
  */
 interface ContentMirror {
     /** [queuedAtNanos]: when the edit was made (`System.nanoTime`), for the pen-up → commit latency. */

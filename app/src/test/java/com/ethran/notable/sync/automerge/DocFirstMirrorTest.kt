@@ -65,8 +65,15 @@ class DocFirstMirrorTest {
         log.clear()
     }
 
-    private fun mirror(d: Device?, latency: LatencyStats = LatencyStats(), nanoTime: () -> Long = System::nanoTime) =
-        DocFirstMirror(writer = { d?.writer }, report = { reported += it }, latency = latency, nanoTime = nanoTime)
+    private val outboxFile by lazy { java.io.File(tmp.newFolder(), "pending-doc-writes.json") }
+
+    private fun outbox(pending: PendingLocalWrites = PendingLocalWrites()) = DocOutbox(outboxFile, pending)
+
+    private fun mirror(
+        d: Device?, latency: LatencyStats = LatencyStats(),
+        outbox: DocOutbox? = if (d == null) null else outbox(),
+        nanoTime: () -> Long = System::nanoTime,
+    ) = DocFirstMirror(writer = { d?.writer }, outbox = { outbox }, report = { reported += it }, latency = latency, nanoTime = nanoTime)
 
     private fun Device.docStrokes() = docs.notebook("nb1").pages.getValue("p1").strokes
 
@@ -106,14 +113,142 @@ class DocFirstMirrorTest {
         val d = device()
         failDocs = true
         val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
-        mirror(d).write(change) { d.room.roomWrite(change) }
+        val m = mirror(d)
+        m.write(change) { d.room.roomWrite(change) }
 
         assertNotNull("no local edit is lost", d.room.sink.strokes["s2"])
-        assertEquals(listOf<String?>("An edit is saved on this device only and won't sync: storing failed"), reported.toList())
+        assertEquals(1, reported.size)
+        assertTrue(reported.single()!!.endsWith(": storing failed"))
 
         failDocs = false
-        mirror(d).write(LocalChange.StrokesUpserted("p1", listOf(stroke("s3", "p1")))) {}
+        m.write(LocalChange.StrokesUpserted("p1", listOf(stroke("s3", "p1")))) {}
         assertNull("the next good write clears the error", reported.last())
+    }
+
+    @Test
+    fun `a failed doc write is kept and reaches the doc on retry, without an echo`() = runBlocking {
+        val d = device()
+        val box = outbox()
+        val m = mirror(d, outbox = box)
+        failDocs = true
+        val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
+        m.write(change) { d.room.roomWrite(change) }
+        assertEquals("pending", 1, box.size)
+        assertEquals(1, m.retryPending())
+        assertFalse(reported.last() == null)
+
+        failDocs = false
+        assertEquals(0, m.retryPending())
+        assertTrue("the retry reached the doc", "s2" in d.docStrokes())
+        assertEquals(0, box.size)
+        assertNull(reported.last())
+        d.project()
+        assertEquals("settled: no echo into Room", 0, d.room.sink.writes)
+    }
+
+    @Test
+    fun `a failed doc write survives a restart`() = runBlocking {
+        val d = device()
+        failDocs = true
+        val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
+        mirror(d, outbox = outbox()).write(change) { d.room.roomWrite(change) }
+        failDocs = false
+
+        // process restarted: a new outbox reads the same file
+        val pending = PendingLocalWrites()
+        val box = outbox(pending)
+        assertEquals(1, box.size)
+        assertTrue("a queued id stays pending after a restart", pending.contains("s2"))
+        mirror(d, outbox = box).retryPending()
+        assertTrue("s2" in d.docStrokes())
+        assertFalse(pending.contains("s2"))
+    }
+
+    @Test
+    fun `the retry writes what Room holds now`() = runBlocking {
+        val d = device()
+        val m = mirror(d)
+        failDocs = true
+        val add = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
+        m.write(add) { d.room.roomWrite(add) }
+        val erase = LocalChange.StrokesDeleted("p1", listOf("s2", "s1"))
+        m.write(erase) { d.room.roomWrite(erase) }
+        val again = LocalChange.StrokesUpserted("p1", listOf(stroke("s3", "p1")))
+        m.write(again) { d.room.roomWrite(again) }
+        failDocs = false
+
+        m.retryPending()
+        assertEquals(setOf("s3"), d.docStrokes().keys)
+        assertEquals(d.room.sink.strokes.keys, d.docStrokes().keys)
+    }
+
+    @Test
+    fun `failed page, notebook and folder writes are retried from Room`() = runBlocking {
+        val d = device()
+        val m = mirror(d)
+        failDocs = true
+        val renamed = d.room.sink.notebooks.getValue("nb1").copy(title = "Renamed")
+        m.write(LocalChange.NotebookUpserted(renamed)) { d.room.roomWrite(LocalChange.NotebookUpserted(renamed)) }
+        val folder = com.ethran.notable.data.db.Folder(id = "f1", title = "Uni")
+        m.create(LocalChange.FolderUpserted(folder)) { d.room.roomWrite(LocalChange.FolderUpserted(folder)) }
+        val p2 = Page(id = "p2", notebookId = "nb1", createdAt = t0, updatedAt = t1)
+        m.create(LocalChange.PageUpserted(p2)) { d.room.roomWrite(LocalChange.PageUpserted(p2)) }
+        failDocs = false
+
+        assertEquals(0, m.retryPending())
+        assertEquals("Renamed", d.docs.library().notebooks.getValue("nb1").title)
+        assertTrue("f1" in d.docs.library().folders)
+        assertTrue("p2" in d.docs.notebook("nb1").pages)
+    }
+
+    @Test
+    fun `a debt that keeps failing does not block the others`() = runBlocking {
+        val d = device()
+        val box = outbox()
+        val m = mirror(d, outbox = box)
+        failDocs = true
+        val img = com.ethran.notable.data.db.Image("i1", 1, 2, 3, 4, "/gone.png", "p1", t0, t1)
+        m.write(LocalChange.ImagesUpserted("p1", listOf(img))) { d.room.roomWrite(LocalChange.ImagesUpserted("p1", listOf(img))) }
+        val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
+        m.write(change) { d.room.roomWrite(change) }
+        failDocs = false
+
+        m.retryPending() // the image's file is gone: it stays pending
+        m.retryPending()
+        assertTrue("s2" in d.docStrokes())
+        assertEquals(1, box.size)
+    }
+
+    @Test
+    fun `before the library is known, edits wait in the outbox`() = runBlocking {
+        val d = device()
+        val box = outbox()
+        var writer: LocalDocWriter? = null
+        val m = DocFirstMirror(writer = { writer }, outbox = { box }, report = { reported += it }, latency = LatencyStats())
+        val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
+        m.write(change) { d.room.roomWrite(change) }
+        assertEquals(1, box.size)
+
+        writer = d.writer
+        m.retryPending()
+        assertTrue("s2" in d.docStrokes())
+    }
+
+    @Test
+    fun `an edit that can't be recorded fails before Room is written`() = runBlocking {
+        val d = device()
+        val dir = tmp.newFolder()
+        val box = DocOutbox(java.io.File(dir, "pending.json"), PendingLocalWrites())
+        dir.setWritable(false)
+        try {
+            failDocs = true
+            val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
+            val failed = runCatching { mirror(d, outbox = box).write(change) { d.room.roomWrite(change) } }
+            assertTrue(failed.isFailure)
+            assertNull("Room must not hold an edit the doc will never get", d.room.sink.strokes["s2"])
+        } finally {
+            dir.setWritable(true)
+        }
     }
 
     @Test

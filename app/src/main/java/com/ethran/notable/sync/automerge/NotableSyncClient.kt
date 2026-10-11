@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -72,6 +73,12 @@ data class ProjectionStatus(
     val warnings: List<String> = emptyList(),
     /** Why the last local edit did not reach the docs; null once one did. */
     val writeError: String? = null,
+    /** Local edits in Room that wait to be written to the docs; retried until they are. */
+    val pendingWrites: Int = 0,
+    /** Files (images, PDFs) copied for sync that wait to be uploaded. */
+    val pendingBlobs: Int = 0,
+    /** Why the last upload of waiting files failed; null once one succeeded. */
+    val blobError: String? = null,
     /** Pen-up → doc commit on disk, over the last edits. */
     val commitLatency: LatencySummary? = null,
 )
@@ -127,15 +134,24 @@ class NotableSyncClient @Inject constructor(
     private val commitLatency = LatencyStats()
     private val mirror = DocFirstMirror(
         writer = { session?.writer },
+        outbox = { session?.outbox },
         report = ::onWriteResult,
         latency = commitLatency,
     )
 
     private class Session(
         val account: StoredAccount, val api: ServerApi, val repo: Repo, val storage: DurableStorage, dir: File,
+        /** Edits in Room that wait for the docs; see [DocFirstMirror]. */
+        val outbox: DocOutbox,
+        /** Files copied for sync that wait for the server. */
+        val blobs: QueuedBlobStore,
+        /** Wakes [backgroundJob] early. */
+        val wake: Channel<Unit>,
     ) {
         var dialer: DialerHandle? = null
         var projectionJob: Job? = null
+        /** Retries [outbox] and uploads [blobs]; see [startBackground]. */
+        var backgroundJob: Job? = null
         val queue = Channel<String>(Channel.UNLIMITED)
         val handles = java.util.concurrent.ConcurrentHashMap<String, DocHandle>()
         val listeners = java.util.concurrent.ConcurrentHashMap<String, ListenerRegistration>()
@@ -228,6 +244,10 @@ class NotableSyncClient @Inject constructor(
         }
     }
 
+    /**
+     * Runs the session writer's migration: durable through [RepoLocalDocs], and under the same
+     * lock as the writer's on-demand migration of a notebook, so no notebook gets two docs.
+     */
     private suspend fun runMigration(): MigrationReport {
         val s = lock.withLock { session } ?: throw IllegalStateException("Log in first")
         withTimeoutOrNull(30_000) { status.first { it is SyncStatus.Connected || it is SyncStatus.AuthFailed } }
@@ -237,16 +257,13 @@ class NotableSyncClient @Inject constructor(
             else -> throw IllegalStateException("Not connected to the server (${st.javaClass.simpleName})")
         }
         val me = s.api.me(s.account.token)
-        val library = findWithRetry(s.repo, me.libraryDocUrl)
-            ?: throw IllegalStateException("The server did not send the library document")
-        val migration = RoomToAutomergeMigration(
-            local = RoomLocalLibrary(folderDao, notebookDao, pageDao),
-            blobs = UploadingBlobStore(s.api, s.account.token, androidFileOpener(context)),
-            docs = RepoDocStore(s.repo, library),
-            state = s.migrationState,
-            canvasWidth = canvasWidth().toDouble(),
-        )
-        return migration.run { _migration.value = MigrationState.Running(it) }
+        val writer = withTimeoutOrNull(60_000) {
+            while (s.writer == null && session === s) delay(200)
+            s.writer
+        } ?: throw IllegalStateException("The library document has not arrived from the server yet")
+        if (s.libraryUrl != me.libraryDocUrl)
+            throw IllegalStateException("This device's library (${s.libraryUrl}) is not the server's (${me.libraryDocUrl}); log out and in again")
+        return writer.migrateAll { _migration.value = MigrationState.Running(it) }
     }
 
     /** A doc not yet stored here arrives over the network; the first find may come back empty. */
@@ -267,8 +284,15 @@ class NotableSyncClient @Inject constructor(
         val storage = DurableStorage(FileSystemStorage(dir.toPath()))
         val repo = Repo.load(RepoConfig.builder().storage(storage).build())
         val api = ServerApi(http, ServerApi.parseServerUrl(account.serverUrl))
-        val s = Session(account, api, repo, storage, accountDir)
+        val wake = Channel<Unit>(Channel.CONFLATED)
+        val blobs = QueuedBlobStore(File(accountDir, "blobs"), androidFileOpener(context)) { n ->
+            _projection.update { it.copy(pendingBlobs = n) }
+            if (n > 0) wake.trySend(Unit)
+        }
+        val s = Session(account, api, repo, storage, accountDir, loadOutbox(accountDir), blobs, wake)
         session = s
+        _projection.update { it.copy(pendingWrites = s.outbox.size, pendingBlobs = blobs.pendingCount()) }
+        startBackground(s)
         _status.value = SyncStatus.Connecting(account.serverUrl, account.username)
         // Known from an earlier session: write and project from the local repo, before (or without) a connection.
         val cached = try {
@@ -286,6 +310,7 @@ class NotableSyncClient @Inject constructor(
                 if (session !== s) return
                 _status.value = SyncStatus.Connected(account.serverUrl, account.username)
                 startProjection(s)
+                s.wake.trySend(Unit)
             }
 
             override fun onClosed(reason: String) {
@@ -309,11 +334,63 @@ class NotableSyncClient @Inject constructor(
         s.writer = LocalDocWriter(
             docs = RepoLocalDocs(s.repo, s.storage, url),
             local = RoomLocalLibrary(folderDao, notebookDao, pageDao),
-            blobs = UploadingBlobStore(s.api, s.account.token, androidFileOpener(context)),
+            blobs = s.blobs,
             migrationState = s.migrationState,
             projection = s.projectionState,
             canvasWidth = canvasWidth().toDouble(),
         )
+        s.wake.trySend(Unit)
+    }
+
+    /**
+     * The session's edits for the docs: `pending-doc-writes.json`. An unreadable file is moved
+     * aside and reported: its edits are in Room, and can't be told apart from synced ones anymore.
+     */
+    private fun loadOutbox(accountDir: File): DocOutbox {
+        val file = File(accountDir, "pending-doc-writes.json")
+        val onChange: (Int) -> Unit = { n -> _projection.update { it.copy(pendingWrites = n) } }
+        return try {
+            DocOutbox(file, pendingWrites, onChange)
+        } catch (e: Exception) {
+            val aside = File(accountDir, "pending-doc-writes.unreadable-${System.currentTimeMillis()}.json")
+            file.renameTo(aside)
+            val why = "Edits waiting for sync could not be read back (${e.message}); they are on this device only. Kept in ${aside.name}"
+            log.e(why, e)
+            _projection.update { it.copy(writeError = why) }
+            DocOutbox(file, pendingWrites, onChange)
+        }
+    }
+
+    /**
+     * Retries the outbox and uploads waiting files: at session start, when woken (a file queued,
+     * the writer ready, the server back), and every [RETRY_MS] while anything waits.
+     */
+    private fun startBackground(s: Session) {
+        s.backgroundJob = scope.launch(Dispatchers.IO) {
+            while (true) {
+                if (s.outbox.size > 0 && s.writer != null) try {
+                    mirror.retryPending()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.e("retrying edits for sync failed", e)
+                }
+                if (s.blobs.pendingCount() > 0 && status.value is SyncStatus.Connected) uploadBlobs(s)
+                withTimeoutOrNull(RETRY_MS) { s.wake.receive() }
+            }
+        }
+    }
+
+    private fun uploadBlobs(s: Session) {
+        try {
+            val r = s.blobs.drain({ sha, size, open -> s.api.putBlob(s.account.token, sha, size, open) })
+            _projection.update { it.copy(blobError = null) }
+            warn(r.rejected.map { "File ${it.sha.take(12)} stays on this device and won't sync: ${it.reason}" })
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _projection.update { it.copy(blobError = e.message ?: e.javaClass.simpleName) }
+        }
     }
 
     /** Must be called with [lock] held. */
@@ -321,6 +398,8 @@ class NotableSyncClient @Inject constructor(
         val s = session ?: return
         session = null
         s.writer = null
+        s.backgroundJob?.cancel()
+        s.outbox.release()
         s.projectionJob?.cancel()
         s.listeners.values.forEach { runCatching { it.remove() } }
         s.listeners.clear()
@@ -356,7 +435,8 @@ class NotableSyncClient @Inject constructor(
                 s.projector = AutomergeProjector(
                     sink = RoomProjectionSink(folderDao, notebookDao, pageDao, strokeDao, imageDao),
                     files = DownloadingProjectionFiles(
-                        download = { sha, dest -> s.api.getBlob(s.account.token, sha, dest) },
+                        // A file of this device's not uploaded yet is still in the queue.
+                        download = { sha, dest -> if (!s.blobs.copyQueued(sha, dest)) s.api.getBlob(s.account.token, sha, dest) },
                         dir = File(getDbDir(), "sync-blobs").apply { mkdirs() },
                         open = androidFileOpener(context),
                     ),
@@ -464,6 +544,8 @@ class NotableSyncClient @Inject constructor(
     fun backgroundHealth(): BackgroundHealth = BackgroundHealth.of(readBackgroundSignals(context))
 
     companion object {
+        private const val RETRY_MS = 15_000L
+
         /** Stroke x coordinates span the shorter screen side (editor/drawing/backgrounds.kt). */
         fun canvasWidth(): Int = min(SCREEN_WIDTH, SCREEN_HEIGHT)
     }

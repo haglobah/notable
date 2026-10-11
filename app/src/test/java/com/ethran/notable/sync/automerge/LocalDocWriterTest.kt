@@ -25,13 +25,14 @@ internal class MemoryLocalDocs(
 ) : LocalDocs {
     private var next = 1
     override fun libraryUrl() = LIBRARY
-    override fun <T> edit(url: String, block: (Document) -> T): T =
+    override fun <T> edit(url: String, block: (Document) -> T): T = synchronized(this) {
         block(docs[url] ?: throw IllegalStateException("no doc $url"))
+    }
 
-    override fun createDoc(doc: Document): String {
+    override fun createDoc(doc: Document): String = synchronized(this) {
         val url = "automerge:nb${next++}-${System.identityHashCode(this)}"
         docs[url] = Document.load(doc.save())
-        return url
+        url
     }
 
     fun library() = AutomergeSchema.readLibrary(docs.getValue(LIBRARY))
@@ -102,12 +103,14 @@ internal class Device(
     writerDocs: (MemoryLocalDocs) -> LocalDocs = { it },
     /** Ids with a queued local write; the projector leaves them alone. */
     localPending: (String) -> Boolean = { false },
+    /** The writer's blob store; [blobs] when null. */
+    blobStore: BlobStore? = null,
 ) {
     val room = FakeRoom()
     private val dir = tmp.newFolder()
     val state = ProjectionStateStore(java.io.File(dir, "projection.json"))
     val blobs = FakeBlobStore()
-    val writer = LocalDocWriter(writerDocs(docs), room.library, blobs, MigrationStateStore(java.io.File(dir, "migration.json")), state, canvasWidth) { clock }
+    val writer = LocalDocWriter(writerDocs(docs), room.library, blobStore ?: blobs, MigrationStateStore(java.io.File(dir, "migration.json")), state, canvasWidth) { clock }
     val files = FakeFiles()
     val projector = AutomergeProjector(room, files, state, canvasWidth, localPending)
 
@@ -496,5 +499,37 @@ class LocalDocWriterTest {
         assertEquals(setOf("old", "new"), d.docs.notebook("nb2").pages.getValue("q1").strokes.keys)
         d.project()
         assertEquals(0, d.room.sink.writes)
+    }
+
+    @Test
+    fun `upload notebooks and an edit of the same notebook make one doc`() {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val created = java.util.concurrent.atomic.AtomicInteger()
+        /** The first doc creation stops until released, so a second migration of nb1 can run meanwhile. */
+        class SlowCreate(private val inner: LocalDocs) : LocalDocs by inner {
+            override fun createDoc(doc: Document): String {
+                if (created.incrementAndGet() == 1) {
+                    entered.countDown()
+                    release.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                }
+                return inner.createDoc(doc)
+            }
+        }
+        val d = Device(tmp, writerDocs = { SlowCreate(it) }).apply {
+            room.sink.notebooks["nb1"] = notebook("nb1", "p1")
+            room.sink.pages["p1"] = page("p1", "nb1")
+            room.sink.strokes["s1"] = stroke("s1", "p1")
+        }
+        val upload = Thread { d.writer.migrateAll() }.apply { start() }
+        assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        val edit = Thread { d.writer.write(LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))) }.apply { start() }
+        Thread.sleep(300) // the edit's on-demand migration of nb1 gets as far as it can
+        release.countDown()
+        upload.join(10_000)
+        edit.join(10_000)
+
+        assertEquals("one doc for nb1", 1, created.get())
+        assertEquals(setOf("s1", "s2"), d.docs.notebook("nb1").pages.getValue("p1").strokes.keys)
     }
 }

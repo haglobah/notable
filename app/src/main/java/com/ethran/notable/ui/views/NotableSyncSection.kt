@@ -148,6 +148,9 @@ private fun ProjectionBlock(state: ProjectionStatus, enabled: Boolean, onRebuild
     state.errors.forEach { (doc, why) -> Notice(stringResource(R.string.nsync_receive_error, doc, why)) }
     state.warnings.takeLast(3).forEach { Notice(it) }
     state.writeError?.let { Notice(stringResource(R.string.nsync_write_error, it)) }
+    if (state.pendingWrites > 0) Notice(stringResource(R.string.nsync_pending_writes, state.pendingWrites))
+    if (state.pendingBlobs > 0) Text(stringResource(R.string.nsync_pending_blobs, state.pendingBlobs), style = MaterialTheme.typography.body2)
+    state.blobError?.let { Notice(stringResource(R.string.nsync_blob_error, it)) }
     state.commitLatency?.let {
         Text(stringResource(R.string.nsync_commit_latency, it.p50Ms, it.maxMs, it.count), style = MaterialTheme.typography.body2)
     }

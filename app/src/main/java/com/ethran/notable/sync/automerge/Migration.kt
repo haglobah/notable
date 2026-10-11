@@ -76,6 +76,9 @@ data class MigrationReport(
  * The library entry is written last, so it marks a finished notebook. A notebook whose files are
  * missing fails on its own, with the file named, and stays local until a later run succeeds.
  * Any other error (network, server) aborts the run; the next run resumes.
+ *
+ * [run] and [ensureEntry] may run at once (Upload notebooks, and an edit of a notebook without a
+ * doc yet). Each notebook is checked and migrated under one lock, so it never gets two docs.
  */
 class RoomToAutomergeMigration(
     private val local: LocalLibrary,
@@ -85,7 +88,8 @@ class RoomToAutomergeMigration(
     private val canvasWidth: Double,
     private val strokesPerTransaction: Int = 500,
 ) {
-    private val uploaded = HashMap<String, String>()
+    private val lock = Any()
+    private val uploaded = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val mapping = RoomMapping { path -> uploaded.getOrPut(path) { blobs.upload(path) } }
 
     private sealed interface Item {
@@ -104,10 +108,8 @@ class RoomToAutomergeMigration(
     }
 
     fun run(onProgress: (MigrationProgress) -> Unit = {}): MigrationReport {
-        migrateFolders()
+        synchronized(lock) { migrateFolders() }
         val items = local.notebooks().map(::NotebookItem) + local.quickPages().map(::QuickPageItem)
-        val existing = docs.library().notebooks.keys
-        val created = state.load()
         val migrated = mutableListOf<String>()
         val already = mutableListOf<String>()
         val failed = mutableListOf<MigrationFailure>()
@@ -115,25 +117,26 @@ class RoomToAutomergeMigration(
 
         items.forEachIndexed { i, item ->
             onProgress(MigrationProgress(i, items.size, item.title))
-            if (item.id in existing) {
-                already += item.id
-                return@forEachIndexed
-            }
-            try {
-                val (entry, missing) = when (item) {
-                    is NotebookItem -> migrateNotebook(item.nb, created[item.id])
-                    is QuickPageItem -> migrateQuickPage(item.page, created[item.id]) to emptyList()
+            synchronized(lock) {
+                // Checked under the lock: an edit may have migrated it meanwhile.
+                if (item.id in docs.library().notebooks) {
+                    already += item.id
+                    return@forEachIndexed
                 }
-                docs.editLibrary { doc ->
-                    val (_, notebooks) = AutomergeSchema.libraryMapsOf(doc)
-                    doc.startTransaction().apply { AutomergeSchema.putNotebookEntry(this, notebooks, entry); commit() }
+                val created = state.load()[item.id]
+                try {
+                    val (entry, missing) = when (item) {
+                        is NotebookItem -> migrateNotebook(item.nb, created)
+                        is QuickPageItem -> migrateQuickPage(item.page, created) to emptyList()
+                    }
+                    putEntry(entry)
+                    migrated += item.id
+                    if (missing.isNotEmpty()) warnings += MigrationWarning(item.id, missing)
+                } catch (e: MissingFileException) {
+                    failed += MigrationFailure(item.id, item.title, e.message ?: "missing file")
+                } catch (e: ServerError.TooLarge) {
+                    failed += MigrationFailure(item.id, item.title, "a file is larger than the server accepts")
                 }
-                migrated += item.id
-                if (missing.isNotEmpty()) warnings += MigrationWarning(item.id, missing)
-            } catch (e: MissingFileException) {
-                failed += MigrationFailure(item.id, item.title, e.message ?: "missing file")
-            } catch (e: ServerError.TooLarge) {
-                failed += MigrationFailure(item.id, item.title, "a file is larger than the server accepts")
             }
         }
         onProgress(MigrationProgress(items.size, items.size, null))
@@ -146,16 +149,20 @@ class RoomToAutomergeMigration(
      * @throws MissingFileException when a file it refers to can't be read.
      */
     fun ensureEntry(id: String): String? {
-        docs.library().notebooks[id]?.let { return it.docUrl }
-        val created = state.load()[id]
-        val entry = local.notebook(id)?.let { migrateNotebook(it, created).first }
-            ?: local.page(id)?.page?.takeIf { it.notebookId == null }?.let { migrateQuickPage(it, created) }
-            ?: return null
-        docs.editLibrary { doc ->
-            val (_, notebooks) = AutomergeSchema.libraryMapsOf(doc)
-            doc.startTransaction().apply { AutomergeSchema.putNotebookEntry(this, notebooks, entry); commit() }
+        synchronized(lock) {
+            docs.library().notebooks[id]?.let { return it.docUrl }
+            val created = state.load()[id]
+            val entry = local.notebook(id)?.let { migrateNotebook(it, created).first }
+                ?: local.page(id)?.page?.takeIf { it.notebookId == null }?.let { migrateQuickPage(it, created) }
+                ?: return null
+            putEntry(entry)
+            return entry.docUrl
         }
-        return entry.docUrl
+    }
+
+    private fun putEntry(entry: AmNotebookEntry) = docs.editLibrary { doc ->
+        val (_, notebooks) = AutomergeSchema.libraryMapsOf(doc)
+        doc.startTransaction().apply { AutomergeSchema.putNotebookEntry(this, notebooks, entry); commit() }
     }
 
     private fun migrateFolders() {
