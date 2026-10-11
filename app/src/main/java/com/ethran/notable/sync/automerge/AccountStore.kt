@@ -52,6 +52,7 @@ class AccountStore(private val file: File, private val cipher: SecretCipher) {
                 "token" to JsonPrimitive(cipher.encrypt(account.token)),
             )
         )
+        file.absoluteFile.parentFile.mkdirs()
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(json.toString())
         if (!tmp.renameTo(file)) throw IOException("could not write ${file.path}")

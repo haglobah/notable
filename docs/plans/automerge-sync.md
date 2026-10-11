@@ -91,11 +91,25 @@ At the end of this phase, Beat can upload from a phone and read in any browser.
 - [x] Onyx auto-freeze: the sync section reads `ApplicationExitInfo`. A recent
       `REASON_PACKAGE_STATE_CHANGE` on an Onyx device means it was frozen, and the section says so
       with steps. It also warns about background restriction and battery optimization.
-- [ ] Verify on the Boox: install the `.dev` build, log in, migrate a few notebooks, check them in
-      the PWA. Blocked on 2026-10-11: the Boox dropped off USB during the work. The same path ran
-      end to end from the JVM against the live server (`LiveServerMigrationTest`, opt-in via
-      `NOTABLE_E2E_*`). A fresh repo read everything back, a JS client read it with
-      `web/schema`, and the live PWA rendered the PDF and the notebook with the strokes in place.
+- [x] Verify on the Boox (2026-10-11, Note Air 5C). The `.dev` build uses `notabledb-dev`, and
+      the real app's database checksum and install time were unchanged. Through the UI: created a
+      notebook and a quick page, and copy-imported a 2-page PDF. Injected stylus events don't
+      draw on Onyx (the firmware pen pipeline reads the digitizer), so strokes were seeded into the
+      `.dev` Room database with the real `encodeStrokePoints`, while the app was stopped. Then:
+      logged in, uploaded 3 notebooks with 0 failures, and a second run found all 3 already there.
+      A JS client read `canvasWidth` 1860 from the device, exact stroke coordinates, and the PDF
+      blob, byte-identical to the imported file. The live PWA drew the strokes at the same spots as
+      the Boox's own editor. Logout cleared the token and the local repo.
+      - Fixed on device: on a fresh install `files/notable-sync/` doesn't exist, and saving the
+        account failed with ENOENT. Both stores now create their folder (tests first).
+      - Onyx auto-freeze: a fresh install is disabled about 1 s after install (`enabled=3`), even
+        before first launch, so there is no exit record and the warning can't show; `pm enable`
+        fixes it. A real background freeze didn't happen within 60 s in the background or 3 min
+        with the screen off (USB connected). The same mechanism, `pm disable-user` on the running
+        app, gives exit reason 15 "STATE CHANGE". After that the section shows the Onyx warning,
+        and the client reconnects on its own with the stored token.
+      - The WebDAV "Experimental Feature" consent dialog covers the whole Sync tab, including the
+        Notable Sync section, and comes back after every reinstall.
 
 Known gaps in part A:
 

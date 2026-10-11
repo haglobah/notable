@@ -22,7 +22,7 @@
     <string name="nsync_migrate_failed_item">%1$s: %2$s</string>
     <string name="nsync_migrate_missing_pages">%1$s: %2$d pages listed in the notebook no longer exist and were left out.</string>
     <string name="nsync_migrate_error">Upload stopped: %1$s. Run it again to continue.</string>
-    <string name="nsync_bg_frozen">Onyx froze Notable in the background, so sync only runs while Notable is open. To fix: long-press the Notable icon, open App Optimization (or Settings → Apps → App Management), and turn off “Freeze when in background”.</string>
+    <string name="nsync_bg_frozen">Onyx froze Notable in the background, so sync only runs while Notable is open. To fix: long-press the Notable icon on the Onyx home screen and choose “Unfreeze app”.</string>
     <string name="nsync_bg_killed">Android stopped Notable when its package state changed, so background sync may not run.</string>
     <string name="nsync_bg_restricted">Background activity is restricted for Notable, so sync only runs while it is open. Allow background activity in the app\'s system settings.</string>
     <string name="nsync_bg_battery">Battery optimization may pause sync in the background. Exempt Notable in the battery settings for reliable sync.</string>

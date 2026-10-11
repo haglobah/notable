@@ -31,6 +31,14 @@ class AccountStoreTest {
     }
 
     @Test
+    fun save_creates_missing_parent_folders() {
+        // On a fresh install `files/notable-sync/` does not exist yet (found on the Boox).
+        val nested = tmp.root.resolve("notable-sync/account.json")
+        AccountStore(nested, cipher).save(account)
+        assertEquals(AccountLoad.Present(account), AccountStore(nested, cipher).load())
+    }
+
+    @Test
     fun empty_when_nothing_was_saved() {
         assertEquals(AccountLoad.None, AccountStore(file, cipher).load())
     }

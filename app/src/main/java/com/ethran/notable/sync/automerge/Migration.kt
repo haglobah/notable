@@ -49,6 +49,7 @@ class MigrationStateStore(private val file: File) {
 
     fun record(notebookId: String, docUrl: String) {
         val next = load() + (notebookId to docUrl)
+        file.absoluteFile.parentFile.mkdirs()
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(JsonObject(next.mapValues { JsonPrimitive(it.value) }).toString())
         if (!tmp.renameTo(file)) throw java.io.IOException("could not write ${file.path}")

@@ -207,6 +207,13 @@ class MigrationTest {
     }
 
     @Test
+    fun state_store_creates_missing_parent_folders() {
+        val store = MigrationStateStore(tmp.root.resolve("acct/migration.json"))
+        store.record("nb", "automerge:x")
+        assertEquals(mapOf("nb" to "automerge:x"), store.load())
+    }
+
+    @Test
     fun progress_counts_up_to_the_total() {
         seed()
         val seen = mutableListOf<MigrationProgress>()
