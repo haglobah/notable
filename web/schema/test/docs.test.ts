@@ -116,3 +116,15 @@ test("folder values store scalar strings", () => {
   const v = folderValue(f) as Record<string, unknown>
   assert.ok(A.isImmutableString(v.title))
 })
+
+test("canvasWidth is optional: absent stays absent, present round-trips", () => {
+  assert.equal("canvasWidth" in readNotebook(roundTrip(notebookValue(expectedNotebook))), false)
+  const withWidth = { ...expectedNotebook, canvasWidth: 1860 }
+  assert.deepEqual(readNotebook(roundTrip(notebookValue(withWidth))), withWidth)
+})
+
+test("canvasWidth must be a positive number", () => {
+  const doc = roundTrip<Record<string, unknown>>(notebookValue(expectedNotebook))
+  const bad = A.change(doc, d => { d.canvasWidth = 0 })
+  assert.throws(() => readNotebook(bad), (e: unknown) => e instanceof SchemaError && /canvasWidth/.test((e as Error).message))
+})

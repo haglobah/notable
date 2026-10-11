@@ -79,6 +79,7 @@ export const notebookValue = (x: Notebook) => ({
   schema: s(NOTEBOOK_SCHEMA),
   version: SCHEMA_VERSION,
   notebookId: s(x.notebookId),
+  ...(x.canvasWidth === undefined ? {} : { canvasWidth: f(x.canvasWidth) }),
   openPageId: sOrNull(x.openPageId),
   defaultBackground: backgroundValue(x.defaultBackground),
   pageOrder: x.pageOrder.map(s),

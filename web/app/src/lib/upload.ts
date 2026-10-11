@@ -6,7 +6,7 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo"
 import { sha256 } from "@noble/hashes/sha2.js"
 import { bytesToHex } from "@noble/hashes/utils.js"
-import { notebookEntryValue, notebookValue, type Background, type Page, type Source } from "@notable/schema"
+import { DEFAULT_CANVAS_WIDTH, notebookEntryValue, notebookValue, type Background, type Page, type Source } from "@notable/schema"
 import { UploadFailure, type DocumentKind } from "./errors.ts"
 import { countPages, EPUB_LAYOUT } from "./pages.ts"
 
@@ -130,6 +130,8 @@ export async function addDocument(o: AddDocument): Promise<{ notebookId: string;
   }))
   const handle = o.repo.create(notebookValue({
     notebookId,
+    // Strokes for these pages will be drawn on the Boox; its canvas width maps them onto the pages.
+    canvasWidth: DEFAULT_CANVAS_WIDTH,
     openPageId: pages[0].id,
     defaultBackground: background("autoPdf"),
     pageOrder: pages.map(p => p.id),

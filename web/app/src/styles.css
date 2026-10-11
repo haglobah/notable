@@ -210,12 +210,36 @@ button, input { font: inherit; color: inherit; }
   font-family: var(--serif); font-size: 1.35rem; text-align: center; max-width: calc(100vw - 2 * var(--gutter));
 }
 
-/* ---- reader placeholder ---- */
+/* ---- reader ---- */
 .back { display: inline-block; margin-bottom: 1rem; color: var(--graphite-soft); text-decoration: none; font-size: 0.95rem; }
 .back:hover { color: var(--graphite); }
-.reader-meta { color: var(--graphite-soft); margin: -0.75rem 0 1.5rem; }
-.reader-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
-.reader-later { margin-top: 2rem; font-family: var(--serif); color: var(--graphite-soft); line-height: 1.6; max-width: 32rem; }
+.reader-meta { color: var(--graphite-soft); margin: -0.75rem 0 1.25rem; }
+.reader-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.5rem; }
+.reader-actions .alert { flex-basis: 100%; }
+.reader-progress { color: var(--graphite-soft); font-size: 0.925rem; font-variant-numeric: tabular-nums; }
+
+/* Pages are paper in both themes: the ink and the documents were made on white. */
+.pages { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+.page {
+  position: relative; width: 100%; background: #ffffff; border-radius: var(--radius-sheet);
+  box-shadow: 0 0 0 1px var(--rule), 0 1px 3px rgb(0 0 0 / 0.08); overflow: hidden;
+}
+.page-layer { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* While MuPDF renders a page (seconds on first open: its engine loads then). */
+.page.loading::before {
+  content: "Loading page…"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  font-size: 0.875rem; color: #6b7076; animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .page.loading::before { animation: none; } }
+.page-number {
+  position: absolute; right: 0.5rem; bottom: 0.4rem; font-size: 0.75rem; color: #6b7076;
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.page-problem {
+  position: absolute; left: 0.75rem; right: 0.75rem; top: 0.75rem; margin: 0; padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-control); background: #f5e2dd; color: #9b2a1d; font-size: 0.9rem;
+}
 
 .center { min-height: 60dvh; display: grid; place-items: center; text-align: center; padding: var(--gutter); color: var(--graphite-soft); }
 .problem { max-width: 32rem; margin: 3rem auto; padding: 0 var(--gutter); }

@@ -33,8 +33,11 @@ usable and verified. Later phases depend on earlier ones.
 - [x] noldor `modules/notable.nix`: systemd unit, Caddy vhost, `clan.core.state` with a SQLite
       snapshot before backup. On branch `notable-sync` in `~/noldor-notable-sync`. The formenos system
       builds with `--override-input notable path:…/web`.
-- [ ] Push `automerge-sync`, lock the `notable` input in noldor, add the DNS record for
-      `notable.hagenlocher.me`, deploy to formenos, and create Beat's account. Needs Beat's go.
+- [x] Push `automerge-sync`, lock the `notable` input in noldor, add the DNS record, and deploy to
+      formenos (2026-10-11). Live at https://notable.hagenlocher.me, port 3040 behind Caddy. Smoke
+      test passed with a throwaway account (deleted). Deployed from noldor branch `notable-sync`;
+      that branch still needs merging into noldor `main` once the uncommitted work there lands.
+- [ ] Beat creates an account: `ssh -t root@49.12.12.164 notable-admin user add beat`.
 
 ## Phase 2 — PWA (read, upload, download)
 
@@ -42,8 +45,16 @@ usable and verified. Later phases depend on earlier ones.
       the same origin (`NOTABLE_STATIC_DIR`, packaged in the flake, checked in the VM test).
 - [x] Upload a PDF or EPUB: MuPDF counts pages, then hash, blob PUT with progress, then the notebook
       doc and library entry. Tested against a real server with a second client.
-- [ ] Reader: `mupdf.js` pages with the strokes drawn on top. (`/n/:notebookId` is a placeholder.)
-- [ ] Download: generate the PDF projection on the client. (The button is in place, disabled.)
+- [x] Reader: `mupdf.js` pages (in a worker) with the strokes drawn on top, updating live. Pages
+      near the viewport draw; the rest free their canvases. Checked in headless Chromium at 390 px
+      against a local server with a simulated Boox: ink lands at the expected pixels, and a stroke
+      written by the "Boox" appears without a reload. No console errors.
+- [x] Download: `project()` in `web/app/src/lib/project.ts`, run in the worker. Original PDF pages
+      are grafted, EPUB pages laid out with the stored layout, native pages drawn as vectors.
+      Strokes become `/Ink` annotations with appearance streams, and the notebook doc is embedded.
+      Tested in Node with qpdf and poppler; the downloaded file was also checked with poppler.
+- [ ] Open a downloaded PDF on the iPhone (Files/Safari) and in Firefox. Needs Beat's devices.
+- [ ] Install the PWA and share a PDF on a real Android phone; install on iOS. Needs Beat's devices.
 - [x] Manifest and service worker: installable, plus an Android share target. Checked in desktop
       Chrome: the worker is active, the shell precached, and the library loads offline from
       IndexedDB. Install and share on a real Android or iOS device are not checked yet.
@@ -56,6 +67,10 @@ At the end of this phase, Beat can upload from a phone and read in any browser.
 - [ ] Repo client: connect to formenos, store docs locally, pull blobs.
 - [ ] Projector: notebook doc → Room, so remote changes show up in the editor.
 - [ ] One-time migration: Room → Automerge docs, keyed by existing UUIDs, idempotent.
+- [ ] Write `canvasWidth` (the device's shorter screen side, `SCREEN_WIDTH` in portrait) into every
+      notebook doc. Readers map strokes onto PDF and EPUB pages with it. Without it they assume
+      1860 px (Note Air 5C), which misplaces ink from any other screen size. The Kotlin model and
+      writer don't have the field yet; the Kotlin reader ignores it.
 
 ## Phase 4 — Make Automerge authoritative
 

@@ -172,8 +172,11 @@ export function readNotebook(doc: unknown): Notebook {
   const pagesObj = map(d, "pages", "")
   const pages = Object.fromEntries(Object.keys(pagesObj).map(id => [id, readPage(map(pagesObj, id, "pages"), id)]))
   const rawOrder = list(d, "pageOrder", "").map((v, i) => scalar(v, `pageOrder[${i}]`))
+  const canvasWidth = "canvasWidth" in d && d.canvasWidth !== undefined ? num(d.canvasWidth, "canvasWidth") : undefined
+  if (canvasWidth !== undefined && !(canvasWidth > 0)) throw new SchemaError(`canvasWidth: expected a positive number, got ${canvasWidth}`)
   return {
     notebookId: str(d, "notebookId", ""),
+    ...(canvasWidth === undefined ? {} : { canvasWidth }),
     openPageId: strOrNull(d, "openPageId", ""),
     defaultBackground: readBackground(map(d, "defaultBackground", ""), "defaultBackground"),
     pageOrder: normalizeOrder(rawOrder, pages),

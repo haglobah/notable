@@ -36,6 +36,10 @@ Map keys are ids. Ids are not repeated inside entries.
 - A PDF or EPUB added from the PWA gets one page per document page, with background `pdfN`
   pointing at the source blob, like Android's PDF import. EPUB pages use `pdfN` too: MuPDF opens
   either format, and an EPUB is laid out with its library entry's `source.layout` first.
+- `canvasWidth` (optional number) is the page width in stroke coordinates: the Android canvas
+  width, which is the device's shorter screen side (1860 px on the Note Air 5C). A PDF or EPUB page
+  is scaled to it, so a stroke at `x` px sits at `x × pageWidthPt / canvasWidth` pt. Docs without it
+  are read as `DEFAULT_CANVAS_WIDTH` (1860). Android must write it (Phase 3).
 - `points` is Notable's SB2 stroke encoding, with pressure normalized to [0, 1]. See
   `src/sb2.ts` and `StrokePointConverter.kt`.
 - Strokes are immutable. Editing a stroke replaces its entry, and erasing deletes its key.

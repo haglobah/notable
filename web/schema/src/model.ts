@@ -8,6 +8,9 @@ export const LIBRARY_SCHEMA = "notable/library"
 export const NOTEBOOK_SCHEMA = "notable/notebook"
 export const SCHEMA_VERSION = 1
 
+/** Note Air 5C portrait width in px, for notebooks without `canvasWidth`. */
+export const DEFAULT_CANVAS_WIDTH = 1860
+
 export type Library = {
   folders: Record<string, Folder>
   notebooks: Record<string, NotebookEntry>
@@ -41,6 +44,12 @@ export type EpubLayout = { w: number; h: number; em: number }
 
 export type Notebook = {
   notebookId: string
+  /**
+   * Width of the page in stroke coordinates: the Android canvas width (the device's shorter screen
+   * side, 1860 px on the Note Air 5C) that a PDF page is scaled to. Optional because docs written
+   * before it existed lack it; readers then assume DEFAULT_CANVAS_WIDTH.
+   */
+  canvasWidth?: number
   openPageId: string | null
   defaultBackground: Background
   /** Normalized on read: no dangling ids, no duplicates, every page present. */

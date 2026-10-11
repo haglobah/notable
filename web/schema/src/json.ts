@@ -21,6 +21,7 @@ export function libraryFromJson(j: J): Library {
 export function notebookFromJson(j: J): Notebook {
   return {
     notebookId: j.notebookId,
+    ...(j.canvasWidth === undefined ? {} : { canvasWidth: j.canvasWidth }),
     openPageId: j.openPageId,
     defaultBackground: j.defaultBackground,
     pageOrder: j.pageOrder,
@@ -54,6 +55,7 @@ export function libraryToJson(l: Library): J {
 export function notebookToJson(n: Notebook): J {
   return {
     notebookId: n.notebookId,
+    ...(n.canvasWidth === undefined ? {} : { canvasWidth: n.canvasWidth }),
     openPageId: n.openPageId,
     defaultBackground: n.defaultBackground,
     pageOrder: n.pageOrder,
