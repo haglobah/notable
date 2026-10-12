@@ -81,7 +81,7 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
 ## State (2026-10-11)
 
 - Phases 0–3 are done and deployed. Phase 4 is done except "rebuild Room on demand" (optional).
-  Phase 5 (remove WebDAV) is done, not committed (last entry below).
+  Phase 5 (remove WebDAV) is done and committed (`580887cc`). The UI refresh round 2 is merged.
 - Phase 4a: Committed in `a177f2e2`: `LocalDocWriter` and the projector fixes.
 - Committed (steps 1–3 of an older Next list; unit tests only, not on device):
   - **Durability.** `RepoLocalDocs.kt`: `DurableStorage` records finished puts; `RepoLocalDocs.edit`
@@ -293,6 +293,28 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     library shows them, Sync tab shows only Notable Sync. Screenshots
     `/tmp/ndc/phase5-{home,synctab}.png`. The test APK was uninstalled again.
 
+- Done, committed (2026-10-11): **merged `ui-refresh-round-2`** (`f70b92a2`, plan in
+  `docs/plans/ui-refresh-round-2.md`) into `automerge-sync`, keeping this branch's decisions:
+  - No WebDAV: `NotebookConfigDialog` lost its `SyncScheduler` parameter and deletion queueing;
+    cards have no sync badges; string `details_delete_sync_failed` dropped (en, pl).
+  - The redesigned details dialog writes only through `appRepository.edits` (rename on dismissal,
+    background, move, linked file, delete), on `Dispatchers.IO`, inside their `perform` (save
+    before dismissal, slow save keeps it open, failure keeps the draft, delete/move finish first).
+    A background change without a value keeps the current one (their `COALESCE`, now in the dialog).
+  - Their atomic DAO queries (`rename`, `setBackground`, `setLinkedUri`, `move`) were dropped in
+    favor of `LibraryEdits`' field-level ones; those now return the row count and
+    `BookRepository` throws "Notebook no longer exists" on 0 (red/green: `LibraryEditsTest`
+    "a notebook edit fails visibly…"). `setLinkedExternalUri` still doesn't stamp `updatedAt`.
+  - PDFs always linked (`onPdfFile(uri)`); the picker routes EPUBs to the same callback and
+    accepts `application/epub+zip` again (red/green: `PdfImportTests.selectedEpubGoesToTheDocumentImporter`).
+    Import snack text is now "Importing document".
+  - Their androidTests adapted: `NotebookDetailsTests` mocks `edits.renameNotebook`;
+    `NotebookMetadataTests` tests the Room primitives `LibraryEdits` uses.
+  - Verified: unit suite 353, 0 failures, 2 live skipped; `assembleDebug`,
+    `compileDebugAndroidTestKotlin` build; 13 focused androidTests (`library.*`, `details.*`) pass
+    on the Note Air 5C via `am instrument` against `.dev` (test APK uninstalled afterwards; Onyx
+    disables a fresh `.dev.test`, `pm enable` right before the run). Not checked visually on device.
+
 Known gaps:
 
 - The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
@@ -344,9 +366,6 @@ Known gaps:
   device can upgrade from a WebDAV build. Room version 38 is this fork's; upstream `Ethran/notable`
   may use 38 differently, so a merge from upstream needs its schema renumbered. Leftover WebDAV
   `.part`/`.bak` files next to images and files on WebDAV servers are not cleaned up.
-- `NotebookConfig` deletes a notebook in the dialog's `rememberCoroutineScope` and closes the
-  dialog at once, so the coroutine can be cancelled mid-delete (pre-existing; the WebDAV snack
-  that used to follow is gone).
 - `RepoLocalDocsTest` "peek reads a doc as stored…" failed once in a full unit run
   (`FileSystemStorage.loadRange` → `UncheckedIOException`), passed 5 times alone and in the next
   full run. Likely compaction deleting files during `peek`; not investigated.
@@ -362,10 +381,10 @@ Known gaps:
 - Deleting a folder here doesn't announce its pages (the editor can't be open then); a remote
   folder delete does, through its notebook entries.
 - The editor leaving a deleted page may still write a preview file for it.
-- `/home/beat/projects/notable` (main) has an uncommitted UI refresh that changes
-  `LibraryViewModel`, `NotebookConfig`, `NotebookCard`, `HomeView` and adds `PaperActions.kt`. When
-  merged, its writes must go through `appRepository.edits`, and its WebDAV uses (`SyncScheduler`,
-  `SyncBadge`, `NotebookSyncStatusStore`, the deletion queue) must go.
+- Strings unused before the UI merge (both branches): `home_new_folder`, `app_latest_version`,
+  `work_in_progress`, `export_page_to_error`, `exporting_the_page_to`, `exporting_the_book_to`,
+  `cleared_all_strokes`, `toolbar_settings_edit_pen`, `pen_name_charcoal_classic`.
+- The details dialog's Export closes the dialog at once (unchanged from their branch).
 
 - **PDF export ignores "paginate PDF"** (`AppSettings.paginatePdf`, still a toggle in General
   settings): every PDF is the projection, one page per notebook page, as tall as its content.
@@ -384,9 +403,8 @@ Known gaps:
 
 What's left overall:
 
-1. Commit Phase 5 (orchestrator).
-2. Decide the `paginatePdf` toggle (see Known gaps): remove it, or paginate both projections.
-3. Merge main's UI refresh (see Known gaps) without its WebDAV parts.
+1. Decide the `paginatePdf` toggle (see Known gaps): remove it, or paginate both projections.
+2. Look at the merged library and details screens on the Boox (`.dev`).
 
 Optional, left from Phase 4: rebuild Room from the docs on demand; a live JVM test of attaching
 (like `LiveServerOfflineEditsTest`); check a PWA-uploaded EPUB on the Boox. Server hardening and
