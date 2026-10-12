@@ -37,8 +37,10 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - `data/LibraryEdits.kt`: every folder, notebook, page and import write (via
     `AppRepository.edits`), each through the `ContentMirror`.
   - `AndroidAdapters.kt`: Room, files, background-limit adapters.
-- Debug hook: `editor/DebugEditHook.kt` (adb broadcasts drive `PageView`/`History`). Node peer:
-  `web/server/scripts/device-peer.ts`.
+- Debug hook: `editor/DebugEditHook.kt` (adb broadcasts drive `PageView`/`History`; ops `draw`,
+  `erase`, `move`, `undo`, `redo`, `image`/`place`, `dump`, `delete-page`). Node peer:
+  `web/server/scripts/device-peer.ts` (`dump`, `add-stroke`, `blob`, `delete-page`, `move-page`,
+  `delete-notebook`, `rename-folder`).
 - Editor: `docs/editor-data-flow.md`, `docs/editor-state-and-view.md`. The stroke and image write
   functions are in `data/PageDataManager.kt`.
 - Web: `web/schema` (shared schema, TS), `web/server` (sync, blobs, accounts), `web/app` (PWA),
@@ -138,7 +140,7 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     `nix shell nixpkgs#nodejs_24 -c node server/scripts/device-peer.ts dump`.
   - Tests: `sync.automerge.*` and `editor.*` pass (175, the 2 live tests skipped without env);
     `assembleDebug` builds.
-- **Device check not done:** no device on adb (USB) during the session.
+- Device check: done on 2026-10-11 (see the last State entry).
 
 - Done, not committed (2026-10-11, Phase 4b; unit tests and `assembleDebug`, not on device):
   - **One entry point.** `data/LibraryEdits.kt` (`AppRepository.edits`) holds every library and
@@ -197,7 +199,46 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     `DocFirstMirrorTest`, `RepoLocalDocsTest`. `sync.automerge.*` and `data.*`: 249 pass, 2 live
     tests skipped. `assembleDebug` builds.
 
+- Done, not committed (2026-10-11): **device check of 4a, 4b and local-only mode** on the Note
+  Air 5C, `.dev` build, live server, two throwaway accounts (deleted; the `.dev` app is logged
+  out). Every check passed; no fix was needed. Checked with `DEBUG_EDIT`, `device-peer.ts dump`,
+  Room copies (`adb pull` of `notabledb-dev`) and the PWA in headless Chromium.
+  - Local-only: installed over a logged-out `.dev` app with Room data; the first start copied 3
+    notebooks and the quick page ("Notebooks copied: 4"); a stroke drawn with no account was in
+    the doc. Login attached the library: the server got the same 4 doc URLs as `migration.json`
+    (no duplicates; account deletion later reported 8 docs = library + every notebook made in the
+    check). Logout kept the library ("This device keeps the notebooks of …"); an edit made then
+    arrived at the next login. A second account was refused, `library.json` unchanged, its
+    library stayed empty.
+  - 4a: draw, erase, move, undo, redo, image each matched in `dump` (ids and bboxes) and the PWA.
+    `add-stroke` during 6 local draws: all 11 strokes on both sides. Draw then `am force-stop`
+    after 50 and 100 ms: strokes in Room and on the server after relaunch. Offline launch: draw
+    and image committed, no pending writes, "Files waiting to upload: 1"; wifi back: strokes and
+    blob on the server (`blob` sha matches). Logout with the file pending: "Not logged out: 0
+    edits and 1 files …" with both choices. Latency: p50 68 ms, max 122 ms (32 edits).
+  - 4b: folder create, rename, delete (its notebook went too, on both sides); notebook create,
+    rename, move to a folder, background, delete (local and remote); pages add, duplicate (also
+    with 46 strokes and 2 images), drag-move, delete, page background; remote `move-page` and
+    `rename-folder` projected to Room. PDF import (blob sha = file sha, renders in the PWA) and
+    XOPP import (46 strokes, 2 images, same blobs). Open page deleted remotely and locally (the
+    `delete-page` hook op, the function quick nav's page menu calls): the editor moved to the
+    page now at that index.
+  - Not checked: folder move (no UI); quick nav's own button (its 3-finger swipe can't be
+    injected: SELinux denies `sendevent`); adoption of an old per-account folder (the `.dev` app
+    had none); the first-start snackbar (copy finished before the first screenshot).
+  - Screenshots: `/tmp/ndc/*.png` (not kept in the repo).
+
 Known gaps:
+
+- The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
+  reach zero, until the settings screen is reopened.
+- After the attaching login, "Notebooks copied: 4, already there 0" still showed the first
+  start's numbers; the docs were reused, so either the rerun didn't update the status or it
+  didn't run. Not investigated.
+- Imported notebooks are titled from the content URI ("document 1000000068",
+  "msf 1000000071"), not the file name. Probably older than this branch; not checked on main.
+- The `.dev` app on the Note Air 5C now keeps a library owned by the deleted account
+  `devchk61861a`; any other login there is refused until its data is cleared or it is reinstalled.
 
 - A projection that read the doc between a page-cut's remove and re-add, and applies after the
   re-add settled, drops the strokes from the editor until the next projection brings them back.
@@ -257,32 +298,9 @@ Known gaps:
 
 ## Next
 
-1. **Device check of 4a** (Note Air 5C, `.dev` build only, a throwaway account; delete it and log
-   the `.dev` app out afterwards). Install `app/build/outputs/apk/debug/app-debug.apk`,
-   `pm enable com.ethran.notable.dev`, log in, open a notebook, then use `DEBUG_EDIT` and
-   `device-peer.ts`, with screencaps (`adb exec-out screencap -p`) for each:
-   - draw, erase, move, undo, redo, image: each reaches the server (`dump`) and the PWA;
-   - `add-stroke` while a local `draw` lands: both strokes on both sides;
-   - `am force-stop` right after a `draw`: the stroke is in Room and on the server after relaunch;
-   - offline launch (`svc wifi disable`) with the cached library URL: edits commit, pending is 0
-     writes; wifi back: they reach the server;
-   - an image inserted offline: "Files waiting to upload: 1", then uploaded (`blob <sha>`);
-   - the logout prompt with something pending;
-   - latency p50 and max from the sync settings.
-   If a check fails, fix it with a failing test first.
-   Then the same for 4b: create, rename, move and delete a folder and a notebook; add, move,
-   duplicate and delete pages; change a page and a notebook background; import a PDF and an XOPP;
-   each reaches `dump` and the PWA. Delete the open page from quick nav, and from the other side,
-   and see the editor move on. `device-peer.ts` needs ops for that (`delete-page`, `move-page`,
-   `delete-notebook`, `rename-folder`).
-   Then local-only mode: update the `.dev` build over a logged-in install (its folder is
-   adopted; Room-only notebooks are copied up on connect); log out, edit, log in again (the edit
-   arrives); try another account (refused, nothing changes); on a fresh `.dev` install with
-   notebooks in `notabledb-dev`, the first start copies them (snackbar), edits work offline with
-   no account, and the first login puts them in the account (`dump`: one doc per notebook).
-   Optionally a live JVM test of attaching, like `LiveServerOfflineEditsTest`.
-2. The rest of Phase 4:
+1. The rest of Phase 4:
    - Android share-as-PDF from the same projection as the PWA;
    - EPUB import on Android.
+   - Optional: a live JVM test of attaching, like `LiveServerOfflineEditsTest`.
 
 Then Phase 5, removing WebDAV.

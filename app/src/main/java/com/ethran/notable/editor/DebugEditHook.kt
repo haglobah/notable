@@ -8,6 +8,8 @@ import android.net.Uri
 import androidx.compose.ui.unit.IntOffset
 import androidx.core.content.ContextCompat
 import com.ethran.notable.BuildConfig
+import com.ethran.notable.data.AppRepository
+import com.ethran.notable.data.deletePage
 import com.ethran.notable.data.db.StrokePoint
 import com.ethran.notable.data.model.SimplePointF
 import com.ethran.notable.editor.canvas.CanvasEventBus
@@ -18,12 +20,22 @@ import com.ethran.notable.editor.utils.handleDraw
 import com.ethran.notable.editor.utils.handleErase
 import com.ethran.notable.editor.utils.selectImagesAndStrokes
 import com.ethran.notable.editor.utils.strokeBounds
+import dagger.hilt.EntryPoint
+import dagger.hilt.EntryPoints
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.sin
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+internal interface DebugEditEntryPoint {
+    fun appRepository(): AppRepository
+}
 
 /**
  * Debug builds only: drives the editor's real [PageView] and [History] paths from adb, because
@@ -41,6 +53,8 @@ import kotlin.math.sin
  * - `undo`, `redo`: [History.undo], [History.redo].
  * - `image` `path`: inserts a file as the image picker does; `place` then commits it.
  * - `dump`: logs the page id and its stroke and image ids.
+ * - `delete-page`: deletes the open page as the quick-nav page menu does ([deletePage]); the
+ *   editor then moves to the neighbouring page or the library.
  *
  * Every op logs one line under the tag `DebugEdit`.
  */
@@ -147,6 +161,13 @@ internal class DebugEditHook(
             "dump" -> log.i(
                 "DebugEdit dump page=${page.currentPageId} strokes=${page.strokes.map { it.id }} images=${page.images.map { it.id }}"
             )
+
+            "delete-page" -> {
+                val id = page.currentPageId
+                val repo = EntryPoints.get(context.applicationContext, DebugEditEntryPoint::class.java).appRepository()
+                deletePage(repo, id, context.filesDir)
+                log.i("DebugEdit delete-page page=$id")
+            }
 
             else -> log.w("DebugEdit: unknown op '$op'")
         }

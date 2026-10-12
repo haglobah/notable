@@ -183,7 +183,7 @@ Known gaps in part B:
 ## Phase 4 — Make Automerge authoritative
 
 - [x] Route every editor write (strokes, images, pages, folders, notebooks) through the doc. Room
-      only receives projected changes. (Device check of 4a and 4b still open.)
+      only receives projected changes. Checked on device (2026-10-11).
   - [x] **4a: strokes and images** (`LocalDocWriter`, `DocFirstMirror`, `EditorWriteQueue`):
         doc commit on disk, then Room, then settle. Failed or early writes wait in `DocOutbox`;
         images are copied into `QueuedBlobStore` and upload when connected. With a cached
@@ -207,8 +207,11 @@ Known gaps in part B:
         paths (`handleDraw`, `handleErase`, selection move as a tap outside, `History.undo/redo`,
         the image picker path). Each op logs one `DebugEdit` line. Node peer for checks:
         `web/server/scripts/device-peer.ts` (`dump`, `add-stroke`, `blob`).
-  - [ ] **Device check of 4a** on the Note Air 5C: not done, the device was not connected over
-        adb (2026-10-11). See the handoff's "Next" for the steps.
+  - [x] **Device check of 4a** on the Note Air 5C (2026-10-11, `.dev` build, live server): draw,
+        erase, move, undo, redo and image reach the server and the PWA; a remote stroke during
+        local draws keeps both; a force-stop 50 ms after a draw loses nothing; offline edits
+        commit (0 pending writes, 1 file waiting) and upload when wifi returns; the logout guard
+        shows the pending file. Pen-up → commit latency p50 68 ms, max 122 ms (32 edits).
 - [x] **4b: pages, notebooks and folders through the docs** (create, rename, move, delete,
       reorder, duplicate, background, open page, quick pages), and **imports** (PDF, XOPP with
       their images). `data/LibraryEdits.kt` is the one entry point (via `AppRepository.edits`);
@@ -221,7 +224,11 @@ Known gaps in part B:
       showing a deleted page (here or remote) moves to its neighbour or the library.
       `LibraryEditsTest`, new cases in `LocalDocWriterTest`, `DocFirstMirrorTest`. Unit tests
       only; not on device.
-  - [ ] **Device check of 4b** (see the handoff's "Next").
+  - [x] **Device check of 4b** (2026-10-11): folder create, rename, delete; notebook create,
+        rename, move, background, delete (local and remote); page add, duplicate, move, delete,
+        background; PDF and XOPP import; remote page move and folder rename; the open page deleted
+        here or remotely moves the editor on. Not checked: folder move (no UI), quick nav's own
+        button (its gesture can't be injected; the debug hook calls the same delete).
 - [x] **Local-only mode without an account** (`DeviceLibrary.kt`, ADR-001 "Local-only mode").
       One device library in `files/notable-sync/library/`, with or without an account. The first
       start makes its library doc and copies Room into it automatically (progress and errors in
@@ -234,7 +241,10 @@ Known gaps in part B:
       library. A login to another account is refused. Old per-account folders are adopted.
       `DeviceLibraryTest`, `LocalOnlyLibraryTest` (real repos and an in-process sync peer,
       `FakeSyncServer`, which counts the server's docs), new cases in `DocFirstMirrorTest` and
-      `RepoLocalDocsTest`. Unit tests only; not on device, not against the live server.
+      `RepoLocalDocsTest`. Checked on the Note Air 5C against the live server (2026-10-11): first
+      start copies Room with no account, edits work logged out, login attaches with no duplicate
+      docs, logout keeps the library, a later login sends the edits made meanwhile, another
+      account is refused. Not checked on device: adoption of an old per-account folder.
 - [ ] Rebuild Room from the docs on demand (a debug action and a test).
 - [ ] Android "share as PDF" uses the same projection as the PWA.
 - [ ] EPUB import on Android with fixed layout parameters.

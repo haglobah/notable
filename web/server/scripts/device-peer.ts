@@ -6,11 +6,16 @@
  *     node server/scripts/device-peer.ts dump
  *   ... node server/scripts/device-peer.ts add-stroke <notebookId> <pageId> <x> <y>
  *   ... node server/scripts/device-peer.ts blob <sha256>
+ *   ... node server/scripts/device-peer.ts delete-page <notebookId> <pageId>
+ *   ... node server/scripts/device-peer.ts move-page <notebookId> <pageId> <index>
+ *   ... node server/scripts/device-peer.ts delete-notebook <notebookId>
+ *   ... node server/scripts/device-peer.ts rename-folder <folderId> <title>
  *
  * `dump` prints one JSON object: the library entries and, per page, stroke ids with their bbox
  * and image ids with their blob. Coordinates are in doc units (canvasWidth wide).
  */
 import { Repo, type AutomergeUrl, type DocHandle } from "@automerge/automerge-repo"
+import { ImmutableString } from "@automerge/automerge"
 import { readLibrary, readNotebook, strokeValue } from "@notable/schema"
 import { HeaderClientAdapter } from "../test/helpers.ts"
 
@@ -69,6 +74,9 @@ function encodePoints(pts: { x: number; y: number }[]): Uint8Array {
   return buf
 }
 
+/** Lets the repo send local changes before shutdown. */
+const sent = () => new Promise(r => setTimeout(r, 3000))
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2)
   const { token, libraryDocUrl } = await login()
@@ -84,18 +92,46 @@ async function main() {
   try {
     const lib = readLibrary((await find(repo, libraryDocUrl)).doc())
     if (cmd === "dump") {
-      const out: Record<string, unknown> = { library: libraryDocUrl, folders: Object.keys(lib.folders), notebooks: {} }
+      const out: Record<string, unknown> = { library: libraryDocUrl, folders: Object.fromEntries(Object.values(lib.folders).map(f => [f.id, { title: f.title, parentId: f.parentId }])), notebooks: {} }
       for (const e of Object.values(lib.notebooks)) {
         const nb = readNotebook((await find(repo, e.docUrl as AutomergeUrl)).doc())
         ;(out.notebooks as Record<string, unknown>)[e.id] = {
-          title: e.title, docUrl: e.docUrl, canvasWidth: nb.canvasWidth, pageOrder: nb.pageOrder,
-          pages: Object.fromEntries(Object.values(nb.pages).map(p => [p.id, {
+          title: e.title, folderId: e.folderId, kind: e.kind, docUrl: e.docUrl, canvasWidth: nb.canvasWidth, defaultBackground: nb.defaultBackground, pageOrder: nb.pageOrder,
+          pages: Object.fromEntries(Object.values(nb.pages).map(p => [p.id, { background: p.background,
             strokes: Object.values(p.strokes).map(s => ({ id: s.id, bbox: s.bbox })),
             images: Object.values(p.images).map(i => ({ id: i.id, blob: i.blob, rect: i.rect })),
           }])),
         }
       }
       console.log(JSON.stringify(out, null, 1))
+    } else if (cmd === "delete-page" || cmd === "move-page") {
+      const [notebookId, pageId, index] = args
+      const entry = lib.notebooks[notebookId] ?? (() => { throw new Error(`no notebook ${notebookId}`) })()
+      const handle = await find<any>(repo, entry.docUrl as AutomergeUrl)
+      const at = handle.doc().pageOrder.findIndex((p: unknown) => String(p) === pageId)
+      if (at < 0) throw new Error(`page ${pageId} not in ${notebookId}'s pageOrder`)
+      handle.change((d: any) => {
+        d.pageOrder.deleteAt(at)
+        if (cmd === "delete-page") delete d.pages[pageId]
+        else d.pageOrder.insertAt(Math.min(Number(index), d.pageOrder.length), new ImmutableString(pageId))
+      })
+      await sent()
+      console.log(JSON.stringify({ [cmd]: pageId, notebookId, pageOrder: readNotebook(handle.doc()).pageOrder }))
+    } else if (cmd === "delete-notebook" || cmd === "rename-folder") {
+      const handle = await find<any>(repo, libraryDocUrl)
+      const [id, title] = args
+      handle.change((d: any) => {
+        if (cmd === "delete-notebook") {
+          if (!d.notebooks[id]) throw new Error(`no notebook ${id}`)
+          delete d.notebooks[id]
+        } else {
+          if (!d.folders[id]) throw new Error(`no folder ${id}`)
+          d.folders[id].title = new ImmutableString(title)
+          d.folders[id].updatedAt = new Date()
+        }
+      })
+      await sent()
+      console.log(JSON.stringify({ [cmd]: id, title }))
     } else if (cmd === "add-stroke") {
       const [notebookId, pageId, xs, ys] = args
       const x = Number(xs), y = Number(ys)
@@ -111,10 +147,10 @@ async function main() {
           points: encodePoints(pts), createdAt: now, updatedAt: now,
         })
       })
-      await new Promise(r => setTimeout(r, 3000)) // let the repo send it
+      await sent()
       console.log(JSON.stringify({ added: id, notebookId, pageId }))
     } else {
-      throw new Error(`unknown command ${cmd}; use dump, add-stroke, blob`)
+      throw new Error(`unknown command ${cmd}; use dump, add-stroke, blob, delete-page, move-page, delete-notebook, rename-folder`)
     }
   } finally {
     await repo.shutdown()
