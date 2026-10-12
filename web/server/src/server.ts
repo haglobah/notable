@@ -53,7 +53,8 @@ export async function startServer(config: Config, log: (msg: string) => void = (
     storage,
     peerId: SERVER_PEER_ID,
     shareConfig: {
-      announce: async () => false,
+      // Only docs this peer synced before: a reconnect then resets their sync state (see syncAdapter.ts).
+      announce: async (peerId, documentId) => documentId !== undefined && adapter.hasSynced(peerId, documentId),
       access: async (peerId, documentId) => documentId !== undefined && adapter.peerOwns(peerId, documentId),
     },
   })

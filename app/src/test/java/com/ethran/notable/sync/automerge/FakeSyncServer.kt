@@ -36,15 +36,48 @@ internal class FakeSyncServer(dir: File) : AutoCloseable {
     fun docIds(): Set<String> = synchronized(stored) { stored.toSet() }
 
     /** A dialer for one device; every connect makes a fresh pair of transports. */
-    fun dialer(): Dialer = object : Dialer {
+    fun dialer(): DeviceDialer = DeviceDialer()
+
+    /** One device's network: [reachable] and [cut] stand in for its wifi. */
+    inner class DeviceDialer : Dialer {
+        /** While false, a dial fails, as with wifi off. */
+        @Volatile var reachable = true
+        /** Live connections: each one's client and server transport. */
+        private val links = java.util.Collections.synchronizedList(mutableListOf<Pair<Transport, Transport>>())
+        private val halfOpen = java.util.Collections.synchronizedList(mutableListOf<Transport>())
+
+        /**
+         * Drops this device's connections, as wifi off does: the server sees the close. The
+         * device does too, unless [silently]: then its messages vanish until [noticeClose] (a
+         * half-open socket).
+         */
+        fun cut(silently: Boolean = false) {
+            val now = synchronized(links) { links.toList().also { links.clear() } }
+            now.forEach { (client, server) ->
+                server.onClose()
+                if (silently) halfOpen += client else client.onClose()
+            }
+        }
+
+        /** The device notices the half-open sockets of [cut] now. */
+        fun noticeClose() {
+            val now = synchronized(halfOpen) { halfOpen.toList().also { halfOpen.clear() } }
+            now.forEach { it.onClose() }
+        }
+
         override fun getUrl() = "memory://server"
         override fun connect(): CompletableFuture<Transport> {
+            if (!reachable) return CompletableFuture.failedFuture(java.io.IOException("server unreachable"))
             val toServer = Executors.newSingleThreadExecutor().also { synchronized(executors) { executors += it } }
             val toClient = Executors.newSingleThreadExecutor().also { synchronized(executors) { executors += it } }
             lateinit var client: Transport
             lateinit var server: Transport
-            client = Transport({ data -> toServer.execute { server.onMessage(data) } }, { toServer.execute { server.onClose() } })
-            server = Transport({ data -> toClient.execute { client.onMessage(data) } }, { toClient.execute { client.onClose() } })
+            lateinit var link: Pair<Transport, Transport>
+            fun live() = synchronized(links) { links.any { it === link } }
+            client = Transport({ data -> if (live()) toServer.execute { server.onMessage(data) } }, { toServer.execute { server.onClose() } })
+            server = Transport({ data -> if (live()) toClient.execute { client.onMessage(data) } }, { toClient.execute { client.onClose() } })
+            link = client to server
+            links += link
             acceptor.accept(server)
             return CompletableFuture.completedFuture(client)
         }

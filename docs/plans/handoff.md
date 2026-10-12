@@ -378,6 +378,47 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - Also seen: the General settings no longer show "Preview PDF pagination".
   - Screenshots: `/tmp/ndc/del-*.png`, `/tmp/ndc/pwa-del-*.png` (not kept in the repo).
 
+- Done, committed (2026-10-11): **inbound sync no longer stalls after a reconnect** (the bug
+  found in the delete-against-draw check). The fix is on the server; **redeploy the server** to
+  get it on the live instance (not done: deployment is Beat's).
+  - Contributing factors: (1) A phone that loses wifi leaves its socket open on the server, which
+    notices only by its keep-alive (15–30 s). A remote edit made in that window is sent to the dead
+    socket. (2) automerge-repo 2.5.6 keeps a peer's sync state across reconnects (the peer id is
+    the same while the app runs; samod picks it at `Repo.load`), and that state marks the lost
+    change as sent. (3) Only `DocSynchronizer.beginSync` clears that mark, and on reconnect it runs
+    only for docs the server announces; the server announced nothing (`announce: false`). The
+    device's next message re-adds it as a peer without a reset. (4) So the server never resends
+    the change, and later changes depend on it: the device's doc stays behind until a new peer id
+    (app restart) or a server restart. (5) Meanwhile device and server ping-pong sync messages
+    without progress (21,800 messages in 100 s on the device run, 56,000 in the JVM run). The local
+    edit was not needed: the plain wifi off/on that "worked" before most likely had its remote edit
+    after the server had noticed the dead socket. Client side checked and not at fault: samod
+    resends its own changes after a reconnect (`ReconnectSyncTest`, half-open socket included).
+  - Fix: `web/server/src/syncAdapter.ts` remembers, per peer id and across its connections, the
+    docs it sent `sync` or `request` for (`hasSynced`; the 2000 most recently joined peer ids);
+    `web/server/src/server.ts` announces exactly those docs (and only while the account owns them).
+    A reconnect then runs `beginSync`, which resets the sync state. The server still never pushes
+    a doc the peer hasn't asked for.
+  - Tests: `web/server/test/reconnect.test.ts` (a TCP proxy kills the device's side and leaves the
+    server's side silent; red before the fix at "edit made while the device was offline").
+    `LiveServerReconnectTest` (opt-in, `NOTABLE_E2E_*`, samod + OkHttp through `FlakyNetwork`):
+    both cases red against the old local server, green after, 26 sync messages instead of
+    ~56,000. `ReconnectSyncTest` (FakeSyncServer, green before and after; it can't reproduce,
+    since samod as a server resets on reconnect). `FakeSyncServer.dialer()` now returns a
+    `DeviceDialer` with `reachable`, `cut(silently)`, `noticeClose()`.
+  - Verified: server tests 46 pass, `tsc` clean; app unit suite 368, 0 failures, 4 skipped (live).
+  - Device (Note Air 5C, `.dev`): the device can't reach this machine over wifi (host firewall,
+    no sudo), so the server ran locally behind `adb reverse` and a host proxy
+    (`/tmp/nrs/flaky.py`) that cut the connection like wifi off (device side closed, server side
+    silent). A temporary debug-only network security config allowed `http://localhost` (reverted,
+    not committed). Local account `devold`, quick page open in the editor; steps: cut, hook
+    `draw`, `device-peer.ts add-stroke`, restore. Old server: the device sent its stroke but
+    lacked the remote one and a later one after 100 s (red, sync storm). Fixed server, same
+    state: the steps twice, plus a later edit: the device had every remote stroke within 8 s,
+    editor and server equal (9 strokes). Not checked: the real wifi toggle against the fixed
+    server (needs the live server redeployed, or an open port here). `.dev` data cleared again
+    afterwards (`pm clear`, appop, `pm enable`); no live account was created.
+
 Known gaps:
 
 - The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
@@ -387,15 +428,13 @@ Known gaps:
   didn't run. Not investigated.
 - Imported notebooks were titled from the content URI ("document 1000000068"). Fixed for new
   imports (display name); existing notebooks keep their titles.
-- The `.dev` app on the Note Air 5C now keeps a library owned by the deleted account
-  `devdela0540c`; any other login there is refused until its data is cleared or it is reinstalled.
-- **Inbound sync stalls after an offline edit (found 2026-10-11 on device).** With the app
-  running: wifi off, a local edit (a draw or a page delete), a remote edit of the same notebook,
-  wifi on. The device sends its edit (the server has it), but never receives the remote one, nor
-  later remote edits of that notebook; "Re-apply everything" doesn't help, since the device's doc
-  lacks them. A restart of the app fixes it. A plain wifi off/on without a local edit is fine
-  (remote stroke projected in < 30 s). Reproduced 3 times. Not investigated; the Android repo's
-  sync state with the server after a reconnect with diverged heads is the first place to look.
+- **The live server lacks the reconnect fix** until redeployed: there, a remote edit made in the
+  first 15–30 s of a device's network loss still stalls that doc on the device until the app
+  restarts, with a sync-message storm. After the redeploy, recheck on the Boox with real wifi.
+- A sync loop (messages back and forth without progress) has no rate limit or detection on
+  either side; stale sync state, the one cause found, is fixed.
+- The server's memory of synced docs per peer id is lost on server restart; that is harmless,
+  since a restart also drops the sync states.
 
 - A projection that read the doc between a page-cut's remove and re-add, and applies after the
   re-add settled, drops the strokes from the editor until the next projection brings them back.
@@ -472,8 +511,8 @@ Known gaps:
 
 What's left overall:
 
-1. Inbound sync stalls after an offline edit until the app restarts (see Known gaps). Reproduce
-   in a JVM test against `FakeSyncServer` (disconnect, local and remote edit, reconnect), then fix.
+1. Redeploy the server (Beat), then repeat the wifi steps on the Boox against the live server:
+   wifi off, draw, remote `add-stroke`, wifi on; the stroke must arrive without a restart.
 2. Look at the merged library and details screens on the Boox (`.dev`).
 
 Optional, left from Phase 4: rebuild Room from the docs on demand; a live JVM test of attaching

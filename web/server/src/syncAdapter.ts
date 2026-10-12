@@ -13,8 +13,14 @@
  *   - remote-subscription-change, remote-heads-changed: storage-id gossip. The server does not
  *     enable remote-heads gossiping; both are dropped in both directions.
  * Unknown types are dropped. The Repo's shareConfig.access runs the same ownership check again
- * (defense in depth), and shareConfig.announce is false, so the server never pushes a doc to a
- * peer that has not asked for it.
+ * (defense in depth). shareConfig.announce is true only for docs this peer id has synced before
+ * (`hasSynced`), so the server never pushes a doc to a peer that has not asked for it.
+ *
+ * Why announce at all: automerge-repo keeps a peer's sync state across its reconnects, and resets
+ * the state's record of what it already sent only in `beginSync`, which runs on reconnect only for
+ * announced docs. A change sent on a socket that died before the server noticed (wifi off) stays
+ * marked as sent, and is never sent again to that peer id. Announcing the docs the peer synced
+ * before makes the reconnect reset that record.
  */
 import WebSocket from "ws"
 import {
@@ -27,11 +33,15 @@ type Conn = { socket: WebSocket; user: SessionUser; peerId: PeerId | null; alive
 
 const PROTOCOL_V1 = "1"
 const MAX_PEER_ID = 128
+/** Peer ids whose synced docs are remembered; the least recently joined are forgotten first. */
+const MAX_REMEMBERED_PEERS = 2000
 
 export class AuthenticatedServerAdapter extends NetworkAdapter {
   readonly accounts: Accounts
   #conns = new Set<Conn>()
   #byPeer = new Map<PeerId, Conn>()
+  /** Docs each peer id has sent sync or request messages for, across its connections. */
+  #synced = new Map<PeerId, Set<DocumentId>>()
   #keepAlive?: NodeJS.Timeout
   #ready = false
   #resolveReady?: () => void
@@ -85,6 +95,17 @@ export class AuthenticatedServerAdapter extends NetworkAdapter {
     return this.#byPeer.get(peerId)?.user ?? null
   }
 
+  /** The peer id has synced this doc on this or an earlier connection, and still owns it. */
+  hasSynced(peerId: PeerId, documentId: DocumentId): boolean {
+    return (this.#synced.get(peerId)?.has(documentId) ?? false) && this.peerOwns(peerId, documentId)
+  }
+
+  #recordSynced(peerId: PeerId, documentId: DocumentId) {
+    let docs = this.#synced.get(peerId)
+    if (!docs) this.#synced.set(peerId, (docs = new Set()))
+    docs.add(documentId)
+  }
+
   peerOwns(peerId: PeerId, documentId: DocumentId): boolean {
     const user = this.userOfPeer(peerId)
     return user !== null && this.accounts.ownsDoc(documentId, user.id)
@@ -134,11 +155,17 @@ export class AuthenticatedServerAdapter extends NetworkAdapter {
     switch (msg.type) {
       case "sync":
         if (!hasDoc) return
-        if (this.accounts.claimDoc(documentId, conn.user.id)) return void this.emit("message", msg)
+        if (this.accounts.claimDoc(documentId, conn.user.id)) {
+          this.#recordSynced(conn.peerId, documentId)
+          return void this.emit("message", msg)
+        }
         return this.#unavailable(conn, documentId)
       case "request":
         if (!hasDoc) return
-        if (this.accounts.ownsDoc(documentId, conn.user.id)) return void this.emit("message", msg)
+        if (this.accounts.ownsDoc(documentId, conn.user.id)) {
+          this.#recordSynced(conn.peerId, documentId)
+          return void this.emit("message", msg)
+        }
         return this.#unavailable(conn, documentId)
       case "ephemeral":
       case "doc-unavailable":
@@ -175,6 +202,13 @@ export class AuthenticatedServerAdapter extends NetworkAdapter {
     }
     conn.peerId = peerId
     this.#byPeer.set(peerId, conn)
+    const synced = this.#synced.get(peerId)
+    if (synced) {
+      // Most recently joined last, so the oldest are forgotten first.
+      this.#synced.delete(peerId)
+      this.#synced.set(peerId, synced)
+    }
+    while (this.#synced.size > MAX_REMEMBERED_PEERS) this.#synced.delete(this.#synced.keys().next().value!)
     this.emit("peer-candidate", { peerId, peerMetadata: msg.peerMetadata ?? {} })
     this.#sendRaw(conn, {
       type: "peer", senderId: this.peerId, targetId: peerId,
