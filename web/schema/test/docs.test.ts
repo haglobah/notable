@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from "node:fs"
 import * as A from "@automerge/automerge"
 import {
   libraryValue, notebookValue, strokeValue, folderValue,
-  readLibrary, readNotebook, SchemaError,
+  readLibrary, readNotebook, SchemaError, SCHEMA_VERSION,
   libraryFromJson, notebookFromJson,
   decodeStrokePoints,
   type Library, type Notebook,
@@ -78,7 +78,7 @@ test("rejects a doc of the wrong schema", () => {
 
 test("rejects a newer schema version with an explicit message", () => {
   let doc = A.from(libraryValue(expectedLibrary) as Record<string, unknown>)
-  doc = A.change(doc, d => { (d as any).version = 2 })
+  doc = A.change(doc, d => { (d as any).version = SCHEMA_VERSION + 1 })
   assert.throws(() => readLibrary(doc), /newer/)
 })
 

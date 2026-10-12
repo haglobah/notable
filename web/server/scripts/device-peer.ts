@@ -16,7 +16,7 @@
  */
 import { Repo, type AutomergeUrl, type DocHandle } from "@automerge/automerge-repo"
 import { ImmutableString } from "@automerge/automerge"
-import { readLibrary, readNotebook, strokeValue } from "@notable/schema"
+import { readLibrary, readNotebook, strokeValue, deletePage, markPageLive } from "@notable/schema"
 import { HeaderClientAdapter } from "../test/helpers.ts"
 
 const env = (k: string) => process.env[k] ?? (() => { throw new Error(`set ${k}`) })()
@@ -111,9 +111,11 @@ async function main() {
       const at = handle.doc().pageOrder.findIndex((p: unknown) => String(p) === pageId)
       if (at < 0) throw new Error(`page ${pageId} not in ${notebookId}'s pageOrder`)
       handle.change((d: any) => {
-        d.pageOrder.deleteAt(at)
-        if (cmd === "delete-page") delete d.pages[pageId]
-        else d.pageOrder.insertAt(Math.min(Number(index), d.pageOrder.length), new ImmutableString(pageId))
+        if (cmd === "delete-page") deletePage(d, pageId) // marked deleted, content kept (ADR-001)
+        else {
+          d.pageOrder.deleteAt(at)
+          d.pageOrder.insertAt(Math.min(Number(index), d.pageOrder.length), new ImmutableString(pageId))
+        }
       })
       await sent()
       console.log(JSON.stringify({ [cmd]: pageId, notebookId, pageOrder: readNotebook(handle.doc()).pageOrder }))
@@ -146,6 +148,7 @@ async function main() {
           bbox: { left: x - 4, top: y - 4, right: x + 404, bottom: y + 44 },
           points: encodePoints(pts), createdAt: now, updatedAt: now,
         })
+        markPageLive(d, pageId) // a stroke on a page deleted elsewhere brings it back
       })
       await sent()
       console.log(JSON.stringify({ added: id, notebookId, pageId }))

@@ -24,7 +24,7 @@ Map keys are ids. Ids are not repeated inside entries.
 { schema: "notable/notebook", version: 1, notebookId, openPageId|null,
   defaultBackground: { type, native|null, blob|null },
   pageOrder: [pageId],
-  pages: { <pageId>: { background, createdAt, updatedAt,
+  pages: { <pageId>: { background, createdAt, updatedAt, deleted?: boolean,
                        strokes: { <strokeId>: { pen, color, size, bbox: [l,t,r,b], points: bytes,
                                                 createdAt, updatedAt } },
                        images:  { <imageId>: { blob, rect: [x,y,w,h], createdAt, updatedAt } } } } }
@@ -46,6 +46,12 @@ Map keys are ids. Ids are not repeated inside entries.
 - `pageOrder` can be inconsistent after concurrent edits: it may name a deleted page, repeat a
   page, or miss one. Readers normalize it: they keep the first occurrence of each existing page,
   then append the missing pages, oldest first.
+- **Deleted pages** keep their entry: a delete sets `deleted: true` and removes the page from
+  `pageOrder`. Every stroke or image write sets `deleted: false` as a new op (delete the key, then
+  set it). A page is deleted only when every concurrent value of `deleted` is true, so drawing on a
+  page deleted elsewhere brings it back (ADR-001, "Delete against draw"). Use `deletePage` and
+  `markPageLive` from `src/write.ts`; readers leave deleted pages out. A doc with a deleted page has
+  `version: 2`.
 - Writers edit `pageOrder` in place (delete and insert items), never replace the list. Then two
   devices that move different pages at once both keep their move. Android does this
   (`AutomergeSchema.editPageOrder`, `placeInPageOrder`). Folder and entry edits likewise set single
@@ -64,7 +70,8 @@ Map keys are ids. Ids are not repeated inside entries.
 - **Strict reading.** A missing field, a wrong type or an unknown enum throws `SchemaError` /
   `SchemaException`, naming the dotted path. Nothing is repaired silently.
 - **Versioning.** Adding an optional field keeps `version`. Any change an older reader would
-  misread bumps `version`. Readers refuse a doc newer than they support and say to update the app.
+  misread bumps `version`. Readers refuse a doc newer than they support and say to update the app. New docs are written at
+  version 1; readers support 2 (deleted pages).
 
 ## Not stored, on purpose
 
@@ -84,6 +91,8 @@ Map keys are ids. Ids are not repeated inside entries.
 | `sb2-strokes.json` | Kotlin `Sb2FixtureTest` (real app encoder, raw and LZ4) |
 | `library-v1.*`, `notebook-v1.*` | `npm run fixtures` (`scripts/write-fixtures.ts`) |
 | `*-from-kotlin.automerge` | Kotlin `GoldenFixtureTest` |
+| `page-deleted.automerge`, `page-delete-vs-draw.automerge` | `npm run fixtures` (p-2 deleted; deleted in one copy and drawn on in another, merged) |
+| `page-deleted-from-kotlin.automerge`, `page-delete-vs-draw-from-kotlin.automerge` | Kotlin `GoldenFixtureTest` |
 | `projection-v1.json` | `npm run projection-fixture` in `web/app` (TS `project()`); read by Kotlin `ProjectionParityTest` |
 
 Regenerate only for an intentional change. Kotlin fixtures: `UPDATE_FIXTURES=1 ./gradlew

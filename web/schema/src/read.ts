@@ -4,6 +4,7 @@
  * states are legal results of concurrent edits.
  */
 import { isImmutableString } from "@automerge/automerge"
+import { isPageDeleted } from "./write.ts"
 import {
   LIBRARY_SCHEMA, NOTEBOOK_SCHEMA, SCHEMA_VERSION,
   type Background, type EntryKind, type Library, type Notebook, type Page, type Source,
@@ -170,7 +171,10 @@ export function readNotebook(doc: unknown): Notebook {
   const d = doc as Obj
   header(d, NOTEBOOK_SCHEMA)
   const pagesObj = map(d, "pages", "")
-  const pages = Object.fromEntries(Object.keys(pagesObj).map(id => [id, readPage(map(pagesObj, id, "pages"), id)]))
+  // A page marked deleted is left out with its content (see isPageDeleted).
+  const pages = Object.fromEntries(Object.keys(pagesObj)
+    .filter(id => !deletedPage(map(pagesObj, id, "pages"), `pages.${id}`))
+    .map(id => [id, readPage(map(pagesObj, id, "pages"), id)]))
   const rawOrder = list(d, "pageOrder", "").map((v, i) => scalar(v, `pageOrder[${i}]`))
   const canvasWidth = "canvasWidth" in d && d.canvasWidth !== undefined ? num(d.canvasWidth, "canvasWidth") : undefined
   if (canvasWidth !== undefined && !(canvasWidth > 0)) throw new SchemaError(`canvasWidth: expected a positive number, got ${canvasWidth}`)
@@ -182,6 +186,13 @@ export function readNotebook(doc: unknown): Notebook {
     pageOrder: normalizeOrder(rawOrder, pages),
     pages,
   }
+}
+
+function deletedPage(o: Obj, p: string): boolean {
+  if ("deleted" in o && o.deleted !== undefined && typeof o.deleted !== "boolean") {
+    throw new SchemaError(`${p}.deleted: expected a boolean, got ${describe(o.deleted)}`)
+  }
+  return isPageDeleted(o)
 }
 
 /**

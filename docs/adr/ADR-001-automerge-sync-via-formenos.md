@@ -156,6 +156,32 @@ and the metrics stack. Server work must stay small.
 - Folders of accounts logged in before this change (`files/notable-sync/<hash>/`) are adopted as
   the library of the logged-in account on the first start.
 
+### Delete against draw: the page comes back (2026-10-11)
+
+- When one device deletes a page while another draws on it or adds an image, the drawing wins:
+  after the merge the page is back on both, with everything it had and the new strokes. Beat
+  chose this over "the delete wins", which lost the strokes drawn at the same time.
+- **Mechanism.** Deleting a page no longer removes `pages[pageId]`. It sets
+  `pages[pageId].deleted = true` and takes the page out of `pageOrder`; its strokes and images
+  stay in the doc. Every stroke or image write sets `deleted = false` in the same change, always as
+  a new op (delete the key, then set it), because Automerge skips a put of the value already
+  there. A content write the delete didn't see is concurrent with it, so the key ends up with both
+  values. Readers treat a page as deleted only when *every* concurrent value of `deleted` is true
+  (Kotlin `AutomergeSchema.isPageDeleted` via `Document.getAll`, TS `isPageDeleted` via
+  `getConflicts`). A later delete that has seen the write overwrites both and wins again.
+- A page that comes back after a concurrent delete is missing from `pageOrder`, so readers append
+  it at the end. A write that already sees the delete (e.g. an edit queued before the merge was
+  projected) appends it to `pageOrder` itself.
+- Only adding strokes or images brings a page back. Erasing, a background change or a move of a
+  page deleted elsewhere is applied to the kept content but leaves the page deleted.
+- A deleted page keeps its content in the doc. That costs nothing new: Automerge's history held
+  it before too.
+- A notebook doc with a page marked deleted is raised to `version: 2`, because a version-1 reader
+  would show that page. New docs stay at version 1. Readers accept versions up to 2. The deployed
+  PWA must be updated before a device deletes a page, or it refuses that notebook with "update
+  the app".
+- Old-style deletes (the key removed, written before this change) still read as deleted.
+
 ### WebDAV
 
 - WebDAV sync is removed once the new sync covers folders, notebooks, pages, strokes, images and

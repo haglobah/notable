@@ -321,6 +321,8 @@ class AutomergeProjector(
         val pagesCreated = HashSet<String>()
         val pagesMeta = HashSet<String>()
         val pagesDeleted = HashSet<String>()
+        /** Pages whose `deleted` mark changed: deleted, or back (see [AutomergeSchema.isPageDeleted]). */
+        val pagesLiveness = HashSet<String>()
         val strokesReplaced = HashSet<String>()
         val imagesReplaced = HashSet<String>()
         val strokesTouched = HashMap<String, HashSet<String>>()
@@ -329,7 +331,7 @@ class AutomergeProjector(
         val imagesDeleted = HashMap<String, HashSet<String>>()
 
         fun pagesToRead(): Set<String> =
-            pagesCreated + pagesMeta + strokesReplaced + imagesReplaced + strokesTouched.keys + imagesTouched.keys
+            pagesCreated + pagesMeta + pagesLiveness + strokesReplaced + imagesReplaced + strokesTouched.keys + imagesTouched.keys
 
         fun add(keys: List<String>, action: PatchAction) {
             if (keys.isEmpty() || keys[0] != "pages") { notebookMeta = true; return }
@@ -339,6 +341,9 @@ class AutomergeProjector(
                 keys.size == 2 -> if (action is PatchAction.DeleteMap) pagesDeleted += pageId else pagesCreated += pageId
                 keys[2] == "strokes" -> child(keys, action, pageId, strokesReplaced, strokesTouched, strokesDeleted)
                 keys[2] == "images" -> child(keys, action, pageId, imagesReplaced, imagesTouched, imagesDeleted)
+                // Every stroke write sets it too. A page that reads as deleted goes from Room; one
+                // that came back is projected in full, since Room lacks it (see `fresh` in apply).
+                keys[2] == "deleted" -> { pagesLiveness += pageId; pagesDeleted += pageId }
                 else -> pagesMeta += pageId
             }
             notebookMeta = notebookMeta || keys.size == 2
@@ -392,6 +397,9 @@ class AutomergeProjector(
         val delta = plan.delta as Delta?
 
         // Resolve every file before writing, so a missing blob leaves Room untouched.
+        // Pages Room lacks get all their strokes and images: a page deleted here that came back
+        // (drawn on elsewhere at the same time), or one whose Room row went missing.
+        val fresh = plan.pages.keys.filterTo(HashSet()) { sink.page(it) == null }
         val backgrounds = HashMap<String, Pair<String, String>>() // pageId -> (type, value)
         val pageRows = HashMap<String, Page>()
         val notebookId = if (entry.kind == AmEntryKind.NOTEBOOK) entry.id else null
@@ -415,7 +423,7 @@ class AutomergeProjector(
         val images = HashMap<String, List<Image>>()
         for (p in plan.pages.values) {
             if (p.id !in pageRows && sink.page(p.id) == null) continue
-            val wanted = if (delta == null || p.id in delta.pagesCreated || p.id in delta.imagesReplaced) p.images.keys
+            val wanted = if (delta == null || p.id in fresh || p.id in delta.pagesCreated || p.id in delta.imagesReplaced) p.images.keys
             else delta.imagesTouched[p.id].orEmpty().intersect(p.images.keys)
             images[p.id] = wanted.filterNot(localPending).map { id ->
                 val i = p.images.getValue(id)
@@ -435,7 +443,7 @@ class AutomergeProjector(
             }
             for (p in plan.pages.values) {
                 if (sink.page(p.id) == null) continue
-                val all = delta == null || p.id in delta.pagesCreated || p.id in delta.strokesReplaced
+                val all = delta == null || p.id in fresh || p.id in delta.pagesCreated || p.id in delta.strokesReplaced
                 val strokeIds = if (all) p.strokes.keys else delta!!.strokesTouched[p.id].orEmpty().intersect(p.strokes.keys)
                 val strokes = strokeIds.filterNot(localPending).map { toStroke(p.strokes.getValue(it), p.id, factor, warnings) }
                 val goneStrokes = when {

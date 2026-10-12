@@ -20,7 +20,12 @@ import java.util.Date
 object AutomergeSchema {
     const val LIBRARY = "notable/library"
     const val NOTEBOOK = "notable/notebook"
+    /** Version of new docs: they hold nothing a version-1 reader would misread. */
     const val VERSION = 1L
+    /** The newest version this reader understands. */
+    const val SUPPORTED_VERSION = 2L
+    /** A notebook doc holding a page marked `deleted` (a version-1 reader would show it). */
+    const val DELETED_PAGES_VERSION = 2
 
     /* ------------------------------ writing ------------------------------ */
 
@@ -194,14 +199,20 @@ object AutomergeSchema {
         r.header(NOTEBOOK)
         val pagesObj = r.map(ObjectId.ROOT, "pages", "pages")
         if (!r.has(pagesObj, pageId)) return null
-        return readPage(r, r.map(pagesObj, pageId, "pages.$pageId"), pageId, withContent = true)
+        val o = r.map(pagesObj, pageId, "pages.$pageId")
+        if (deleted(r, o, "pages.$pageId")) return null
+        return readPage(r, o, pageId, withContent = true)
     }
 
     private fun readNotebook(doc: Document, withContent: Boolean): AmNotebook {
         val r = Reader(doc)
         r.header(NOTEBOOK)
         val pagesObj = r.map(ObjectId.ROOT, "pages", "pages")
-        val pages = r.keys(pagesObj).associateWith { readPage(r, r.map(pagesObj, it, "pages.$it"), it, withContent) }
+        // A page marked deleted is left out with its content (see [isPageDeleted]).
+        val pages = r.keys(pagesObj)
+            .map { it to r.map(pagesObj, it, "pages.$it") }
+            .filterNot { (id, o) -> deleted(r, o, "pages.$id") }
+            .associate { (id, o) -> id to readPage(r, o, id, withContent) }
         val rawOrder = r.list(ObjectId.ROOT, "pageOrder", "").mapIndexed { i, v -> r.scalar(v, "pageOrder[$i]") }
         return AmNotebook(
             notebookId = r.str(ObjectId.ROOT, "notebookId", ""),
@@ -300,6 +311,52 @@ object AutomergeSchema {
         val rest = current.filter { it != pageId }
         val at = if (afterPageId == null) 0 else rest.indexOf(afterPageId).let { if (it < 0) rest.size else it + 1 }
         tx.insert(list, at.toLong(), NewValue.str(pageId))
+    }
+
+    /* Page deletion (ADR-001, "Delete against draw"). A delete keeps the page's content and marks it
+     * `deleted: true`; every stroke or image write sets `deleted: false`. A write the delete didn't
+     * see conflicts with it, and a page counts as deleted only when every concurrent value is true,
+     * so drawing on a page deleted elsewhere brings it back. Must match web/schema `isPageDeleted`. */
+
+    /** True when every concurrent value of [page]'s `deleted` is true; false without the field. */
+    fun isPageDeleted(doc: Document, page: ObjectId): Boolean {
+        val values = doc.getAll(page, "deleted").map { it.values() }.orElse(emptyList())
+        return values.isNotEmpty() && values.all { it is AmValue.Bool && it.value }
+    }
+
+    /** A page's map unless it is missing or marked deleted. */
+    fun livePageObjOrNull(doc: Document, pageId: String): ObjectId? =
+        pageObjOrNull(doc, pageId)?.takeUnless { isPageDeleted(doc, it) }
+
+    /** Marks [pageId] deleted and takes it out of pageOrder; its strokes and images stay. */
+    fun deletePage(doc: Document, tx: Transaction, pageId: String) {
+        val page = pageObjOrNull(doc, pageId) ?: throw SchemaException("pages.$pageId: missing")
+        tx.set(page, "deleted", true)
+        removeFromPageOrder(doc, tx, pageId)
+        val version = (doc.get(ObjectId.ROOT, "version").orElse(null) as? AmValue.Int)?.value ?: VERSION
+        if (version < DELETED_PAGES_VERSION) tx.set(ObjectId.ROOT, "version", DELETED_PAGES_VERSION)
+    }
+
+    /**
+     * Call with every stroke or image write on [pageId], in the same transaction. A page deleted
+     * earlier in this doc's history comes back at the end of pageOrder.
+     */
+    fun markPageLive(doc: Document, tx: Transaction, pageId: String) {
+        val page = pageObjOrNull(doc, pageId) ?: throw SchemaException("pages.$pageId: missing")
+        if (isPageDeleted(doc, page)) {
+            val (list, current) = rawPageOrder(doc)
+            if (pageId !in current) tx.insert(list, current.size.toLong(), NewValue.str(pageId))
+        }
+        // A fresh op every time: Automerge skips a put of the value already there, and that old op
+        // may be one a concurrent delete has seen, so this write would not conflict with it.
+        if (doc.get(page, "deleted").isPresent) tx.delete(page, "deleted")
+        tx.set(page, "deleted", false)
+    }
+
+    private fun deleted(r: Reader, page: ObjectId, p: String): Boolean {
+        if (r.has(page, "deleted") && r.get(page, "deleted", p) !is AmValue.Bool)
+            throw SchemaException("$p.deleted: expected a boolean, got ${r.get(page, "deleted", p).javaClass.simpleName}")
+        return isPageDeleted(r.doc, page)
     }
 
     /** Indices into [a] of a longest common subsequence of [a] and [b], ascending. */
@@ -410,7 +467,7 @@ object AutomergeSchema {
             val schema = str(ObjectId.ROOT, "schema", "")
             if (schema != expected) throw SchemaException("schema: expected '$expected', got '$schema'")
             val version = int(ObjectId.ROOT, "version", "")
-            if (version > VERSION) throw SchemaException("version: doc is version $version, newer than supported $VERSION; update the app")
+            if (version > SUPPORTED_VERSION) throw SchemaException("version: doc is version $version, newer than supported $SUPPORTED_VERSION; update the app")
             if (version < 1) throw SchemaException("version: invalid $version")
         }
 

@@ -223,8 +223,10 @@ class LocalDocWriter(
     /* ------------------------------ pages ------------------------------ */
 
     /**
-     * Runs [edit] on [pageId]'s doc with the page present. With [create], a page or notebook the
-     * docs don't have yet is migrated first; without it (deletions), there's nothing to change.
+     * Runs [edit] on [pageId]'s doc with the page present. With [create] (strokes and images
+     * added), a page or notebook the docs don't have yet is migrated first, and a page marked
+     * deleted comes back ([AutomergeSchema.markPageLive]). Without it (erasing), a missing page
+     * leaves nothing to change, and a page marked deleted is edited but stays deleted.
      */
     private fun onPage(
         pageId: String, create: Boolean = true,
@@ -240,6 +242,8 @@ class LocalDocWriter(
                 AutomergeSchema.pageObjOrNull(doc, pageId) ?: return@commit false
             }
             edit(doc, tx, obj)
+            // Every content write says "this page lives": against a concurrent delete, it wins.
+            if (create) AutomergeSchema.markPageLive(doc, tx, pageId)
             // The page's "edited" date, in the same change; once a minute is enough to sort by.
             val at = now()
             if (at - AutomergeSchema.pageUpdatedAt(doc, obj).time >= BUMP_INTERVAL_MS) AutomergeSchema.setDate(tx, obj, "updatedAt", Date(at))
@@ -252,7 +256,7 @@ class LocalDocWriter(
         val (url, migrated) = docFor(page, create = true)
         if (url == null) return migrated
         val r = migrated + commit(url) { doc, tx ->
-            val obj = AutomergeSchema.pageObjOrNull(doc, pageId) ?: return@commit false
+            val obj = AutomergeSchema.livePageObjOrNull(doc, pageId) ?: return@commit false
             // The editor touches the page after every stroke; once a minute is enough to sort by.
             val current = AutomergeSchema.readNotebookShell(doc).pages[pageId]?.updatedAt
             if (current != null && at.time - current.time < BUMP_INTERVAL_MS) return@commit false
@@ -267,9 +271,9 @@ class LocalDocWriter(
         if (url == null) return migrated
         val bg = mapping.background(page.backgroundType, page.background) // hash outside the doc
         val r = migrated + commit(url) { doc, tx ->
-            val obj = AutomergeSchema.pageObjOrNull(doc, page.id)
+            val obj = AutomergeSchema.livePageObjOrNull(doc, page.id)
             if (obj == null) {
-                putFullPage(doc, tx, page.id)
+                putFullPage(doc, tx, page.id) // Room has the page: a page marked deleted comes back
             } else {
                 val current = AutomergeSchema.readNotebookShell(doc).pages[page.id]
                 if (current?.background != bg) AutomergeSchema.setBackground(tx, obj, "background", bg)
@@ -290,13 +294,14 @@ class LocalDocWriter(
     private fun deletePage(page: Page): WriteReceipt {
         if (page.notebookId == null) return deleteEntry(page.id)
         val url = docUrlOf(page.notebookId) ?: return NONE
+        // Marked deleted, not removed, so a stroke drawn on it elsewhere at the same time brings it
+        // back instead of being lost (ADR-001, "Delete against draw").
         val r = commit(url) { doc, tx ->
-            val pages = AutomergeSchema.pagesOf(doc)
-            val present = doc.get(pages, page.id).isPresent
+            val live = AutomergeSchema.livePageObjOrNull(doc, page.id) != null
             val listed = page.id in AutomergeSchema.rawPageOrder(doc).second
-            if (!present && !listed) return@commit false
-            if (present) tx.delete(pages, page.id)
-            if (listed) AutomergeSchema.removeFromPageOrder(doc, tx, page.id)
+            if (!live && !listed) return@commit false
+            if (live) AutomergeSchema.deletePage(doc, tx, page.id)
+            else AutomergeSchema.removeFromPageOrder(doc, tx, page.id)
             true
         }
         return r + bumpedIf(r, page.notebookId)
@@ -311,7 +316,7 @@ class LocalDocWriter(
         val (url, migrated) = if (add) ensureDoc(notebookId) else (docUrlOf(notebookId) to NONE)
         if (url == null) return migrated
         val c = commit(url) { doc, tx ->
-            if (AutomergeSchema.pageObjOrNull(doc, pageId) == null && !(add && putFullPage(doc, tx, pageId))) return@commit false
+            if (AutomergeSchema.livePageObjOrNull(doc, pageId) == null && !(add && putFullPage(doc, tx, pageId))) return@commit false
             AutomergeSchema.placeInPageOrder(doc, tx, pageId, after)
             true
         }
@@ -324,7 +329,7 @@ class LocalDocWriter(
         if (url == null) return migrated
         val bg = mapping.background(c.type, c.value) // hash outside the doc
         val done = commit(url) { doc, tx ->
-            val obj = AutomergeSchema.pageObjOrNull(doc, c.pageId) ?: return@commit false
+            val obj = AutomergeSchema.livePageObjOrNull(doc, c.pageId) ?: return@commit false
             AutomergeSchema.setBackground(tx, obj, "background", bg)
             AutomergeSchema.setDate(tx, obj, "updatedAt", Date(c.at))
             true
@@ -366,8 +371,16 @@ class LocalDocWriter(
     /** The doc of notebook or quick page [owner], migrating it from Room when the docs don't have it. */
     private fun ensureDoc(owner: String): Pair<String?, WriteReceipt> = docUrlOf(owner)?.let { it to NONE } ?: ensureEntry(owner)
 
-    /** Adds [pageId] with all its Room content: strokes, images, background. False when Room lacks it. */
+    /**
+     * Adds [pageId] with all its Room content: strokes, images, background. False when Room lacks
+     * it. A page the doc has marked deleted comes back as it is, with the content it kept.
+     */
     private fun putFullPage(doc: Document, tx: Transaction, pageId: String): Boolean {
+        if (AutomergeSchema.pageObjOrNull(doc, pageId) != null) {
+            if (local.pageRow(pageId) == null) return false
+            AutomergeSchema.markPageLive(doc, tx, pageId)
+            return true
+        }
         val data = local.page(pageId) ?: return false
         AutomergeSchema.putPage(tx, AutomergeSchema.pagesOf(doc), mapping.page(data).scaled(toDocUnits(doc)))
         return true

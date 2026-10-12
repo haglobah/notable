@@ -7,6 +7,7 @@ import org.automerge.NewValue
 import org.automerge.ObjectId
 import org.automerge.ObjectType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -105,7 +106,7 @@ class GoldenFixtureTest {
     @Test
     fun rejects_a_newer_version_explicitly() {
         val doc = AutomergeSchema.newLibraryDocument(expectedLibrary)
-        doc.startTransaction().apply { set(ObjectId.ROOT, "version", 2); commit() }
+        doc.startTransaction().apply { set(ObjectId.ROOT, "version", AutomergeSchema.SUPPORTED_VERSION.toInt() + 1); commit() }
         val e = assertThrows(SchemaException::class.java) { AutomergeSchema.readLibrary(doc) }
         assertTrue(e.message!!, e.message!!.contains("newer"))
     }
@@ -123,5 +124,85 @@ class GoldenFixtureTest {
             commit()
         }
         assertEquals(expectedNotebook.pageOrder.drop(1) + first, AutomergeSchema.readNotebook(doc).pageOrder)
+    }
+
+    /* Delete against draw (ADR-001): drawing on a page deleted elsewhere brings it back. */
+
+    private val deletedPage = "p-2"
+    private val drawn get() = expectedNotebook.pages.getValue(deletedPage).strokes.values.first().copy(id = "drawn-after-delete")
+
+    private fun deleteIn(doc: Document) = doc.startTransaction().run { AutomergeSchema.deletePage(doc, this, deletedPage); commit() }
+    private fun drawIn(doc: Document) = doc.startTransaction().run {
+        AutomergeSchema.putStroke(this, AutomergeSchema.strokesOf(doc, deletedPage), drawn)
+        AutomergeSchema.markPageLive(doc, this, deletedPage)
+        commit()
+    }
+
+    private fun assertBackWithStroke(nb: AmNotebook) {
+        assertEquals(expectedNotebook.pages.getValue(deletedPage).strokes.keys + drawn.id, nb.pages.getValue(deletedPage).strokes.keys)
+        assertEquals(listOf("p-1", "p-3", deletedPage), nb.pageOrder)
+    }
+
+    private fun assertGone(nb: AmNotebook) {
+        assertFalse(deletedPage in nb.pages)
+        assertEquals(listOf("p-1", "p-3"), nb.pageOrder)
+    }
+
+    @Test
+    fun a_page_deleted_in_one_doc_and_drawn_on_in_another_comes_back_and_feeds_the_ts_tests() {
+        val origin = AutomergeSchema.newNotebookDocument(expectedNotebook)
+        val deleter = origin.fork().also(::deleteIn)
+        val drawer = origin.fork().also(::drawIn)
+        val merged = deleter.fork().apply { merge(drawer) }
+        assertBackWithStroke(AutomergeSchema.readNotebook(reload(merged)))
+        assertBackWithStroke(AutomergeSchema.readNotebook(drawer.fork().apply { merge(deleter) }))
+        assertGone(AutomergeSchema.readNotebook(reload(deleter)))
+        assertEquals(2L, (deleter.get(ObjectId.ROOT, "version").get() as AmValue.Int).value)
+        if (FixturePaths.update) {
+            fixture("page-delete-vs-draw-from-kotlin.automerge").writeBytes(merged.save())
+            fixture("page-deleted-from-kotlin.automerge").writeBytes(deleter.save())
+        }
+        assertBackWithStroke(AutomergeSchema.readNotebook(load("page-delete-vs-draw-from-kotlin.automerge")))
+        assertGone(AutomergeSchema.readNotebook(load("page-deleted-from-kotlin.automerge")))
+    }
+
+    @Test
+    fun ts_written_docs_delete_against_draw_keeps_the_page_and_a_plain_delete_removes_it() {
+        assertBackWithStroke(AutomergeSchema.readNotebook(load("page-delete-vs-draw.automerge")))
+        assertGone(AutomergeSchema.readNotebook(load("page-deleted.automerge")))
+    }
+
+    @Test
+    fun a_delete_made_after_seeing_a_stroke_wins_and_a_stroke_after_the_delete_revives() {
+        val doc = AutomergeSchema.newNotebookDocument(expectedNotebook)
+        drawIn(doc)
+        deleteIn(doc)
+        assertGone(AutomergeSchema.readNotebook(doc))
+        drawIn(doc)
+        assertBackWithStroke(AutomergeSchema.readNotebook(doc))
+        assertEquals(3, AutomergeSchema.rawPageOrder(doc).second.size)
+    }
+
+    @Test
+    fun a_second_stroke_after_a_synced_first_one_still_beats_a_concurrent_delete() {
+        val synced = AutomergeSchema.newNotebookDocument(expectedNotebook).also(::drawIn) // deleted: false, seen by both
+        val deleter = synced.fork().also(::deleteIn)
+        val drawer = synced.fork()
+        drawer.startTransaction().run {
+            AutomergeSchema.putStroke(this, AutomergeSchema.strokesOf(drawer, deletedPage), drawn.copy(id = "again"))
+            AutomergeSchema.markPageLive(drawer, this, deletedPage)
+            commit()
+        }
+        val nb = AutomergeSchema.readNotebook(deleter.fork().apply { merge(drawer) })
+        assertTrue("again" in nb.pages.getValue(deletedPage).strokes)
+    }
+
+    @Test
+    fun deleted_must_be_a_boolean() {
+        val doc = AutomergeSchema.newNotebookDocument(expectedNotebook)
+        val page = AutomergeSchema.pageObjOrNull(doc, deletedPage)!!
+        doc.startTransaction().apply { set(page, "deleted", NewValue.str("yes")); commit() }
+        val e = assertThrows(SchemaException::class.java) { AutomergeSchema.readNotebook(doc) }
+        assertTrue(e.message!!, e.message!!.contains("pages.$deletedPage.deleted"))
     }
 }

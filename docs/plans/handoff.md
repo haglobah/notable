@@ -315,6 +315,41 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     on the Note Air 5C via `am instrument` against `.dev` (test APK uninstalled afterwards; Onyx
     disables a fresh `.dev.test`, `pm enable` right before the run). Not checked visually on device.
 
+- Done, committed (2026-10-11): **delete against draw: the page comes back**, and the
+  **"Paginate PDF" setting removed**. Unit tests, web tests, `assembleDebug`; not on device.
+  - Mechanism (ADR-001 "Delete against draw", `web/schema/README.md`): a page delete sets
+    `pages[id].deleted = true` and takes the page out of `pageOrder`; strokes and images stay.
+    Every stroke or image write sets `deleted = false` as a new op (delete the key, then set it;
+    Automerge skips a put of the same value, which would let a delete that saw the old op win).
+    Readers treat a page as deleted only when every concurrent value is true (`getAll` /
+    `getConflicts`). A concurrent revival lands at the end of the order. Erase, background change
+    and move don't revive. A doc with a deleted page is raised to `version: 2`; readers accept 2,
+    new docs stay 1. **Redeploy the PWA before a device deletes a page**, or the old PWA refuses
+    that notebook ("update the app").
+  - Kotlin: `AutomergeSchema` (`isPageDeleted`, `livePageObjOrNull`, `deletePage`,
+    `markPageLive`, readers skip deleted pages, `SUPPORTED_VERSION`), `LocalDocWriter` (delete marks;
+    stroke/image upserts revive; touch, background, move use live pages only; `putFullPage`
+    revives a marked page in place), `Projector` (`deleted` in a diff → re-read and delete from
+    Room if it reads deleted; a page Room lacks is projected in full, `fresh`). TS: `model.ts`,
+    `read.ts`, `write.ts` (`isPageDeleted`, `deletePage`, `markPageLive`); `device-peer.ts`
+    `delete-page`/`add-stroke` use them.
+  - Tests: `web/schema/test/page-delete.test.ts` (8), new `GoldenFixtureTest` cases (TS↔Kotlin
+    fixtures `page-deleted*.automerge`, `page-delete-vs-draw*.automerge`), `LocalDocWriterTest`
+    (delete vs stroke comes back on both with Room restored; image revives; plain delete stays
+    deleted and tells the open editor; background/move don't revive). The old test "…is gone on
+    both" was inverted.
+  - Paginate PDF: `AppSettings.paginatePdf`, its toggle in `GeneralSettings`, `paginate_pdf`
+    (en, pl) removed; `docs/export-formats.md` updated. The stored key needs no migration: the
+    settings JSON is read with `ignoreUnknownKeys` and the next save drops it.
+  - Verified: unit suite 361, 1 failure (the known flaky `RepoLocalDocsTest` "peek…", passed 3×
+    alone right after), 2 live skipped; `assembleDebug` builds. Web: schema 34, app 33 (+2 skipped,
+    need qpdf/poppler), server 45 pass; `tsc` clean in schema, app, server.
+  - Device: the new `.dev` build is installed and **its app data was cleared** (`pm clear`, then
+    storage appop allowed, `pm enable`); the library owned by the deleted account is gone, Room in
+    `Documents/notabledb-dev` stays. The device check (hook `delete-page` while `device-peer.ts
+    add-stroke`) was not run: creating a throwaway account and launching the app were refused by
+    the agent's permission classifier.
+
 Known gaps:
 
 - The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
@@ -369,9 +404,9 @@ Known gaps:
 - `RepoLocalDocsTest` "peek reads a doc as stored…" failed once in a full unit run
   (`FileSystemStorage.loadRange` → `UncheckedIOException`), passed 5 times alone and in the next
   full run. Likely compaction deleting files during `peek`; not investigated.
-- A delete beats a concurrent edit of the same page: strokes drawn on a page that another device
-  deleted are lost. Exception: an edit that lands after the merge but before the projection puts
-  the page back with its Room content (nothing lost, the page reappears at the end).
+- A page deleted on one device and drawn on at the same time on another comes back at the end of
+  the page order, not at its old place (the delete took it out of `pageOrder`). Erasing on it
+  doesn't bring it back.
 - A page move whose page was deleted elsewhere is dropped. A page placed after a page the doc no
   longer has goes to the end.
 - An import runs its whole Room write under the mirror lock, so projections and editor writes
@@ -386,9 +421,11 @@ Known gaps:
   `cleared_all_strokes`, `toolbar_settings_edit_pen`, `pen_name_charcoal_classic`.
 - The details dialog's Export closes the dialog at once (unchanged from their branch).
 
-- **PDF export ignores "paginate PDF"** (`AppSettings.paginatePdf`, still a toggle in General
-  settings): every PDF is the projection, one page per notebook page, as tall as its content.
-  Remove the toggle or add pagination to both projections.
+- "Preview PDF pagination" (`visualizePdfPagination`) still draws A4 page breaks in the editor and
+  changes the PNG export height by 50 px, though no PDF is paginated any more. Decide whether it
+  stays.
+- `RepoLocalDocsTest` "peek…" failed a second time in a full run (2026-10-11, same
+  `loadRange` error); still passes alone.
 - A PDF reflects the docs: edits still in the outbox are missing; the export message says how many
   wait. A notebook not yet in the library docs can't be exported (error message).
 - An EPUB uploaded from the PWA opening on the Boox is unit-tested only (projector naming); the
@@ -403,8 +440,11 @@ Known gaps:
 
 What's left overall:
 
-1. Decide the `paginatePdf` toggle (see Known gaps): remove it, or paginate both projections.
+1. Device check of delete against draw (`.dev`, throwaway account): open a page, `delete-page` via
+   the hook while `device-peer.ts add-stroke` draws on it; the page comes back on both. Redeploy
+   the PWA first (schema version 2).
 2. Look at the merged library and details screens on the Boox (`.dev`).
+3. Decide "Preview PDF pagination" (see Known gaps).
 
 Optional, left from Phase 4: rebuild Room from the docs on demand; a live JVM test of attaching
 (like `LiveServerOfflineEditsTest`); check a PWA-uploaded EPUB on the Boox. Server hardening and

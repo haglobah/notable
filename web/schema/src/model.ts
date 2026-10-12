@@ -6,7 +6,12 @@
 
 export const LIBRARY_SCHEMA = "notable/library"
 export const NOTEBOOK_SCHEMA = "notable/notebook"
-export const SCHEMA_VERSION = 1
+/** The newest version readers understand. */
+export const SCHEMA_VERSION = 2
+/** New docs: they hold nothing a version-1 reader would misread. */
+export const BASE_VERSION = 1
+/** A notebook doc holding a page marked `deleted` (version-1 readers would show it). */
+export const DELETED_PAGES_VERSION = 2
 
 /** Note Air 5C portrait width in px, for notebooks without `canvasWidth`. */
 export const DEFAULT_CANVAS_WIDTH = 1860

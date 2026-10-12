@@ -2,13 +2,19 @@
  * Writes the TS side of the golden fixtures:
  *   fixtures/library-v1.json, notebook-v1.json        expected content (also read by Kotlin)
  *   fixtures/library-v1.automerge, notebook-v1.automerge  docs written by these builders
+ *   fixtures/page-deleted.automerge          notebook-v1 with p-2 deleted
+ *   fixtures/page-delete-vs-draw.automerge   p-2 deleted in one copy and drawn on (stroke
+ *                                            "drawn-after-delete") in another, merged
  * Stroke points are the Kotlin encoder's bytes from fixtures/sb2-strokes.json.
  *
  * Run: npm run fixtures (from web/schema). Regenerate only for an intentional schema change.
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import * as A from "@automerge/automerge"
-import { libraryValue, notebookValue, libraryToJson, notebookToJson, type Library, type Notebook } from "../src/index.ts"
+import {
+  libraryValue, notebookValue, libraryToJson, notebookToJson, strokeValue, deletePage, markPageLive,
+  type Library, type Notebook,
+} from "../src/index.ts"
 
 const dir = new URL("../fixtures/", import.meta.url)
 const sb2: { cases: { name: string; bytes: string }[] } = JSON.parse(readFileSync(new URL("sb2-strokes.json", dir), "utf8"))
@@ -104,4 +110,13 @@ write("library-v1.json", JSON.stringify(libraryToJson(library), null, 2) + "\n")
 write("notebook-v1.json", JSON.stringify(notebookToJson(notebook), null, 2) + "\n")
 write("library-v1.automerge", A.save(A.from(libraryValue(library) as Record<string, unknown>)))
 write("notebook-v1.automerge", A.save(A.from(notebookValue(notebook) as Record<string, unknown>)))
-console.log("wrote library-v1 and notebook-v1 fixtures")
+
+// Delete against draw (ADR-001): the drawing brings the page back.
+type D = Record<string, any>
+const origin = A.from(notebookValue(notebook) as D)
+const drawn = strokeValue({ ...notebook.pages["p-2"].strokes["s-neg"], id: "drawn-after-delete" })
+const deleter = A.change(A.clone(origin), d => deletePage(d, "p-2"))
+const drawer = A.change(A.clone(origin), d => { d.pages["p-2"].strokes["drawn-after-delete"] = drawn; markPageLive(d, "p-2") })
+write("page-deleted.automerge", A.save(deleter))
+write("page-delete-vs-draw.automerge", A.save(A.merge(A.clone(deleter), drawer)))
+console.log("wrote library-v1, notebook-v1 and page-delete fixtures")

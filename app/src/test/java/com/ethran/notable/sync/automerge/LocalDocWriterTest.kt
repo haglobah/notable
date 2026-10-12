@@ -647,12 +647,43 @@ class LocalDocWriterTest {
     }
 
     @Test
-    fun `a page deleted on one device and drawn on on another is gone on both, and the editor is told`() {
+    fun `a page deleted on one device and drawn on on another comes back on both with the stroke`() {
         val a = bookDevice()
+        a.edit(LocalChange.StrokesUpserted("p2", listOf(stroke("s2", "p2"))))
         val b = peer(a)
         a.edit(LocalChange.PageDeleted(page("p2", "nb1")))
         b.edit(LocalChange.StrokesUpserted("p2", listOf(stroke("b1", "p2"))))
-        b.edit(LocalChange.PageBackgroundChanged("p2", "nb1", "native", "lined", b.clock))
+        a.docs.syncWith(b.docs)
+
+        for (d in listOf(a, b)) {
+            val nb = d.docs.notebook("nb1")
+            assertEquals(setOf("s2", "b1"), nb.pages.getValue("p2").strokes.keys)
+            assertEquals("back at the end", listOf("p1", "p3", "p4", "p2"), nb.pageOrder)
+            val edits = d.project()
+            assertFalse("no device is told the page is gone: $edits", edits.any { it.pageDeleted })
+            assertNotNull(d.room.sink.pages["p2"])
+            assertEquals(setOf("s2", "b1"), d.room.sink.strokes.values.filter { it.pageId == "p2" }.map { it.id }.toSet())
+            assertEquals(listOf("p1", "p3", "p4", "p2"), d.room.sink.notebooks.getValue("nb1").pageIds)
+        }
+    }
+
+    @Test
+    fun `an image added to a page deleted elsewhere brings it back`() {
+        val a = bookDevice()
+        val b = peer(a)
+        a.edit(LocalChange.PageDeleted(page("p2", "nb1")))
+        b.blobs.files["/img.png"] = "imgbytes".toByteArray()
+        b.edit(LocalChange.ImagesUpserted("p2", listOf(Image("i1", 10, 20, 30, 40, "/img.png", "p2", t0, t1))))
+        a.docs.syncWith(b.docs)
+
+        for (d in listOf(a, b)) assertEquals(setOf("i1"), d.docs.notebook("nb1").pages.getValue("p2").images.keys)
+    }
+
+    @Test
+    fun `a page deleted on one device is gone on the other, and its open editor is told`() {
+        val a = bookDevice()
+        val b = peer(a)
+        a.edit(LocalChange.PageDeleted(page("p2", "nb1")))
         a.docs.syncWith(b.docs)
 
         for (d in listOf(a, b)) {
@@ -663,8 +694,21 @@ class LocalDocWriterTest {
         val edits = b.project()
         assertTrue("the open editor learns the page is gone: $edits", edits.any { it.pageId == "p2" && it.pageDeleted })
         assertNull(b.room.sink.pages["p2"])
-        assertNull(b.room.sink.strokes["b1"])
         assertEquals(listOf("p1", "p3", "p4"), b.room.sink.notebooks.getValue("nb1").pageIds)
+        assertTrue("a's own projection keeps it deleted", a.project().none { it.pageId == "p2" && !it.pageDeleted })
+        assertNull(a.room.sink.pages["p2"])
+    }
+
+    @Test
+    fun `a background change or move on a page deleted elsewhere does not bring it back`() {
+        val a = bookDevice()
+        val b = peer(a)
+        a.edit(LocalChange.PageDeleted(page("p2", "nb1")))
+        b.edit(LocalChange.PageBackgroundChanged("p2", "nb1", "native", "lined", b.clock))
+        b.edit(LocalChange.PageMoved("nb1", "p2", afterPageId = null))
+        a.docs.syncWith(b.docs)
+
+        for (d in listOf(a, b)) assertFalse("p2" in d.docs.notebook("nb1").pages)
     }
 
     @Test
