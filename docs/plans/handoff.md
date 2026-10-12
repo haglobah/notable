@@ -359,6 +359,25 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   `ExportContentSizeTest` (with the toggle on, 3000 instead of 3050). Unit suite 364, 0 failures,
   2 live skipped; `assembleDebug` builds. The stored key needs no migration (`ignoreUnknownKeys`).
 
+- Done, committed (2026-10-11): **device check of delete against draw** on the Note Air 5C,
+  `.dev` build of `2162dbef`, live server (the live PWA already accepts schema version 2),
+  throwaway account `devdela0540c` (deleted; `.dev` logged out). Notebook "Remote Notebook"
+  (`remote-nb`, pages `rp-c`, `rp-a`, `rp-b`).
+  - Concurrent (deterministic): wifi off, hook `delete-page` on the open page, `device-peer.ts
+    add-stroke` on it, wifi on. Twice (`rp-a`, `rp-b`). Server: the page is back at the end of
+    the order with all its strokes plus the remote one. Device: the editor left the page at once
+    ("open page … was deleted; showing …"); after reconnect it stayed gone (see Known gaps:
+    inbound sync stalls); after an app restart Room had both pages with every stroke, and the
+    editor showed `rp-a` with the remote stroke (`dump`: `remote-…`, `rs-2`, `rs-4`, `rs-7`).
+  - Online, near-simultaneous (hook delete, peer's change ~2 s later): back on both without a
+    restart; Room and server equal (5, 5, 3 strokes).
+  - PWA (headless Chromium): 3 pages, the revived ones with their strokes.
+  - Plain delete (`rp-b`, nothing concurrent): gone on the server, in Room, in the library ("2
+    pages") and in the PWA, also after an app restart. The PWA's header said "3 pages" once while
+    the list showed 2 (a profile with the old doc cached); the next load said 2.
+  - Also seen: the General settings no longer show "Preview PDF pagination".
+  - Screenshots: `/tmp/ndc/del-*.png`, `/tmp/ndc/pwa-del-*.png` (not kept in the repo).
+
 Known gaps:
 
 - The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
@@ -369,7 +388,14 @@ Known gaps:
 - Imported notebooks were titled from the content URI ("document 1000000068"). Fixed for new
   imports (display name); existing notebooks keep their titles.
 - The `.dev` app on the Note Air 5C now keeps a library owned by the deleted account
-  `devchk61861a`; any other login there is refused until its data is cleared or it is reinstalled.
+  `devdela0540c`; any other login there is refused until its data is cleared or it is reinstalled.
+- **Inbound sync stalls after an offline edit (found 2026-10-11 on device).** With the app
+  running: wifi off, a local edit (a draw or a page delete), a remote edit of the same notebook,
+  wifi on. The device sends its edit (the server has it), but never receives the remote one, nor
+  later remote edits of that notebook; "Re-apply everything" doesn't help, since the device's doc
+  lacks them. A restart of the app fixes it. A plain wifi off/on without a local edit is fine
+  (remote stroke projected in < 30 s). Reproduced 3 times. Not investigated; the Android repo's
+  sync state with the server after a reconnect with diverged heads is the first place to look.
 
 - A projection that read the doc between a page-cut's remove and re-add, and applies after the
   re-add settled, drops the strokes from the editor until the next projection brings them back.
@@ -446,9 +472,8 @@ Known gaps:
 
 What's left overall:
 
-1. Device check of delete against draw (`.dev`, throwaway account): open a page, `delete-page` via
-   the hook while `device-peer.ts add-stroke` draws on it; the page comes back on both. Redeploy
-   the PWA first (schema version 2).
+1. Inbound sync stalls after an offline edit until the app restarts (see Known gaps). Reproduce
+   in a JVM test against `FakeSyncServer` (disconnect, local and remote edit, reconnect), then fix.
 2. Look at the merged library and details screens on the Boox (`.dev`).
 
 Optional, left from Phase 4: rebuild Room from the docs on demand; a live JVM test of attaching
