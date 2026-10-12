@@ -98,7 +98,8 @@ object ProjectionGeometry {
     const val HEX_VERTICAL_COUNT = 26
     /** Android's PDF export page width (A4_WIDTH). Native pages are this wide. */
     const val NATIVE_PAGE_WIDTH_PT = 595.0
-    private const val CONTENT_MARGIN = 50.0
+    /** Space below the lowest stroke or image on a page that grows with its content. */
+    const val CONTENT_MARGIN = 50.0
     val NATIVE_TEMPLATES = listOf("blank", "dotted", "lined", "squared", "hexed")
 
     /** Pens whose line follows pen pressure on the Boox. */

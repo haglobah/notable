@@ -3,7 +3,6 @@ package com.ethran.notable.editor.drawing
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
@@ -12,13 +11,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntOffset
 import com.ethran.notable.SCREEN_HEIGHT
 import com.ethran.notable.SCREEN_WIDTH
-import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.editor.utils.scaleRect
 import com.onyx.android.sdk.extension.copy
 import io.shipbook.shipbooksdk.ShipBook
 import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -43,11 +40,6 @@ private val defaultPaintStroke = defaultPaint.copy().apply { this.style = Paint.
 private val marginPaint = Paint().apply {
     this.color = Color.MAGENTA
     this.strokeWidth = 2f
-}
-private val paginationLinePaint = Paint().apply {
-    color = Color.RED
-    strokeWidth = 4f
-    pathEffect = DashPathEffect(floatArrayOf(10f, 5f), 0f)
 }
 
 fun drawLinedBg(canvas: Canvas, scroll: Offset, scale: Float) {
@@ -324,10 +316,6 @@ fun drawBg(
         }
     }
     drawMargin(canvas, scroll, scale)
-
-    if (GlobalAppSettings.current.visualizePdfPagination) {
-        drawPaginationLine(canvas, scroll, scale)
-    }
     if (clipRect != null) {
         canvas.restore()
     }
@@ -342,44 +330,5 @@ fun drawMargin(canvas: Canvas, scroll: Offset, scale: Float) {
         canvas.drawLine(
             margin, padding.toFloat(), margin, (SCREEN_HEIGHT / scale - padding), marginPaint
         )
-    }
-}
-
-fun drawPaginationLine(canvas: Canvas, scroll: Offset, scale: Float) {
-    val textPaint = Paint().apply {
-        color = Color.BLACK
-        textSize = 24f
-        isAntiAlias = true
-    }
-
-    // A4 paper ratio (height/width in portrait)
-    val a4Ratio = 297f / 210f
-    val screenWidth = min(SCREEN_HEIGHT, SCREEN_WIDTH)
-    val pageHeight = screenWidth * a4Ratio
-
-    // Convert scroll position to canvas coordinates
-    // Calculate current page number (1-based)
-    val currentPage = floor(scroll.y / pageHeight).toInt() + 1
-
-    // Calculate position of first page break
-    var yPos = (currentPage * pageHeight) - scroll.y
-
-    var pageNum = currentPage
-    while (yPos < canvas.height / scale) {
-        if (yPos >= 0) { // Only draw visible lines
-            val yPosScaled = yPos
-            canvas.drawLine(
-                0f, yPosScaled, screenWidth.toFloat(), yPosScaled, paginationLinePaint
-            )
-
-            // Draw page number label (offset slightly below the line)
-            canvas.drawText(
-                "Subpage ${pageNum + 1}", 20f - scroll.x, yPosScaled + 30f, textPaint
-            )
-        } else {
-            log.d("Skipping line at $yPos (above visible area)")
-        }
-        yPos += pageHeight
-        pageNum++
     }
 }

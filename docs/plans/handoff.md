@@ -350,6 +350,15 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     add-stroke`) was not run: creating a throwaway account and launching the app were refused by
     the agent's permission classifier.
 
+- Done, committed (2026-10-11): **"Preview PDF pagination" removed** (Beat's decision: no PDF is
+  paginated any more). `AppSettings.visualizePdfPagination`, its toggle, `preview_pdf_pagination`
+  (en, pl), `drawPaginationLine` and its paint are gone. PNG/JPEG export height is now always the
+  content bottom + `ProjectionGeometry.CONTENT_MARGIN` (50), at least one screen, like the PDF
+  projection (`exportContentSize` in `io/PageContentRenderer.kt`; the width still grows with
+  content past the screen's right edge, the projection's doesn't). Red/green:
+  `ExportContentSizeTest` (with the toggle on, 3000 instead of 3050). Unit suite 364, 0 failures,
+  2 live skipped; `assembleDebug` builds. The stored key needs no migration (`ignoreUnknownKeys`).
+
 Known gaps:
 
 - The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
@@ -421,9 +430,6 @@ Known gaps:
   `cleared_all_strokes`, `toolbar_settings_edit_pen`, `pen_name_charcoal_classic`.
 - The details dialog's Export closes the dialog at once (unchanged from their branch).
 
-- "Preview PDF pagination" (`visualizePdfPagination`) still draws A4 page breaks in the editor and
-  changes the PNG export height by 50 px, though no PDF is paginated any more. Decide whether it
-  stays.
 - `RepoLocalDocsTest` "peek…" failed a second time in a full run (2026-10-11, same
   `loadRange` error); still passes alone.
 - A PDF reflects the docs: edits still in the outbox are missing; the export message says how many
@@ -444,7 +450,6 @@ What's left overall:
    the hook while `device-peer.ts add-stroke` draws on it; the page comes back on both. Redeploy
    the PWA first (schema version 2).
 2. Look at the merged library and details screens on the Boox (`.dev`).
-3. Decide "Preview PDF pagination" (see Known gaps).
 
 Optional, left from Phase 4: rebuild Room from the docs on demand; a live JVM test of attaching
 (like `LiveServerOfflineEditsTest`); check a PWA-uploaded EPUB on the Boox. Server hardening and

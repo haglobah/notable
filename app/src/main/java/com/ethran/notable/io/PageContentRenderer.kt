@@ -12,15 +12,17 @@ import com.ethran.notable.R
 import com.ethran.notable.SCREEN_HEIGHT
 import com.ethran.notable.SCREEN_WIDTH
 import com.ethran.notable.data.AppRepository
-import com.ethran.notable.data.datastore.GlobalAppSettings
+import com.ethran.notable.data.db.Image
 import com.ethran.notable.data.db.PageRepository
 import com.ethran.notable.data.db.PageWithData
+import com.ethran.notable.data.db.Stroke
 import com.ethran.notable.data.db.getBackgroundType
 import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.data.model.BackgroundType.Native
 import com.ethran.notable.editor.drawing.drawBg
 import com.ethran.notable.editor.drawing.drawImage
 import com.ethran.notable.editor.drawing.StrokeRenderers
+import com.ethran.notable.io.projection.ProjectionGeometry
 import com.ethran.notable.utils.ensureNotMainThread
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.shipbook.shipbooksdk.Log
@@ -130,24 +132,8 @@ class PageContentRenderer @Inject constructor(
     }
 
     // Returns (width, height)
-    fun computeContentDimensions(data: PageWithData): Pair<Int, Int> {
-        if (data.strokes.isEmpty() && data.images.isEmpty()) {
-            return SCREEN_WIDTH to SCREEN_HEIGHT
-        }
-
-        val strokeBottom = data.strokes.maxOfOrNull { it.bottom.toInt() } ?: 0
-        val strokeRight = data.strokes.maxOfOrNull { it.right.toInt() } ?: 0
-        val imageBottom = data.images.maxOfOrNull { it.y + it.height } ?: 0
-        val imageRight = data.images.maxOfOrNull { it.x + it.width } ?: 0
-
-        val rawHeight = maxOf(strokeBottom, imageBottom) +
-                if (GlobalAppSettings.current.visualizePdfPagination) 0 else 50
-        val rawWidth = maxOf(strokeRight, imageRight) + 50
-
-        val height = rawHeight.coerceAtLeast(SCREEN_HEIGHT)
-        val width = rawWidth.coerceAtLeast(SCREEN_WIDTH)
-        return width to height
-    }
+    fun computeContentDimensions(data: PageWithData): Pair<Int, Int> =
+        exportContentSize(data.strokes, data.images, SCREEN_WIDTH, SCREEN_HEIGHT)
 
     private fun resolveRenderSize(
         contentWidth: Int,
@@ -196,4 +182,33 @@ class PageContentRenderer @Inject constructor(
             }
         }
     }
+}
+
+/**
+ * Width and height in canvas px of a page exported as an image. The height follows the PDF
+ * projection ([ProjectionGeometry.contentHeight]): content bottom plus the margin, at least one
+ * screen. The width also grows with content past the screen's right edge.
+ */
+internal fun exportContentSize(
+    strokes: List<Stroke>,
+    images: List<Image>,
+    screenWidth: Int,
+    screenHeight: Int,
+): Pair<Int, Int> {
+    if (strokes.isEmpty() && images.isEmpty()) {
+        return screenWidth to screenHeight
+    }
+
+    val strokeBottom = strokes.maxOfOrNull { it.bottom.toInt() } ?: 0
+    val strokeRight = strokes.maxOfOrNull { it.right.toInt() } ?: 0
+    val imageBottom = images.maxOfOrNull { it.y + it.height } ?: 0
+    val imageRight = images.maxOfOrNull { it.x + it.width } ?: 0
+
+    val margin = ProjectionGeometry.CONTENT_MARGIN.toInt()
+    val rawHeight = maxOf(strokeBottom, imageBottom) + margin
+    val rawWidth = maxOf(strokeRight, imageRight) + margin
+
+    val height = rawHeight.coerceAtLeast(screenHeight)
+    val width = rawWidth.coerceAtLeast(screenWidth)
+    return width to height
 }

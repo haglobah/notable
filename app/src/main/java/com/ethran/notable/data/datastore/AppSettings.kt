@@ -44,7 +44,6 @@ data class AppSettings(
     val smoothScroll: Boolean = true,
     val continuousZoom: Boolean = false,
     val continuousStrokeSlider: Boolean = false,
-    val visualizePdfPagination: Boolean = false,
     // null → ToolbarLayout.DEFAULT. Sanitize with ToolbarLayout.validated() when reading:
     // persisted layouts may predate elements or omit the mandatory MENU entry.
     val toolbarLayout: ToolbarLayout? = null,

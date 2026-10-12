@@ -26,6 +26,8 @@ Core (Maintainer: @Ethran)
 - PNG
     - Book: <file>-p1.png, <file>-p2.png, …
     - Page: single PNG; copies a wiki-style link
+    - Each page as tall as its content plus 50 px, like the PDF projection, and at least one
+      screen; wider than the screen when content reaches past its right edge
 - JPEG
     - Same as PNG, but no clipboard link
 - XOPP (Xournal++)
@@ -73,7 +75,6 @@ saveStream(
     - Quick page: quickpage-<timestamp>
 
 ### Caveats
-- Rendering and pagination depend on GlobalAppSettings
 - Avoid main-thread work
 - Not all URIs are tested; there might be errors
 
