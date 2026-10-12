@@ -2,7 +2,6 @@
 <resources>
     <string name="home_quick_pages">Szybkie notatki</string>
     <string name="home_notebooks">Zeszyty</string>
-    <string name="home_add_new_folder">Dodaj nowy folder</string>
     <string name="home_new_folder">Nowy folder</string>
     <string name="home_view_name">Biblioteka</string>
     <string name="settings_title">Ustawienia</string>
@@ -51,17 +50,11 @@
 
     <!-- Notebook details -->
     <string name="gesture_action_select">Zaznaczenie</string>
-    <string name="details_notebook_title">Tytuł:</string>
-    <string name="details_notebook_default_background_template">Domyślny szablon tła</string>
     <string name="details_notebook_pages">Strony: %1$d</string>
-    <string name="details_notebook_in_folder">W folderze: </string>
     <string name="details_notebook_created">Utworzono: %1$s</string>
     <string name="details_notebook_last_updated">Ostatnia aktualizacja: %1$s</string>
-    <string name="details_notebook_buttons_delete">Usuń</string>
     <string name="details_notebook_buttons_move">Przenieś</string>
     <string name="details_notebook_buttons_export">Eksportuj</string>
-    <string name="details_notebook_buttons_copy">Kopiuj</string>
-    <string name="details_notebook_linked_to">Powiązane z: %1$s</string>
 
     <!-- Welcome / guide strings -->
     <string name="welcome_view_title">Witaj w Notable!</string>
@@ -179,4 +172,28 @@
         <item quantity="many">%d stron</item>
         <item quantity="other">%d strony</item>
     </plurals>
+    <string name="library_notebook_details">Szczegóły: %1$s</string>
+    <string name="library_folders">Foldery</string>
+    <string name="library_new_quick_page">Szybka strona</string>
+    <string name="library_new_folder">Nowy folder</string>
+    <string name="details_heading">Szczegóły notatnika</string>
+    <string name="details_done">Gotowe</string>
+    <string name="details_saving">Zapisywanie…</string>
+    <string name="details_name">Nazwa</string>
+    <string name="details_template">Szablon strony</string>
+    <string name="details_template_builtin">Wbudowany szablon</string>
+    <string name="details_template_linked_pdf">Powiązany PDF</string>
+    <string name="details_template_cover">Obraz okładki</string>
+    <string name="details_template_image">Obraz</string>
+    <string name="details_template_repeating">Powtarzany obraz</string>
+    <string name="details_template_pdf">Strona PDF</string>
+    <string name="details_link">Powiązany plik</string>
+    <string name="details_unlinked">Brak powiązanego pliku</string>
+    <string name="details_unlink">Odłącz</string>
+    <string name="details_link_action">Powiąż plik</string>
+    <string name="details_location">Lokalizacja</string>
+    <string name="details_delete_title">Usuń notatnik</string>
+    <string name="details_delete_message">Usunąć „%1$s”? Tej operacji nie można cofnąć.</string>
+    <string name="details_save_failed">Nie udało się zapisać zmian. Spróbuj ponownie.</string>
+    <string name="details_retry">Spróbuj ponownie</string>
 </resources>

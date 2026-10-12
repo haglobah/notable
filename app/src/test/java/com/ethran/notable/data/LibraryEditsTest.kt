@@ -62,19 +62,20 @@ private class Store {
         override suspend fun setPageIds(id: String, pageIds: List<String>, updatedAt: Date) {
             write("pageIds"); notebooks[id]?.let { notebooks[id] = it.copy(pageIds = pageIds, updatedAt = updatedAt) }
         }
-        override suspend fun setTitle(id: String, title: String, updatedAt: Date) {
-            write("title"); notebooks[id]?.let { notebooks[id] = it.copy(title = title, updatedAt = updatedAt) }
+        private fun change(id: String, edit: (Notebook) -> Notebook): Int =
+            notebooks[id]?.let { notebooks[id] = edit(it); 1 } ?: 0
+        override suspend fun setTitle(id: String, title: String, updatedAt: Date): Int {
+            write("title"); return change(id) { it.copy(title = title, updatedAt = updatedAt) }
         }
-        override suspend fun setParentFolder(id: String, folderId: String?, updatedAt: Date) {
-            write("notebookFolder"); notebooks[id]?.let { notebooks[id] = it.copy(parentFolderId = folderId, updatedAt = updatedAt) }
+        override suspend fun setParentFolder(id: String, folderId: String?, updatedAt: Date): Int {
+            write("notebookFolder"); return change(id) { it.copy(parentFolderId = folderId, updatedAt = updatedAt) }
         }
-        override suspend fun setDefaultBackground(id: String, type: String, value: String, updatedAt: Date) {
+        override suspend fun setDefaultBackground(id: String, type: String, value: String, updatedAt: Date): Int {
             write("defaultBackground")
-            notebooks[id]?.let { notebooks[id] = it.copy(defaultBackgroundType = type, defaultBackground = value, updatedAt = updatedAt) }
+            return change(id) { it.copy(defaultBackgroundType = type, defaultBackground = value, updatedAt = updatedAt) }
         }
-        override suspend fun setLinkedExternalUri(id: String, uri: String?) {
-            notebooks[id]?.let { notebooks[id] = it.copy(linkedExternalUri = uri) }
-        }
+        override suspend fun setLinkedExternalUri(id: String, uri: String?): Int =
+            change(id) { it.copy(linkedExternalUri = uri) }
         override suspend fun create(notebook: Notebook): Long { write("notebook+"); notebooks[notebook.id] = notebook; return 1 }
         override suspend fun update(notebook: Notebook) { write("notebook"); notebooks[notebook.id] = notebook }
         override suspend fun upsert(notebook: Notebook) { write("notebook"); notebooks[notebook.id] = notebook }
@@ -228,6 +229,20 @@ class LibraryEditsTest {
         for (op in ops) op()
         assertEquals("Room writes outside the mirror", emptyList<String>(), store.outside)
         assertEquals(ops.size, mirror.changes.size)
+    }
+
+    @Test
+    fun `a notebook edit fails visibly when Room no longer has the notebook`() = runBlocking {
+        val ops: List<suspend () -> Unit> = listOf(
+            { edits.renameNotebook("gone", "Name") },
+            { edits.moveNotebook("gone", null) },
+            { edits.setNotebookBackground("gone", "native", "lined") },
+            { edits.setNotebookLinkedUri("gone", null) },
+        )
+        for (op in ops) {
+            val error = runCatching { op() }.exceptionOrNull()
+            assertEquals("Notebook no longer exists", (error as? IllegalStateException)?.message)
+        }
     }
 
     @Test

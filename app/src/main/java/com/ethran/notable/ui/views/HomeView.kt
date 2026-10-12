@@ -5,22 +5,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -30,7 +28,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.Badge
 import androidx.compose.material.BadgedBox
-import androidx.compose.material.Divider
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
@@ -43,8 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -64,21 +59,21 @@ import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.navigation.NavigationDestination
 import com.ethran.notable.ui.LocalSnackContext
 import com.ethran.notable.ui.SnackConf
+import com.ethran.notable.ui.components.PaperAction
+import com.ethran.notable.ui.components.PaperIconAction
 import com.ethran.notable.ui.components.BreadCrumb
 import com.ethran.notable.ui.components.NotebookCard
 import com.ethran.notable.ui.components.ShowPagesRow
 import com.ethran.notable.ui.dialogs.EmptyBookWarningHandler
 import com.ethran.notable.ui.dialogs.FolderConfigDialog
 import com.ethran.notable.ui.dialogs.NotebookConfigDialog
-import com.ethran.notable.ui.dialogs.PdfImportChoiceDialog
-import com.ethran.notable.ui.noRippleClickable
 import com.ethran.notable.ui.theme.Ink
 import com.ethran.notable.ui.theme.Paper
 import com.ethran.notable.ui.theme.PaperInset
-import com.ethran.notable.ui.theme.PaperLine
 import com.ethran.notable.ui.viewmodels.LibraryUiState
 import com.ethran.notable.ui.viewmodels.LibraryViewModel
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Plus
 import compose.icons.feathericons.FilePlus
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.FolderPlus
@@ -163,7 +158,7 @@ fun LibraryContent(
     onCreateNewFolder: () -> Unit,
     onDeleteEmptyBook: (String) -> Unit,
     onCreateNewNotebook: () -> Unit,
-    onImportPdf: (Uri, Boolean) -> Unit,
+    onImportPdf: (Uri) -> Unit,
     onImportXopp: (Uri) -> Unit,
     onPreviewMissing: (String) -> Unit
 ) {
@@ -185,14 +180,8 @@ fun LibraryContent(
                         modifier = Modifier.offset((-4).dp, 4.dp)
                     )
                 }) {
-                    Box(
-                        modifier = Modifier.size(48.dp)
-                            .noRippleClickable(onClick = onNavigateToSettings),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(FeatherIcons.Settings, "Settings", tint = Ink,
-                            modifier = Modifier.size(24.dp))
-                    }
+                    PaperIconAction(stringResource(R.string.settings_title), FeatherIcons.Settings,
+                        onClick = onNavigateToSettings)
                 }
             }
         }
@@ -203,9 +192,6 @@ fun LibraryContent(
             isImporting = uiState.isImporting,
             onNavigateToEditor = onNavigateToEditor,
             onDeleteEmptyBook = onDeleteEmptyBook,
-            onCreateNewNotebook = onCreateNewNotebook,
-            onImportPdf = onImportPdf,
-            onImportXopp = onImportXopp,
             onPreviewMissing = onPreviewMissing,
             modifier = Modifier.weight(1f),
             header = {
@@ -215,26 +201,32 @@ fun LibraryContent(
                         fontSize = 28,
                         onSelectFolderId = onNavigateToFolder
                     )
-                    Spacer(Modifier.height(24.dp))
-                    FolderList(
-                        appRepository = appRepository,
-                        folders = uiState.folders,
-                        onNavigateToFolder = onNavigateToFolder,
-                        onCreateNewFolder = onCreateNewFolder
-                    )
-                    Spacer(Modifier.height(28.dp))
-                    ShowPagesRow(
-                        appRepository = appRepository,
-                        pages = uiState.singlePages,
-                        currentPageId = null,
-                        title = stringResource(R.string.home_quick_pages),
-                        onSelectPage = goToPage,
-                        showAddQuickPage = true,
+                    Spacer(Modifier.height(20.dp))
+                    NotebookImportPanel(
+                        onCreateNewNotebook = onCreateNewNotebook,
                         onCreateNewQuickPage = onCreateNewQuickPage,
-                        onPreviewMissing = onPreviewMissing
+                        onCreateNewFolder = onCreateNewFolder,
+                        onImportPdf = onImportPdf,
+                        onImportXopp = onImportXopp
                     )
-                    Spacer(Modifier.height(28.dp))
-                    Divider(color = PaperLine)
+                    if (uiState.folders.isNotEmpty()) {
+                        Spacer(Modifier.height(28.dp))
+                        Text(stringResource(R.string.library_folders),
+                            style = MaterialTheme.typography.h6, color = Ink)
+                        Spacer(Modifier.height(12.dp))
+                        FolderList(appRepository, uiState.folders, onNavigateToFolder)
+                    }
+                    if (uiState.singlePages.isNotEmpty()) {
+                        Spacer(Modifier.height(28.dp))
+                        ShowPagesRow(
+                            appRepository = appRepository,
+                            pages = uiState.singlePages,
+                            currentPageId = null,
+                            title = stringResource(R.string.home_quick_pages),
+                            onSelectPage = goToPage,
+                            onPreviewMissing = onPreviewMissing
+                        )
+                    }
                 }
             }
         )
@@ -246,7 +238,7 @@ fun LibraryContent(
 fun FolderList(
     appRepository: AppRepository,
     folders: List<Folder>,
-    onNavigateToFolder: (String) -> Unit, onCreateNewFolder: () -> Unit
+    onNavigateToFolder: (String) -> Unit
 ) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -254,28 +246,8 @@ fun FolderList(
             .fillMaxWidth()
             .autoEInkAnimationOnScroll()
     ) {
-        item {
-            // Add new folder row
-            Row(
-                Modifier
-                    .border(1.dp, PaperLine)
-                    .noRippleClickable(onClick = onCreateNewFolder)
-                    .heightIn(min = 48.dp)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = FeatherIcons.FolderPlus, contentDescription = "Add Folder",
-                    Modifier.height(20.dp), tint = Ink
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(text = stringResource(R.string.home_add_new_folder), color = Ink,
-                    style = MaterialTheme.typography.body2)
-            }
-        }
-
         if (folders.isNotEmpty()) {
-            items(folders) { folder ->
+            items(folders, key = { it.id }) { folder ->
                 var isFolderSettingsOpen by remember { mutableStateOf(false) }
                 if (isFolderSettingsOpen) FolderConfigDialog(
                     appRepository.folderRepository,
@@ -296,7 +268,7 @@ fun FolderList(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = FeatherIcons.Folder, contentDescription = "Folder",
+                        imageVector = FeatherIcons.Folder, contentDescription = null,
                         Modifier.height(20.dp), tint = Ink
                     )
                     Spacer(Modifier.width(10.dp))
@@ -315,38 +287,28 @@ fun NotebookGrid(
     isImporting: Boolean,
     onNavigateToEditor: (String, String) -> Unit,
     onDeleteEmptyBook: (String) -> Unit,
-    onCreateNewNotebook: () -> Unit,
-    onImportPdf: (Uri, Boolean) -> Unit,
-    onImportXopp: (Uri) -> Unit,
     onPreviewMissing: (String) -> Unit,
     modifier: Modifier = Modifier,
     header: @Composable () -> Unit = {}
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(148.dp),
+        columns = GridCells.Adaptive(180.dp),
         contentPadding = PaddingValues(24.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         modifier = modifier.autoEInkAnimationOnScroll()
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { header() }
-        item(span = { GridItemSpan(maxLineSpan) }) {
+        item(key = "library-header", span = { GridItemSpan(maxLineSpan) }) { header() }
+        item(key = "notebooks-heading", span = { GridItemSpan(maxLineSpan) }) {
             Text(
                 text = stringResource(R.string.home_notebooks),
                 style = MaterialTheme.typography.h6,
                 color = Ink
             )
         }
-        item {
-            NotebookImportPanel(
-                onCreateNewNotebook = onCreateNewNotebook,
-                onImportPdf = onImportPdf,
-                onImportXopp = onImportXopp
-            )
-        }
 
         if (books.isNotEmpty()) {
-            items(books.reversed()) { book ->
+            items(books.reversed(), key = { "notebook-${it.id}" }) { book ->
                 if (book.pageIds.isEmpty()) {
                     if (!isImporting) {
                         EmptyBookWarningHandler(
@@ -381,106 +343,68 @@ fun NotebookGrid(
 @Composable
 fun NotebookImportPanel(
     onCreateNewNotebook: () -> Unit,
-    onImportPdf: (Uri, Boolean) -> Unit,
+    onCreateNewQuickPage: () -> Unit,
+    onCreateNewFolder: () -> Unit,
+    onImportPdf: (Uri) -> Unit,
     onImportXopp: (Uri) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val snackState = LocalSnackContext.current
-    var showPdfImportChoiceDialog by remember { mutableStateOf<Uri?>(null) }
-
-    showPdfImportChoiceDialog?.let { uri ->
-        PdfImportChoiceDialog(uri = uri, onCopy = { uri ->
-            showPdfImportChoiceDialog = null
-            onImportPdf(uri, /* copy= */ true)
-        }, onObserve = {
-            showPdfImportChoiceDialog = null
-            onImportPdf(it, /* copy= */ false)
-        }, onDismiss = { showPdfImportChoiceDialog = null })
-    }
-
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(3f / 4f)
-            .border(1.dp, PaperLine, RectangleShape),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            // Create New Notebook Button (Top Half)
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f) // Takes half the height
-                    .fillMaxWidth()
-                    .background(Paper)
-                    .noRippleClickable(onClick = onCreateNewNotebook)
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(FeatherIcons.FilePlus, null, tint = Ink, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.height(8.dp))
-                    Text(stringResource(R.string.library_new_notebook),
-                        style = MaterialTheme.typography.body2, color = Ink)
-                }
-            }
-
-            val launcher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocument()
-            ) { uri: Uri? ->
-                if (uri == null) {
-                    log.w("PickVisualMedia: uri is null (user cancelled or provider returned null)")
-                    return@rememberLauncherForActivityResult
-                }
-                try {
-
-                    val mimeType = context.contentResolver.getType(uri)
-                    log.d("Selected file mimeType: $mimeType, uri: $uri")
-                    if (mimeType == "application/pdf" || uri.toString()
-                            .endsWith(".pdf", ignoreCase = true)
-                    ) {
-                        showPdfImportChoiceDialog = uri
-                    } else if (com.ethran.notable.io.isEpubFile(mimeType, uri.toString())) {
-                        // EPUBs are always copied: their pages exist only laid out, from our copy.
-                        onImportPdf(uri, /* copy= */ true)
-                    } else {
-                        onImportXopp(uri)
-                    }
-                } catch (e: Exception) {
-                    log.e("contentPicker failed: ${e.message}", e)
-                    snackState.showOrUpdateSnack(SnackConf(text = "Importing failed: ${e.message}"))
-                }
-            }
-            Divider(color = PaperLine, modifier = Modifier.padding(horizontal = 16.dp))
-            // Import Notebook (Bottom Half)
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .background(Paper)
-                    .noRippleClickable {
-                        launcher.launch(
-                            arrayOf(
-                                "application/x-xopp",
-                                "application/gzip",
-                                "application/octet-stream",
-                                "application/pdf",
-                                "application/epub+zip"
-                            )
-                        )
-                    }
-
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(FeatherIcons.Upload, null, tint = Ink, modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.height(8.dp))
-                    Text(stringResource(R.string.library_import),
-                        style = MaterialTheme.typography.body2, color = Ink)
-                }
-            }
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) {
+            log.w("PickVisualMedia: uri is null (user cancelled or provider returned null)")
+            return@rememberLauncherForActivityResult
         }
+        try {
+
+            val mimeType = context.contentResolver.getType(uri)
+            log.d("Selected file mimeType: $mimeType, uri: $uri")
+            if (mimeType == "application/pdf" || uri.toString()
+                    .endsWith(".pdf", ignoreCase = true)
+            ) {
+                onImportPdf(uri)
+            } else if (com.ethran.notable.io.isEpubFile(mimeType, uri.toString())) {
+                // EPUBs are always copied (ImportEngine ignores the link option for them).
+                onImportPdf(uri)
+            } else {
+                onImportXopp(uri)
+            }
+        } catch (e: Exception) {
+            log.e("contentPicker failed: ${e.message}", e)
+            snackState.showOrUpdateSnack(SnackConf(text = "Importing failed: ${e.message}"))
+        }
+    }
+    LibraryCreationActions(
+        onCreateNewNotebook = onCreateNewNotebook,
+        onCreateNewQuickPage = onCreateNewQuickPage,
+        onCreateNewFolder = onCreateNewFolder,
+        onImport = { launcher.launch(arrayOf("application/x-xopp", "application/gzip",
+            "application/octet-stream", "application/pdf", "application/epub+zip")) },
+        modifier = modifier
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun LibraryCreationActions(
+    onCreateNewNotebook: () -> Unit,
+    onCreateNewQuickPage: () -> Unit,
+    onCreateNewFolder: () -> Unit,
+    onImport: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PaperAction(stringResource(R.string.library_new_notebook), onCreateNewNotebook,
+            icon = FeatherIcons.FilePlus, primary = true)
+        PaperAction(stringResource(R.string.library_new_quick_page), onCreateNewQuickPage,
+            icon = FeatherIcons.Plus)
+        PaperAction(stringResource(R.string.library_new_folder), onCreateNewFolder,
+            icon = FeatherIcons.FolderPlus)
+        PaperAction(stringResource(R.string.library_import), onImport, icon = FeatherIcons.Upload)
     }
 }
 
@@ -526,7 +450,7 @@ fun LibraryContentPreview() {
 //        onCreateNewFolder = {},
 //        onDeleteEmptyBook = {},
 //        onCreateNewNotebook = {},
-//        onImportPdf = { _, _ -> },
+//        onImportPdf = { _ -> },
 //        onImportXopp = {})
 }
 
@@ -555,6 +479,6 @@ fun LibraryContentUpdatePreview() {
 //        onCreateNewFolder = {},
 //        onDeleteEmptyBook = {},
 //        onCreateNewNotebook = {},
-//        onImportPdf = { _, _ -> },
+//        onImportPdf = { _ -> },
 //        onImportXopp = {})
 }

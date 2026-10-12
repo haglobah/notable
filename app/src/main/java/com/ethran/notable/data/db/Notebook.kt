@@ -71,18 +71,20 @@ interface NotebookDao {
     @Query("UPDATE notebook SET pageIds=:pageIds, updatedAt=:updatedAt WHERE id=:id")
     suspend fun setPageIds(id: String, pageIds: List<String>, updatedAt: Date)
 
+    // Field-level metadata edits, so a stale screen doesn't write over newer page or sync changes.
+    // Each returns the number of rows changed: 0 means the notebook is gone.
     @Query("UPDATE notebook SET title=:title, updatedAt=:updatedAt WHERE id=:id")
-    suspend fun setTitle(id: String, title: String, updatedAt: Date)
+    suspend fun setTitle(id: String, title: String, updatedAt: Date): Int
 
     @Query("UPDATE notebook SET parentFolderId=:folderId, updatedAt=:updatedAt WHERE id=:id")
-    suspend fun setParentFolder(id: String, folderId: String?, updatedAt: Date)
+    suspend fun setParentFolder(id: String, folderId: String?, updatedAt: Date): Int
 
     @Query("UPDATE notebook SET defaultBackgroundType=:type, defaultBackground=:value, updatedAt=:updatedAt WHERE id=:id")
-    suspend fun setDefaultBackground(id: String, type: String, value: String, updatedAt: Date)
+    suspend fun setDefaultBackground(id: String, type: String, value: String, updatedAt: Date): Int
 
     /** Device-local: the docs don't hold it, so it's written to Room alone. */
     @Query("UPDATE notebook SET linkedExternalUri=:uri WHERE id=:id")
-    suspend fun setLinkedExternalUri(id: String, uri: String?)
+    suspend fun setLinkedExternalUri(id: String, uri: String?): Int
 
     @Insert
     suspend fun create(notebook: Notebook): Long
@@ -179,11 +181,17 @@ class BookRepository @Inject constructor(
         notebookDao.setPageIds(id, notebook.pageIds.placed(pageId, afterPageId), Date())
     }
 
-    suspend fun setTitle(id: String, title: String) = notebookDao.setTitle(id, title, Date())
-    suspend fun setParentFolder(id: String, folderId: String?) = notebookDao.setParentFolder(id, folderId, Date())
+    // A missing notebook fails the edit (and so the dialog's save) instead of reporting success.
+    suspend fun setTitle(id: String, title: String) =
+        exists(notebookDao.setTitle(id, title, Date()))
+    suspend fun setParentFolder(id: String, folderId: String?) =
+        exists(notebookDao.setParentFolder(id, folderId, Date()))
     suspend fun setDefaultBackground(id: String, type: String, value: String) =
-        notebookDao.setDefaultBackground(id, type, value, Date())
-    suspend fun setLinkedExternalUri(id: String, uri: String?) = notebookDao.setLinkedExternalUri(id, uri)
+        exists(notebookDao.setDefaultBackground(id, type, value, Date()))
+    suspend fun setLinkedExternalUri(id: String, uri: String?) =
+        exists(notebookDao.setLinkedExternalUri(id, uri))
+
+    private fun exists(rowsChanged: Int) = check(rowsChanged == 1) { "Notebook no longer exists" }
 
     suspend fun changePageIndex(id: String, pageId: String, index: Int) {
         val notebook = notebookDao.getById(id) ?: return

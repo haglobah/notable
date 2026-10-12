@@ -179,10 +179,10 @@ class LibraryViewModel @Inject constructor(
         _newlyCreatedBookId.value = null
     }
 
-    fun onPdfFile(uri: Uri, copy: Boolean) {
+    fun onPdfFile(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
-            val snackText =
-                if (copy) "Importing document (copy)" else "Setting up observer for PDF"
+            // PDFs are linked, EPUBs copied; both come through here.
+            val snackText = "Importing document"
 
             _isImporting.value = true
             snackDispatcher.showOrUpdateSnack(SnackConf(text = snackText, duration = 2000))
@@ -190,7 +190,7 @@ class LibraryViewModel @Inject constructor(
             try {
                 // Ideally, ImportEngine should be injected via Hilt rather than instantiated here
                 val result = importEngine.import(
-                    uri, ImportOptions(folderId = _folderId.value, linkToExternalFile = !copy)
+                    uri, ImportOptions(folderId = _folderId.value, linkToExternalFile = true)
                 )
                 
                 result.fold(
