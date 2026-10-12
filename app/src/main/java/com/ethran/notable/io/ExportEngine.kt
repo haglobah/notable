@@ -5,17 +5,17 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
+import androidx.core.app.ShareCompat
+import androidx.core.content.FileProvider
+import com.ethran.notable.io.projection.PdfProjection
+import kotlinx.coroutines.Dispatchers
+import java.util.UUID
 import android.graphics.Bitmap
-import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.os.Environment
-import androidx.compose.ui.geometry.Offset
 import androidx.core.net.toUri
-import com.ethran.notable.SCREEN_WIDTH
 import com.ethran.notable.data.AppRepository
-import com.ethran.notable.data.datastore.A4_HEIGHT
-import com.ethran.notable.data.datastore.A4_WIDTH
-import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.data.events.AppEvent
 import com.ethran.notable.data.events.AppEventBus
 import com.ethran.notable.data.db.BookRepository
@@ -23,7 +23,6 @@ import com.ethran.notable.data.db.PageRepository
 import com.ethran.notable.di.ApplicationScope
 import com.ethran.notable.di.IoDispatcher
 import com.ethran.notable.ui.components.getFolderList
-import com.ethran.notable.utils.ensureNotMainThread
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineDispatcher
@@ -63,6 +62,7 @@ class ExportEngine @Inject constructor(
     private val pageRepo: PageRepository,
     private val bookRepo: BookRepository,
     private val pageContentRenderer: PageContentRenderer,
+    private val pdfProjection: PdfProjection,
     private val appEventBus: AppEventBus,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     @param:ApplicationScope private val applicationScope: CoroutineScope
@@ -131,44 +131,83 @@ class ExportEngine @Inject constructor(
 
     /* -------------------- PDF EXPORT -------------------- */
 
+    /**
+     * PDF is the notebook doc's projection, the same file the PWA's Download makes
+     * ([PdfProjection], ADR-001 "PDF as a projection"): original PDF or EPUB pages, native pages
+     * drawn as vectors, strokes as /Ink annotations, the notebook doc embedded.
+     */
     private suspend fun exportAsPdf(
         target: ExportTarget, folderUri: Uri, baseFileName: String, options: ExportOptions
     ): String {
-        val writeAction: suspend (OutputStream) -> Unit
-        when (target) {
-            is ExportTarget.Book -> {
-                val book = bookRepo.getById(target.bookId) ?: return "Book ID not found"
-                writeAction = { out ->
-                    PdfDocument().use { doc ->
-                        book.pageIds.forEachIndexed { index, pageId ->
-                            writePageToPdfDocument(doc, pageId, pageNumber = index + 1)
-                        }
-                        doc.writeTo(out)
-                    }
-                }
+        val tmp = File(context.cacheDir, "export/${UUID.randomUUID()}.pdf")
+        try {
+            val result = try {
+                projectPdf(target, tmp)
+            } catch (e: Exception) {
+                log.e("PDF projection failed: ${e.message}", e)
+                return "Error exporting $baseFileName.pdf: ${e.message}"
             }
-
-            is ExportTarget.Page -> {
-                writeAction = { out ->
-                    PdfDocument().use { doc ->
-                        writePageToPdfDocument(doc, target.pageId, pageNumber = 1)
-                        doc.writeTo(out)
-                    }
-                }
-                if (options.copyToClipboard) copyPagePngLink(
-                    context, target.pageId
-                ) // You may want a separate PDF variant
-            }
+            if (target is ExportTarget.Page && options.copyToClipboard) copyPagePngLink(context, target.pageId)
+            val saved = saveStream(
+                folderUri = folderUri,
+                fileName = baseFileName,
+                extension = "pdf",
+                mimeType = "application/pdf",
+                writer = { out -> tmp.inputStream().use { it.copyTo(out) } },
+                overwrite = options.overwrite
+            )
+            return saved + projectionNotes(result)
+        } finally {
+            tmp.delete()
         }
+    }
 
-        return saveStream(
-            folderUri = folderUri,
-            fileName = baseFileName,
-            extension = "pdf",
-            mimeType = "application/pdf",
-            writer = writeAction,
-            overwrite = options.overwrite
-        )
+    /**
+     * Writes [target]'s PDF projection into the app cache and opens the system share sheet for it.
+     * @return a message for the person; failures are messages too, never a silent no-op.
+     */
+    suspend fun sharePdf(target: ExportTarget): String {
+        val name = sanitizeFileName(createFileName(target)).ifBlank { "notable" }
+        val dir = File(context.cacheDir, "shared")
+        // Earlier shares are done once a new one starts; the receiving app had its copy.
+        dir.listFiles()?.forEach { it.delete() }
+        dir.mkdirs()
+        val file = File(dir, "$name.pdf")
+        val result = try {
+            projectPdf(target, file)
+        } catch (e: Exception) {
+            log.e("PDF projection for sharing failed: ${e.message}", e)
+            return "Error sharing $name.pdf: ${e.message}"
+        }
+        val uri = FileProvider.getUriForFile(context, "${BuildConfig.APPLICATION_ID}.provider", file)
+        val send = ShareCompat.IntentBuilder(context)
+            .setStream(uri)
+            .setType("application/pdf")
+            .intent
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        withContext(Dispatchers.Main) {
+            context.startActivity(
+                Intent.createChooser(send, file.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            )
+        }
+        log.i("Shared ${file.absolutePath}")
+        return "Sharing ${file.name}" + projectionNotes(result)
+    }
+
+    /** A notebook's PDF, or one page of it (a quick page is its own entry). */
+    private suspend fun projectPdf(target: ExportTarget, out: File): PdfProjection.Result = when (target) {
+        is ExportTarget.Book -> pdfProjection.write(target.bookId, out)
+        is ExportTarget.Page -> {
+            val page = pageRepo.getById(target.pageId) ?: throw IllegalArgumentException("page ${target.pageId} not found")
+            val owner = page.notebookId
+            if (owner != null) pdfProjection.write(owner, out, onlyPages = setOf(page.id))
+            else pdfProjection.write(page.id, out)
+        }
+    }
+
+    private fun projectionNotes(r: PdfProjection.Result): String = buildString {
+        if (r.warnings.isNotEmpty()) append(" (${r.warnings.size} warning${if (r.warnings.size == 1) "" else "s"}: ${r.warnings.first()})")
+        if (r.pendingWrites > 0) append(". ${r.pendingWrites} edits still wait for the notebook docs and may be missing")
     }
 
     /* -------------------- IMAGE EXPORT (PNG / JPEG) -------------------- */
@@ -391,50 +430,6 @@ class ExportEngine @Inject constructor(
     }
 
     /* -------------------- Shared Drawing & PDF Helpers -------------------- */
-
-    private suspend fun writePageToPdfDocument(doc: PdfDocument, pageId: String, pageNumber: Int) {
-        ensureNotMainThread("ExportPdf")
-        val data = pageContentRenderer.loadPageContent(pageId) ?: return
-        val (_, contentHeightPx) = pageContentRenderer.computeContentDimensions(data)
-
-        val scaleFactor = A4_WIDTH.toFloat() / SCREEN_WIDTH.toFloat()
-        val scaledHeight = (contentHeightPx * scaleFactor).toInt()
-
-        if (GlobalAppSettings.current.paginatePdf) {
-            // drawPage consumes `scroll` in *content* pixels (it offsets strokes/images before
-            // canvas.scale). So the vertical step and the loop bound must be in content pixels too.
-            // One A4 page shows A4_HEIGHT/scaleFactor content px; stepping by A4_HEIGHT (output px)
-            // instead advanced only ~scaleFactor of a page each time, so consecutive pages overlapped.
-            val pageContentHeightPx = A4_HEIGHT / scaleFactor
-            var currentTop = 0f
-            var logicalPageNumber = pageNumber
-            while (currentTop < contentHeightPx) {
-                val pageInfo =
-                    PdfDocument.PageInfo.Builder(A4_WIDTH, A4_HEIGHT, logicalPageNumber).create()
-                val page = doc.startPage(pageInfo)
-                pageContentRenderer.drawPage(
-                    canvas = page.canvas,
-                    data = data,
-                    scroll = Offset(0f, currentTop),
-                    scaleFactor = scaleFactor,
-                )
-                doc.finishPage(page)
-                currentTop += pageContentHeightPx
-                logicalPageNumber++
-            }
-        } else {
-            val pageInfo = PdfDocument.PageInfo.Builder(A4_WIDTH, scaledHeight, pageNumber).create()
-            val page = doc.startPage(pageInfo)
-            pageContentRenderer.drawPage(
-                canvas = page.canvas,
-                data = data,
-                scroll = Offset.Zero,
-                scaleFactor = scaleFactor,
-            )
-            doc.finishPage(page)
-        }
-    }
-
 
     /* -------------------- Saving Helpers -------------------- */
 
@@ -741,18 +736,6 @@ class ExportEngine @Inject constructor(
         } finally {
             try {
                 recycle()
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    // Simple PdfDocument.use extension
-    private inline fun PdfDocument.use(block: (PdfDocument) -> Unit) {
-        try {
-            block(this)
-        } finally {
-            try {
-                close()
             } catch (_: Exception) {
             }
         }

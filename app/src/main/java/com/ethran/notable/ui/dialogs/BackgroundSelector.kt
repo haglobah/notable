@@ -657,7 +657,7 @@ fun PageNumberSelector(
     isNotebookBgSelector: Boolean
 ) {
     val pdfSelectorEnabled =
-        currentBackground.endsWith(".pdf") && maxPages != null && currentPage != null
+        (currentBackground.endsWith(".pdf") || com.ethran.notable.io.EpubBackground.isEpub(currentBackground)) && maxPages != null && currentPage != null
 
     Box(
         modifier = Modifier

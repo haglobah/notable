@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "test": "node --test --test-concurrency=1 test/*.test.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "projection-fixture": "node scripts/write-projection-fixture.ts"
   },
   "devDependencies": {
     "@automerge/automerge": "3.5.0",

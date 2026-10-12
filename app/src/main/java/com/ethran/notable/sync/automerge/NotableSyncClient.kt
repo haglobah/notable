@@ -658,6 +658,91 @@ class NotableSyncClient @Inject constructor(
         _projection.value = _projection.value.copy(warnings = (_projection.value.warnings + w).takeLast(20))
     }
 
+    /** A notebook's library entry and its doc's `save()` bytes, as this device has them now. */
+    class NotebookSnapshot(val entry: AmNotebookEntry, val doc: ByteArray, val pendingWrites: Int)
+
+    /**
+     * The doc of library entry [entryId] (a notebook, or a quick page's id), for the PDF projection.
+     * Edits still in the outbox are not in it; [NotebookSnapshot.pendingWrites] says how many wait.
+     * @throws IllegalStateException when the library isn't open or has no such entry.
+     */
+    suspend fun notebookSnapshot(entryId: String): NotebookSnapshot = withContext(Dispatchers.IO) {
+        firstOpen.await()
+        val s = session ?: throw IllegalStateException(
+            "the notebook library is not open" + (_local.value.openError?.let { ": $it" } ?: "")
+        )
+        val url = s.libraryUrl ?: throw IllegalStateException("the notebook library is not ready yet")
+        val docs = RepoLocalDocs(s.repo, s.storage, url)
+        // Reads through the repo's handles: no change, so nothing waits for the disk.
+        val entry = docs.edit(url) { AutomergeSchema.readLibrary(it) }.notebooks[entryId]
+            ?: throw IllegalStateException("this notebook is not in the library docs yet (${s.outbox.size} edits waiting)")
+        NotebookSnapshot(entry, docs.edit(entry.docUrl) { it.save() }, s.outbox.size)
+    }
+
+    /**
+     * A local file with blob [sha]'s bytes, for the PDF projection of [entryId]: one the projection
+     * downloaded, one queued for upload, a file Room's rows of that notebook point at, or (logged
+     * in) a download from the server into [cacheDir].
+     * @throws MissingFileException when none has it.
+     */
+    fun blobFile(sha: String, entryId: String, cacheDir: File): File {
+        require(sha.matches(Regex("[0-9a-f]{64}"))) { "not a sha256 blob id: $sha" }
+        File(getDbDir(), "sync-blobs").listFiles { f -> f.isFile && f.name.startsWith(sha) && !f.name.endsWith(".part") }
+            ?.firstOrNull()?.let { return it }
+        val dest = File(cacheDir, sha)
+        if (dest.isFile) return dest
+        val s = session
+        if (s != null && s.blobs.copyQueued(sha, dest)) return dest
+        val open = androidFileOpener(context)
+        for (ref in localFilesOf(entryId)) {
+            val hash = synchronized(localHashes) {
+                localHashes.getOrPut(fileMemo(ref)) { runCatching { open(ref).use(::sha256Hex) }.getOrNull() }
+            }
+            if (hash != sha) continue
+            val plain = File(ref.removePrefix("file://"))
+            if (!ref.startsWith("content://") && plain.isFile) return plain
+            dest.absoluteFile.parentFile?.mkdirs()
+            open(ref).use { input -> dest.outputStream().use { input.copyTo(it) } }
+            return dest
+        }
+        val api = s?.api
+        val token = s?.account?.token
+        if (api != null && token != null) {
+            api.getBlob(token, sha, dest)
+            return dest
+        }
+        throw MissingFileException("file $sha is not on this device, and no account is logged in to fetch it")
+    }
+
+    private val localHashes = HashMap<String, String?>()
+
+    private fun fileMemo(ref: String): String {
+        if (ref.startsWith("content://")) return ref
+        val f = File(ref.removePrefix("file://"))
+        return "$ref|${f.length()}|${f.lastModified()}"
+    }
+
+    /** Files Room's rows of a notebook (or quick page) refer to: backgrounds and images. */
+    private fun localFilesOf(entryId: String): List<String> {
+        val room = RoomLocalLibrary(folderDao, notebookDao, pageDao)
+        val nb = room.notebook(entryId)
+        val pages = (nb?.pageIds ?: listOf(entryId)).mapNotNull { room.page(it) }
+        return (listOfNotNull(nb?.defaultBackground) + pages.flatMap { p -> listOf(p.page.background) + p.images.mapNotNull { it.uri } })
+            .filter { it.startsWith("/") || it.startsWith("file://") || it.startsWith("content://") }
+            .distinct()
+    }
+
+    private fun sha256Hex(input: java.io.InputStream): String {
+        val d = java.security.MessageDigest.getInstance("SHA-256")
+        val buf = ByteArray(1 shl 16)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            d.update(buf, 0, n)
+        }
+        return d.digest().joinToString("") { "%02x".format(it) }
+    }
+
     /** Debug: forget what was projected and apply every doc again in full (upsert only). */
     fun rebuildFromServer() {
         scope.launch {

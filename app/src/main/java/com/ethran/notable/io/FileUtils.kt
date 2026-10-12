@@ -224,10 +224,18 @@ fun getPdfPageCount(uri: String): Int {
         fileUtilsLog.w("getPdfPageCount: Empty URI")
         return 0
     }
-    val file = File(uri)
+    var file = File(uri)
     if (!file.exists()) {
         fileUtilsLog.w("getPdfPageCount: File does not exist: $uri")
         return 0
+    }
+    if (EpubBackground.isEpub(uri)) {
+        file = try {
+            EpubBackground.laidOutPdf(uri)
+        } catch (e: Exception) {
+            fileUtilsLog.e("getPdfPageCount: EPUB can't be laid out: ${e.message}, for file $uri")
+            return 0
+        }
     }
 
     return try {

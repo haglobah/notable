@@ -246,8 +246,26 @@ Known gaps in part B:
       docs, logout keeps the library, a later login sends the edits made meanwhile, another
       account is refused. Not checked on device: adoption of an old per-account folder.
 - [ ] Rebuild Room from the docs on demand (a debug action and a test).
-- [ ] Android "share as PDF" uses the same projection as the PWA.
-- [ ] EPUB import on Android with fixed layout parameters.
+- [x] **Android PDF = the PWA's projection** (`io/projection/`). `ProjectionPlanner` (pure Kotlin,
+      a port of `project.ts`/`geometry.ts`) plans pages, content streams, `/Ink` and stamp
+      annotations and `notable.json`; `FitzPdfWriter` carries the plan out with MuPDF `fitz`
+      (grafted PDF pages, EPUB laid out with its stored layout, embedded `notable.automerge`).
+      `PdfProjection` reads the device library's docs (`NotableSyncClient.notebookSnapshot`) and
+      finds blobs locally (projection downloads, upload queue, Room's files) or on the server.
+      Every PDF export (`ExportEngine`, page and notebook) and the new "Share page/notebook as
+      PDF" use it; PNG, JPEG and XOPP are unchanged. Parity: `ProjectionParityTest` (JVM) against
+      `web/schema/fixtures/projection-v1.json`, which the TS `project()` writes
+      (`projection-fixture.test.ts` keeps it current). Device check 2026-10-11: shared PDFs of an
+      EPUB, a native and a PDF notebook equal the PWA's projection of their embedded doc
+      (`web/app/scripts/compare-projection.ts`), pass `qpdf --check`, list both attachments in
+      `pdfdetach`, and poppler draws the ink where it was drawn.
+- [x] **EPUB import on Android.** Copied as `<title>@446x595x12.epub` (layout in the name,
+      `EpubFiles`; 446 × 595 pt, 12 pt as the PWA), laid out once with fitz
+      (`FitzEpub`, `EpubBackground` keeps the laid-out PDF next to it), one `pdfN` page per page;
+      the doc gets an EPUB source with that layout. The projector names a PWA-uploaded EPUB's blob
+      `<sha>@<layout>.epub`, so it renders on the Boox. Checked on device: a 3-chapter EPUB
+      imported as 15 pages, rendered, and its shared PDF matches Node's layout page for page. Not
+      checked on device: an EPUB uploaded from the PWA (unit test only).
 
 ## Phase 5 — Remove WebDAV
 

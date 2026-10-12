@@ -55,6 +55,8 @@ internal interface DebugEditEntryPoint {
  * - `dump`: logs the page id and its stroke and image ids.
  * - `delete-page`: deletes the open page as the quick-nav page menu does ([deletePage]); the
  *   editor then moves to the neighbouring page or the library.
+ * - `share-pdf` `target` (`page` or `book`): shares the PDF projection, as the toolbar menu does;
+ *   the file is in the app cache, `shared/`.
  *
  * Every op logs one line under the tag `DebugEdit`.
  */
@@ -161,6 +163,12 @@ internal class DebugEditHook(
             "dump" -> log.i(
                 "DebugEdit dump page=${page.currentPageId} strokes=${page.strokes.map { it.id }} images=${page.images.map { it.id }}"
             )
+
+            "share-pdf" -> {
+                val book = intent.getStringExtra("target") == "book"
+                viewModel.onToolbarAction(ToolbarAction.SharePdf(book))
+                log.i("DebugEdit share-pdf page=${page.currentPageId} book=$book")
+            }
 
             "delete-page" -> {
                 val id = page.currentPageId

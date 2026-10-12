@@ -5,7 +5,12 @@ import android.net.Uri
 import androidx.annotation.WorkerThread
 import com.ethran.notable.data.LibraryEdits
 import com.ethran.notable.data.db.Notebook
+import com.ethran.notable.data.db.Page
 import com.ethran.notable.data.db.PageWithData
+import com.ethran.notable.data.ensureBackgroundsFolder
+import com.ethran.notable.io.projection.EpubFiles
+import android.provider.OpenableColumns
+import java.io.File
 import com.ethran.notable.data.events.AppEvent
 import com.ethran.notable.data.events.AppEventBus
 import com.ethran.notable.data.model.BackgroundType
@@ -60,6 +65,9 @@ data class ImportOptions(
  * The engine responsible for handling the logic of importing files into the app.
  * It is agnostic of the UI and operates on URIs provided to it.
  */
+fun isEpubFile(mimeType: String?, fileName: String?): Boolean =
+    mimeType == "application/epub+zip" || fileName?.endsWith(".epub", ignoreCase = true) == true
+
 class ImportEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
     /** An import is one creation: Room first, then its doc (see [LibraryEdits.importNotebook]). */
@@ -96,6 +104,8 @@ class ImportEngine @Inject constructor(
             bookTitle.removeSuffix(".xopp")
         } else if (bookTitle.endsWith(".pdf", ignoreCase = true)) {
             bookTitle.removeSuffix(".pdf")
+        } else if (bookTitle.endsWith(".epub", ignoreCase = true)) {
+            bookTitle.dropLast(".epub".length)
         } else {
             bookTitle
         }
@@ -110,6 +120,7 @@ class ImportEngine @Inject constructor(
         return when {
             XoppFile.isXoppFile(mimeType, bookTitle) -> handleImportXopp(uri, optionsWithTitle)
             isPdfFile(mimeType, bookTitle) -> handleImportPDF(uri, optionsWithTitle)
+            isEpubFile(mimeType, bookTitle) -> handleImportEpub(uri, optionsWithTitle)
             else -> {
                 val errorMessage = "Unsupported file type: $mimeType"
                 log.w(errorMessage)
@@ -215,6 +226,59 @@ class ImportEngine @Inject constructor(
     }
 
 
+    /**
+     * An EPUB is copied into the backgrounds folder under a name that carries its layout (the Boox
+     * screen, as the PWA lays out EPUBs: [EpubFiles.BOOX_LAYOUT]), laid out once with MuPDF, and
+     * becomes one page per laid-out page ("pdfN"), like a PDF. Its doc gets an EPUB source with
+     * that layout, so the PWA and the PDF projection show the same pages.
+     */
+    private suspend fun handleImportEpub(
+        uri: Uri,
+        options: ImportOptions
+    ): AppResult<List<String>, DomainError> {
+        log.d("Importing EPUB file...")
+        val title = requireNotNull(options.bookTitle) { "bookTitle cannot be null when importing an EPUB" }
+        val dir = File(ensureBackgroundsFolder(), BackgroundType.Pdf(0).folderName).apply { mkdirs() }
+        val base = title.ifBlank { "book" }
+        var file = File(dir, EpubFiles.fileName(base, EpubFiles.BOOX_LAYOUT))
+        var n = 1
+        while (file.exists()) file = File(dir, EpubFiles.fileName("$base ${n++}", EpubFiles.BOOX_LAYOUT))
+        try {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: return AppResult.Error(DomainError.UnexpectedState("Can't read the EPUB file"))
+            copyStreamToFile(input, file)
+        } catch (e: Exception) {
+            file.delete()
+            return AppResult.Error(DomainError.UnexpectedState("Can't copy the EPUB file: ${e.message}"))
+        }
+        val pageCount = try {
+            EpubBackground.laidOutPdf(file.path).let { getPdfPageCount(file.path) }
+        } catch (e: Exception) {
+            file.delete()
+            return AppResult.Error(DomainError.UnexpectedState("This file can't be opened as an EPUB: ${e.message}"))
+        }
+        if (pageCount < 1) {
+            file.delete()
+            return AppResult.Error(DomainError.UnexpectedState("This EPUB has no pages after layout"))
+        }
+
+        val book = Notebook(
+            title = title,
+            parentFolderId = options.folderId,
+            defaultBackground = file.path,
+            defaultBackgroundType = BackgroundType.AutoPdf.key
+        )
+        val importedPageIds = mutableListOf<String>()
+        edits.importNotebook(book) {
+            for (i in 0 until pageCount) {
+                val page = Page(background = file.path, backgroundType = BackgroundType.Pdf(i).key)
+                page(page)
+                importedPageIds.add(page.id)
+            }
+        }
+        return AppResult.Success(importedPageIds)
+    }
+
     private fun merge(fileData: PageWithData, options: ImportOptions) {
         require(options.saveToBookId != null) { "saveToBookId cannot be null when merging" }
         require(options.conflictStrategy != null) { "conflictStrategy cannot be null when merging" }
@@ -233,7 +297,14 @@ class ImportEngine @Inject constructor(
      * Extracts the book title from a file URI.
      */
     private fun getFileName(uri: Uri): String {
-        val fileName = uri.lastPathSegment?.substringAfterLast("/") ?: "Imported Book"
+        // The provider's display name ("Paper.pdf"); a content URI's last segment is often an id.
+        val displayName = runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        }.getOrNull()
+        val fileName = displayName?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast("/") ?: "Imported Book"
         return if (fileName.endsWith(".xopp", ignoreCase = true)) {
             fileName.removeSuffix(".xopp")
         } else if (fileName.endsWith(".pdf", ignoreCase = true)) {

@@ -135,6 +135,8 @@ sealed class ToolbarAction {
     data class ImagePicked(val uri: Uri) : ToolbarAction()
     data class ExportPage(val format: ExportFormat) : ToolbarAction()
     data class ExportBook(val format: ExportFormat) : ToolbarAction()
+    /** Share the page ([book] false) or the notebook as the PDF projection. */
+    data class SharePdf(val book: Boolean) : ToolbarAction()
     data class BackgroundChanged(val type: String, val path: String?) : ToolbarAction()
 
     object NavigateToLibrary : ToolbarAction()
@@ -335,6 +337,11 @@ class EditorViewModel @Inject constructor(
                 bookId?.let { handleExport(ExportTarget.Book(it), action.format) }
             }
 
+            is ToolbarAction.SharePdf -> {
+                val id = bookId
+                handleShare(if (action.book && id != null) ExportTarget.Book(id) else ExportTarget.Page(currentPageId))
+            }
+
             is ToolbarAction.BackgroundChanged -> handleBackgroundChange(action.type, action.path)
 
             ToolbarAction.Undo -> sendCanvasCommand(CanvasCommand.Undo)
@@ -456,6 +463,14 @@ class EditorViewModel @Inject constructor(
                     )
                 )
             }
+        }
+    }
+
+    private fun handleShare(target: ExportTarget) {
+        viewModelScope.launch(Dispatchers.IO) {
+            snackDispatcher.showOrUpdateSnack(SnackConf(text = "Preparing PDF…", duration = 2000))
+            val result = exportEngine.sharePdf(target)
+            snackDispatcher.showOrUpdateSnack(SnackConf(text = result, duration = 4000))
         }
     }
 

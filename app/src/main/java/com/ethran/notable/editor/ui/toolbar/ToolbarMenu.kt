@@ -84,6 +84,10 @@ private fun ToolbarMenuContent(
         DividerCentered()
 
         // Page exports
+        MenuItem(stringResource(R.string.share_page_pdf)) {
+            onAction(ToolbarAction.SharePdf(book = false))
+            onAction(ToolbarAction.ToggleMenu)
+        }
         MenuItem(stringResource(R.string.export_page_to, "PDF")) {
             onAction(ToolbarAction.ExportPage(ExportFormat.PDF))
             onAction(ToolbarAction.ToggleMenu)
@@ -104,6 +108,10 @@ private fun ToolbarMenuContent(
 
         // Book exports
         if (uiState.notebookId != null) {
+            MenuItem(stringResource(R.string.share_book_pdf)) {
+                onAction(ToolbarAction.SharePdf(book = true))
+                onAction(ToolbarAction.ToggleMenu)
+            }
             MenuItem(stringResource(R.string.export_book_to, "PDF")) {
                 onAction(ToolbarAction.ExportBook(ExportFormat.PDF))
                 onAction(ToolbarAction.ToggleMenu)

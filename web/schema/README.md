@@ -84,6 +84,7 @@ Map keys are ids. Ids are not repeated inside entries.
 | `sb2-strokes.json` | Kotlin `Sb2FixtureTest` (real app encoder, raw and LZ4) |
 | `library-v1.*`, `notebook-v1.*` | `npm run fixtures` (`scripts/write-fixtures.ts`) |
 | `*-from-kotlin.automerge` | Kotlin `GoldenFixtureTest` |
+| `projection-v1.json` | `npm run projection-fixture` in `web/app` (TS `project()`); read by Kotlin `ProjectionParityTest` |
 
 Regenerate only for an intentional change. Kotlin fixtures: `UPDATE_FIXTURES=1 ./gradlew
 :app:testDebugUnitTest --tests 'com.ethran.notable.sync.automerge.*'`. Then run `npm run fixtures`

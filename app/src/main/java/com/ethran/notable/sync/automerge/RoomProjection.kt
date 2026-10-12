@@ -1,6 +1,7 @@
 package com.ethran.notable.sync.automerge
 
 import com.ethran.notable.data.db.Folder
+import com.ethran.notable.io.projection.EpubFiles
 import com.ethran.notable.data.db.FolderDao
 import com.ethran.notable.data.db.Image
 import com.ethran.notable.data.db.ImageDao
@@ -69,8 +70,12 @@ internal class DownloadingProjectionFiles(
 ) : ProjectionFiles {
     private val hashes = HashMap<String, String?>()
 
-    override fun backgroundPath(blob: String, type: String): String {
-        val ext = if (type == "autoPdf" || type.startsWith("pdf")) ".pdf" else ""
+    override fun backgroundPath(blob: String, type: String, epub: AmEpubLayout?): String {
+        val ext = when {
+            epub != null -> EpubFiles.fileName("", epub)
+            type == "autoPdf" || type.startsWith("pdf") -> ".pdf"
+            else -> ""
+        }
         return fetch(blob, ext).absolutePath
     }
 

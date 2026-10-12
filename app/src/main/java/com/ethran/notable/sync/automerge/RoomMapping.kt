@@ -1,6 +1,7 @@
 package com.ethran.notable.sync.automerge
 
 import com.ethran.notable.data.db.Folder
+import com.ethran.notable.io.projection.EpubFiles
 import com.ethran.notable.data.db.Image
 import com.ethran.notable.data.db.Notebook
 import com.ethran.notable.data.db.PageWithData
@@ -49,11 +50,15 @@ internal class RoomMapping(private val blob: (String) -> String) {
         updatedAt = p.page.updatedAt,
     )
 
-    /** The file a notebook was made from: its default PDF background, else the first PDF page. */
+    /**
+     * The file a notebook was made from: its default document background, else the first document
+     * page. An EPUB is laid out as its file name says ([EpubFiles]), else as the Boox screen.
+     */
     fun source(nb: Notebook, pages: List<PageWithData>): AmSource {
-        if (isPdf(nb.defaultBackgroundType)) return AmSource.Pdf(blob(nb.defaultBackground))
-        val pdfPage = pages.firstOrNull { isPdf(it.page.backgroundType) } ?: return AmSource.None
-        return AmSource.Pdf(blob(pdfPage.page.background))
+        val path = if (isPdf(nb.defaultBackgroundType)) nb.defaultBackground
+        else pages.firstOrNull { isPdf(it.page.backgroundType) }?.page?.background ?: return AmSource.None
+        if (EpubFiles.isEpub(path)) return AmSource.Epub(blob(path), EpubFiles.layoutOf(path) ?: EpubFiles.BOOX_LAYOUT)
+        return AmSource.Pdf(blob(path))
     }
 
     private fun isPdf(type: String) = when (BackgroundType.fromKey(type)) {

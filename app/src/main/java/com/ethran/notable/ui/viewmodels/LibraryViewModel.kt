@@ -190,7 +190,7 @@ class LibraryViewModel @Inject constructor(
     fun onPdfFile(uri: Uri, copy: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             val snackText =
-                if (copy) "Importing PDF background (copy)" else "Setting up observer for PDF"
+                if (copy) "Importing document (copy)" else "Setting up observer for PDF"
 
             _isImporting.value = true
             snackDispatcher.showOrUpdateSnack(SnackConf(text = snackText, duration = 2000))
@@ -206,7 +206,7 @@ class LibraryViewModel @Inject constructor(
                         if (importedPageIds.isNotEmpty()) {
                             thumbnailBackfillQueue.enqueue(importedPageIds, PreviewSaveMode.STRICT_BW)
                         }
-                        snackDispatcher.showOrUpdateSnack(SnackConf(text = "PDF Import Successful"))
+                        snackDispatcher.showOrUpdateSnack(SnackConf(text = "Import successful"))
                     },
                     onError = { error ->
                         snackDispatcher.showOrUpdateSnack(SnackConf(text = "Import failed: ${error.userMessage}"))

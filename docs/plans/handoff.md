@@ -38,9 +38,15 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     `AppRepository.edits`), each through the `ContentMirror`.
   - `AndroidAdapters.kt`: Room, files, background-limit adapters.
 - Debug hook: `editor/DebugEditHook.kt` (adb broadcasts drive `PageView`/`History`; ops `draw`,
-  `erase`, `move`, `undo`, `redo`, `image`/`place`, `dump`, `delete-page`). Node peer:
+  `erase`, `move`, `undo`, `redo`, `image`/`place`, `dump`, `delete-page`, `share-pdf --es target
+  page|book`). Node peer:
   `web/server/scripts/device-peer.ts` (`dump`, `add-stroke`, `blob`, `delete-page`, `move-page`,
   `delete-notebook`, `rename-folder`).
+- PDF projection and EPUB: `io/projection/` (`ProjectionPlan.kt` pure planner, `FitzPdfWriter.kt`,
+  `FitzEpub.kt`, `EpubFiles.kt`, `PdfProjection.kt`), `io/EpubBackground.kt`. TS twin:
+  `web/app/src/lib/project.ts`; parity fixture `web/schema/fixtures/projection-v1.json`
+  (`npm run projection-fixture` in `web/app`); device PDF check
+  `web/app/scripts/compare-projection.ts <android.pdf> [blob files]`.
 - Editor: `docs/editor-data-flow.md`, `docs/editor-state-and-view.md`. The stroke and image write
   functions are in `data/PageDataManager.kt`.
 - Web: `web/schema` (shared schema, TS), `web/server` (sync, blobs, accounts), `web/app` (PWA),
@@ -72,8 +78,8 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
 
 ## State (2026-10-11)
 
-- Phases 0–3 are done and deployed.
-- Phase 4a is in progress. Committed in `a177f2e2`: `LocalDocWriter` and the projector fixes.
+- Phases 0–3 are done and deployed. Phase 4 is done except "rebuild Room on demand" (optional).
+- Phase 4a: Committed in `a177f2e2`: `LocalDocWriter` and the projector fixes.
 - Committed (steps 1–3 of an older Next list; unit tests only, not on device):
   - **Durability.** `RepoLocalDocs.kt`: `DurableStorage` records finished puts; `RepoLocalDocs.edit`
     waits for the new heads' incremental keys (or a later snapshot), `createDoc` also waits until
@@ -228,6 +234,34 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     had none); the first-start snackbar (copy finished before the first screenshot).
   - Screenshots: `/tmp/ndc/*.png` (not kept in the repo).
 
+- Done, not committed (2026-10-11, the rest of Phase 4; unit tests, web tests and device check):
+  - **PDF = the PWA's projection.** `ProjectionPlanner` (pure port of `project.ts`/`geometry.ts`:
+    backgrounds, content streams to the byte, ink points, colors, opacity, widths, stamps,
+    `notable.json`) + `FitzPdfWriter` (fitz: graft, EPUB layout, annotations with `/AP`, embedded
+    files as mupdf.js writes them). `PdfProjection` reads the notebook doc from the device library
+    (`NotableSyncClient.notebookSnapshot`) and resolves blobs (`NotableSyncClient.blobFile`:
+    `sync-blobs`, upload queue, Room's files of that notebook, server). `ExportEngine` PDF export
+    (page and book) and the new menu items "Share page as PDF"/"Share notebook as PDF"
+    (`ExportEngine.sharePdf`, `cache/shared/`, FileProvider) use it. A single page exports that
+    page only, with the whole doc embedded. PNG/JPEG/XOPP unchanged.
+  - **EPUB import.** `ImportEngine.handleImportEpub`: copy as `backgrounds/pdfs/<title>@446x595x12.epub`
+    (`EpubFiles`: layout in the file name), lay out with fitz (`FitzEpub`), one `pdfN` page per
+    page. `RoomMapping.source` makes it an `AmSource.Epub` with that layout. Rendering and page
+    counts go through `EpubBackground.laidOutPdf` (hidden `.<name>.pdf` next to the EPUB). The
+    projector stores a PWA-uploaded EPUB as `sync-blobs/<sha>@<layout>.epub` and replaces an older
+    `<sha>.pdf` row. The library picker accepts `application/epub+zip`. Import titles now come
+    from the provider's display name.
+  - Tests: `ProjectionParityTest` (3 cases vs the TS fixture), `EpubFilesTest`, new cases in
+    `MigrationTest` and `ProjectorTest`. `io.*`, `sync.automerge.*`, `editor.*`: 211 pass, 2 live
+    skipped. Web: `web/app` 35 pass (new `projection-fixture.test.ts`), typecheck clean.
+    `assembleDebug` builds.
+  - Device (Note Air 5C, `.dev`, logged out): imported a 3-chapter EPUB (15 pages, renders),
+    drew via the hook, shared the notebook as PDF, pulled it: `qpdf --check` clean, `pdfdetach`
+    lists both files, poppler draws the strokes over the same words as the editor, and
+    `compare-projection.ts` reports it equal to Node's projection of its embedded doc. The same
+    for a native notebook with images (48 inks) and a PDF notebook; "Export page to PDF" from the
+    menu wrote a valid 1-page PDF with both attachments. Files: `/tmp/ndc/android-*.pdf`.
+
 Known gaps:
 
 - The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
@@ -235,8 +269,8 @@ Known gaps:
 - After the attaching login, "Notebooks copied: 4, already there 0" still showed the first
   start's numbers; the docs were reused, so either the rerun didn't update the status or it
   didn't run. Not investigated.
-- Imported notebooks are titled from the content URI ("document 1000000068",
-  "msf 1000000071"), not the file name. Probably older than this branch; not checked on main.
+- Imported notebooks were titled from the content URI ("document 1000000068"). Fixed for new
+  imports (display name); existing notebooks keep their titles.
 - The `.dev` app on the Note Air 5C now keeps a library owned by the deleted account
   `devchk61861a`; any other login there is refused until its data is cleared or it is reinstalled.
 
@@ -296,11 +330,28 @@ Known gaps:
   `LibraryViewModel`, `NotebookConfig`, `HomeView` and adds `PaperActions.kt`. When merged, its
   writes must go through `appRepository.edits`.
 
+- **PDF export ignores "paginate PDF"** (`AppSettings.paginatePdf`, still a toggle in General
+  settings): every PDF is the projection, one page per notebook page, as tall as its content.
+  Remove the toggle or add pagination to both projections.
+- A PDF reflects the docs: edits still in the outbox are missing; the export message says how many
+  wait. A notebook not yet in the library docs can't be exported (error message).
+- An EPUB uploaded from the PWA opening on the Boox is unit-tested only (projector naming); the
+  device's library belongs to a deleted account, so no login was possible.
+- The laid-out PDF of an EPUB (`.<name>.pdf`) is never deleted with its notebook. Large EPUBs are
+  laid out on first render (blocking that page) and held in memory once during export.
+- `blobFile` hashes every Room file of the notebook on a miss (memoized per process).
+- Single-page PDFs number warnings by notebook page, and have no TS counterpart (the PWA exports
+  whole notebooks only).
+
 ## Next
 
-1. The rest of Phase 4:
-   - Android share-as-PDF from the same projection as the PWA;
-   - EPUB import on Android.
-   - Optional: a live JVM test of attaching, like `LiveServerOfflineEditsTest`.
+Phase 5, removing WebDAV (plan "Phase 5"):
 
-Then Phase 5, removing WebDAV.
+1. Delete the `sync/` WebDAV code (`NotebookSyncService`, `FolderSyncService`, `SyncForceService`,
+   `AppRepository.replaceDownloadedPage`/`commitNotebookSync`, the WebDAV deletion queue in
+   `NotebookConfig`), its settings UI, consent dialog, tests and docs.
+2. Drop the `page_sync_state` table with a Room migration.
+3. Decide the `paginatePdf` toggle (see Known gaps).
+
+Optional, left from Phase 4: rebuild Room from the docs on demand; a live JVM test of attaching
+(like `LiveServerOfflineEditsTest`); check a PWA-uploaded EPUB on the Boox.

@@ -77,17 +77,17 @@ internal class FakeSink : ProjectionSink {
 
 internal class FakeFiles(val available: MutableSet<String> = mutableSetOf()) : ProjectionFiles {
     val downloads = mutableListOf<String>()
-    override fun backgroundPath(blob: String, type: String): String {
+    override fun backgroundPath(blob: String, type: String, epub: AmEpubLayout?): String {
         if (blob !in available) throw MissingFileException("blob $blob")
         downloads += blob
-        return "/sync-blobs/$blob"
+        return "/sync-blobs/$blob" + (epub?.let { com.ethran.notable.io.projection.EpubFiles.fileName("", it) } ?: "")
     }
     override fun imageUri(blob: String): String {
         if (blob !in available) throw MissingFileException("blob $blob")
         downloads += blob
         return "file:///sync-blobs/$blob"
     }
-    override fun holds(pathOrUri: String, blob: String) = pathOrUri.endsWith(blob)
+    override fun holds(pathOrUri: String, blob: String) = pathOrUri.endsWith(blob) || java.io.File(pathOrUri).name.startsWith(blob)
 }
 
 /** "Another device": writes the shared docs the way the PWA or a second Boox would. */
@@ -430,5 +430,25 @@ class ProjectorTest {
         val doc = remote.notebooks.getValue(url)
         assertTrue(AutomergeSchema.readNotebook(doc).pages.getValue("p1").strokes.containsKey("s2"))
         assertTrue(doc.get(ObjectId.ROOT, "pages").get() is AmValue.Map)
+    }
+
+    @Test
+    fun an_epub_notebook_projects_to_an_epub_file_named_with_its_layout() {
+        val layout = AmEpubLayout(446.0, 595.0, 12.0)
+        files.available += "epubblob"
+        val pages = listOf(
+            AmPage("e1", AmBackground("pdf0", null, "epubblob"), emptyMap(), emptyMap(), t0, t1),
+            AmPage("e2", AmBackground("autoPdf", null, "epubblob"), emptyMap(), emptyMap(), t0, t1),
+            AmPage("e3", AmBackground("pdf0", null, "pdfblob"), emptyMap(), emptyMap(), t0, t1),
+        )
+        remote.notebook("book", "Book", pages, source = AmSource.Epub("epubblob", layout))
+        // Projected before EPUBs were told apart: the same blob as a ".pdf" file, which MuPDF can't open.
+        sink.pages["e1"] = com.ethran.notable.data.db.Page("e1", 0, "book", "/sync-blobs/epubblob.pdf", "pdf0", null, t0, t0)
+
+        sync()
+
+        assertEquals("/sync-blobs/epubblob@446x595x12.epub", sink.pages.getValue("e1").background)
+        assertEquals("/sync-blobs/epubblob@446x595x12.epub", sink.pages.getValue("e2").background)
+        assertEquals("/sync-blobs/pdfblob", sink.pages.getValue("e3").background)
     }
 }

@@ -466,6 +466,9 @@ fun NotebookImportPanel(
                             .endsWith(".pdf", ignoreCase = true)
                     ) {
                         showPdfImportChoiceDialog = uri
+                    } else if (com.ethran.notable.io.isEpubFile(mimeType, uri.toString())) {
+                        // EPUBs are always copied: their pages exist only laid out, from our copy.
+                        onImportPdf(uri, /* copy= */ true)
                     } else {
                         onImportXopp(uri)
                     }
@@ -488,7 +491,8 @@ fun NotebookImportPanel(
                                 "application/x-xopp",
                                 "application/gzip",
                                 "application/octet-stream",
-                                "application/pdf"
+                                "application/pdf",
+                                "application/epub+zip"
                             )
                         )
                     }

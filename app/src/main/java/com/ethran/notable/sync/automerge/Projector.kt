@@ -1,6 +1,7 @@
 package com.ethran.notable.sync.automerge
 
 import com.ethran.notable.data.RemotePageEdit
+import com.ethran.notable.io.projection.EpubFiles
 import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.Image
 import com.ethran.notable.data.db.MAX_PRESSURE_NORMALIZED
@@ -46,8 +47,11 @@ interface ProjectionSink {
 
 /** Turns blob hashes into files the editor can open. Downloads on demand. */
 interface ProjectionFiles {
-    /** Absolute path of a background; [type] is its `BackgroundType.key`. @throws MissingFileException */
-    fun backgroundPath(blob: String, type: String): String
+    /**
+     * Absolute path of a background; [type] is its `BackgroundType.key`. An EPUB ([epub] its
+     * layout) gets a name that carries the layout ([EpubFiles]). @throws MissingFileException
+     */
+    fun backgroundPath(blob: String, type: String, epub: AmEpubLayout? = null): String
 
     /** URI string of an image, as [Image.uri] stores it. @throws MissingFileException */
     fun imageUri(blob: String): String
@@ -400,7 +404,7 @@ class AutomergeProjector(
                 warnings += "quick page ${entry.id} has an extra page ${p.id}; skipped"
                 continue
             }
-            val bg = background(p.background, existing?.backgroundType, existing?.background)
+            val bg = background(p.background, existing?.backgroundType, existing?.background, entry)
             backgrounds[p.id] = bg
             pageRows[p.id] = Page(
                 id = p.id, scroll = existing?.scroll ?: 0, notebookId = notebookId,
@@ -481,7 +485,7 @@ class AutomergeProjector(
         // diff explicitly deleted them.
         val deleted = delta?.pagesDeleted.orEmpty()
         val localOnly = existing?.pageIds.orEmpty().filter { it !in nb.pages && it !in deleted }
-        val bg = background(nb.defaultBackground, existing?.defaultBackgroundType, existing?.defaultBackground)
+        val bg = background(nb.defaultBackground, existing?.defaultBackgroundType, existing?.defaultBackground, e)
         if (e.folderId != null && folderOrRoot(e.folderId, lib) == null) warnings += "${e.id}: folder ${e.folderId} is unknown"
         return Notebook(
             id = e.id, title = e.title,
@@ -494,12 +498,19 @@ class AutomergeProjector(
         )
     }
 
-    /** (type, value) for a Room row. Keeps an existing file that already holds the same blob. */
-    private fun background(b: AmBackground, existingType: String?, existingValue: String?): Pair<String, String> {
+    /**
+     * (type, value) for a Room row. Keeps an existing file that already holds the same blob (and,
+     * for the notebook's EPUB, is named with its layout, so the renderer lays it out right).
+     */
+    private fun background(b: AmBackground, existingType: String?, existingValue: String?, entry: AmNotebookEntry): Pair<String, String> {
         if (b.type == NATIVE) return NATIVE to (b.native ?: throw SchemaException("native background without a name"))
         val blob = b.blob ?: throw SchemaException("background '${b.type}' without a blob")
-        if (existingType == b.type && existingValue != null && files.holds(existingValue, blob)) return b.type to existingValue
-        return b.type to files.backgroundPath(blob, b.type)
+        val source = entry.source
+        val epub = if (source is AmSource.Epub && source.blob == blob) source.layout else null
+        if (existingType == b.type && existingValue != null && EpubFiles.matches(existingValue, epub) && files.holds(existingValue, blob)) {
+            return b.type to existingValue
+        }
+        return b.type to files.backgroundPath(blob, b.type, epub)
     }
 
     private fun toStroke(s: AmStroke, pageId: String, factor: Double, warnings: MutableList<String>): Stroke {

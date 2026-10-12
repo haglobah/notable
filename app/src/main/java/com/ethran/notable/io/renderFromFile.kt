@@ -58,6 +58,16 @@ fun loadBackgroundBitmap(filePath: String, pageNumber: Int, scale: Float): Bitma
         return null
     }
     val timer = Timing("loadBackgroundBitmap")
+    // An EPUB renders from its laid-out PDF (EpubBackground), like any PDF page.
+    if (EpubBackground.isEpub(filePath)) {
+        val pdf = try {
+            EpubBackground.laidOutPdf(filePath)
+        } catch (e: Exception) {
+            log.e("loadBackgroundBitmap: EPUB $filePath can't be laid out: ${e.message}", e)
+            return null
+        }
+        return loadBackgroundBitmap(pdf.absolutePath, pageNumber, scale)
+    }
     if (!filePath.endsWith(".pdf", ignoreCase = true)) {
         try {
             timer.step("decode bitmap image")

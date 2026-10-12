@@ -94,6 +94,8 @@
     <string name="welcome_view_quick_start_tips_title">Wskazówki</string>
     <string name="welcome_view_quick_start_tips_details">• Użyj  opcji eksportowania zanacznia, aby szybko udostępniać obrazy.\n• Stuknij numer strony, aby szybko przejść do wybranej strony.\n• Spróbuj włączyć  \'Zamaż aby usnąć\'(\'Scribble to Erase\') w Ustawieniach, aby naturalnie wymazywać.\n• Podwójne stuknięcie cofa, a podwójne stuknięcie na zaznaczeniu kopiuje je.\n• Możesz używać Notable jako podglądu PDF w czasie rzeczywistym dla LaTeX — zobacz README.\n• Możesz dostosować akcje gestów w Ustawieniach.</string>
 
+    <string name="share_page_pdf">Udostępnij stronę jako PDF</string>
+    <string name="share_book_pdf">Udostępnij zeszyt jako PDF</string>
     <string name="export_page_to">Eksportuj stronę do %1$s</string>
     <string name="export_page_to_error">Błąd podczas eksportu strony do %1$s</string>
     <string name="exporting_the_page_to">Eksportowanie strony do %1$s…</string>

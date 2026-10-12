@@ -221,4 +221,34 @@ class MigrationTest {
         assertEquals(3, seen.last().total)
         assertEquals(3, seen.last().done)
     }
+
+    @Test
+    fun an_imported_epub_becomes_an_epub_source_with_the_layout_its_file_name_carries() {
+        val epub = "/storage/emulated/0/Documents/notabledb/backgrounds/pdfs/Book@446x595x12.epub"
+        val plain = "/storage/emulated/0/Documents/notabledb/backgrounds/pdfs/Old.epub"
+        blobs.files[epub] = "epub one".toByteArray()
+        blobs.files[plain] = "epub two".toByteArray()
+        local.notebooks += Notebook(
+            id = "nb-epub", title = "Book", pageIds = listOf("e1", "e2"), defaultBackground = epub,
+            defaultBackgroundType = "autoPdf", createdAt = t0, updatedAt = t1,
+        )
+        local.add(Page("e1", 0, "nb-epub", epub, "pdf0", null, t0, t1), listOf(stroke("se", "e1")))
+        local.add(Page("e2", 0, "nb-epub", epub, "pdf1", null, t0, t1))
+        local.notebooks += Notebook(
+            id = "nb-old", title = "Old", pageIds = listOf("o1"), defaultBackground = "blank",
+            defaultBackgroundType = "native", createdAt = t0, updatedAt = t1,
+        )
+        local.add(Page("o1", 0, "nb-old", plain, "pdf0", null, t0, t1))
+
+        migration().run()
+
+        val lib = docs.library()
+        val sha = sha256Hex("epub one".toByteArray())
+        assertEquals(AmSource.Epub(sha, AmEpubLayout(446.0, 595.0, 12.0)), lib.notebooks.getValue("nb-epub").source)
+        val doc = docs.notebook(lib.notebooks.getValue("nb-epub").docUrl)
+        assertEquals(AmBackground("pdf1", null, sha), doc.pages.getValue("e2").background)
+        // An EPUB without a layout in its name is laid out like the PWA's: the Boox screen.
+        assertEquals(AmSource.Epub(sha256Hex("epub two".toByteArray()), AmEpubLayout(446.0, 595.0, 12.0)),
+            lib.notebooks.getValue("nb-old").source)
+    }
 }
