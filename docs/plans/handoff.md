@@ -78,7 +78,7 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - Create: `printf '%s\n' "$PW" | ssh -o BatchMode=yes root@49.12.12.164 'notable-admin user add NAME'`.
   - Delete afterwards: `echo NAME | ssh -o BatchMode=yes root@49.12.12.164 'notable-admin user del NAME'`.
 
-## State (2026-10-11)
+## State (2026-10-12)
 
 - Phases 0–3 are done and deployed. Phase 4 is done except "rebuild Room on demand" (optional).
   Phase 5 (remove WebDAV) is done and committed (`580887cc`). The UI refresh round 2 is merged.
@@ -379,8 +379,8 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - Screenshots: `/tmp/ndc/del-*.png`, `/tmp/ndc/pwa-del-*.png` (not kept in the repo).
 
 - Done, committed (2026-10-11): **inbound sync no longer stalls after a reconnect** (the bug
-  found in the delete-against-draw check). The fix is on the server; **redeploy the server** to
-  get it on the live instance (not done: deployment is Beat's).
+  found in the delete-against-draw check). The fix is on the server; Beat redeployed the live
+  instance on 2026-10-12 (checked on the Boox, see below).
   - Contributing factors: (1) A phone that loses wifi leaves its socket open on the server, which
     notices only by its keep-alive (15–30 s). A remote edit made in that window is sent to the dead
     socket. (2) automerge-repo 2.5.6 keeps a peer's sync state across reconnects (the peer id is
@@ -419,8 +419,33 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     server (needs the live server redeployed, or an open port here). `.dev` data cleared again
     afterwards (`pm clear`, appop, `pm enable`); no live account was created.
 
+- Done (2026-10-12): **reconnect fix checked on the Boox with real wifi** against the live
+  server (redeployed with `61f3fe89`, service up since 02:20 UTC; `hasSynced` is in its store
+  path). `.dev` build of `61f3fe89`, throwaway account `devrc192112` (deleted; `.dev` logged out,
+  then `pm clear`, storage appop allowed, `pm enable`). Notebook "Remote Notebook", open page
+  `rp-a`. Checked with `DEBUG_EDIT dump`, Room copies (`adb pull` of `notabledb-dev`),
+  `device-peer.ts dump` and screenshots. Passed; no code changed.
+  - Draw: `svc wifi disable`, hook `draw` (3 strokes), `add-stroke` 4–10 s after wifi off (inside
+    the server's dead-socket window), `svc wifi enable`. The remote stroke was in the editor
+    12–17 s after wifi on (wifi needs a few seconds to reconnect). A later `add-stroke` was there
+    within 3 s. Editor and server equal (10 strokes).
+  - Delete: same steps with hook `delete-page` on `rp-a` (the editor moved to `rp-c` at once).
+    After wifi on: server and Room both have `rp-a` back at the end of the order with 11 strokes,
+    no restart; a later `add-stroke` was in Room within 4 s (12 strokes).
+  - No message storm: the server's systemd IP accounting (proxy→node, includes the peer script)
+    counted 359 packets in and 297 out over 4.5 min (02:23:29–02:28:02), ~0.4 packets/s each way
+    when idle, against ~218 messages/s in the old storm. The device's per-app counters aren't
+    readable (`xt_qtaguid` absent).
+  - Seen: after the revival the open editor kept showing "1/1" pages while Room and the library
+    had 2; reopening the notebook showed "1/2" and swiping reached `rp-a` with all 12 strokes.
+    See Known gaps.
+  - Screenshots: `/tmp/ndc/rc-*.png` (not kept in the repo).
+
 Known gaps:
 
+- The editor's page count doesn't refresh when a page it left (deleted here) comes back from a
+  remote revival: it showed "1/1" until the notebook was reopened. Whether a swipe would have
+  reached the page before reopening was not tried.
 - The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
   reach zero, until the settings screen is reopened.
 - After the attaching login, "Notebooks copied: 4, already there 0" still showed the first
@@ -428,9 +453,6 @@ Known gaps:
   didn't run. Not investigated.
 - Imported notebooks were titled from the content URI ("document 1000000068"). Fixed for new
   imports (display name); existing notebooks keep their titles.
-- **The live server lacks the reconnect fix** until redeployed: there, a remote edit made in the
-  first 15–30 s of a device's network loss still stalls that doc on the device until the app
-  restarts, with a sync-message storm. After the redeploy, recheck on the Boox with real wifi.
 - A sync loop (messages back and forth without progress) has no rate limit or detection on
   either side; stale sync state, the one cause found, is fixed.
 - The server's memory of synced docs per peer id is lost on server restart; that is harmless,
@@ -511,9 +533,8 @@ Known gaps:
 
 What's left overall:
 
-1. Redeploy the server (Beat), then repeat the wifi steps on the Boox against the live server:
-   wifi off, draw, remote `add-stroke`, wifi on; the stroke must arrive without a restart.
-2. Look at the merged library and details screens on the Boox (`.dev`).
+1. Look at the merged library and details screens on the Boox (`.dev`).
+2. Decide whether the editor's stale page count after a remote revival needs a fix (Known gaps).
 
 Optional, left from Phase 4: rebuild Room from the docs on demand; a live JVM test of attaching
 (like `LiveServerOfflineEditsTest`); check a PWA-uploaded EPUB on the Boox. Server hardening and
