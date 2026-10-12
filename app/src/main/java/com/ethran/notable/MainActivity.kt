@@ -41,13 +41,11 @@ import com.ethran.notable.data.db.StrokeMigrationHelper
 import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.editor.utils.DeviceCompat
 import com.ethran.notable.io.ExportEngine
-import com.ethran.notable.sync.SyncScheduler
 import com.ethran.notable.ui.AppEventUiBridge
 import com.ethran.notable.ui.LocalSnackContext
 import com.ethran.notable.ui.SnackConf
 import com.ethran.notable.ui.SnackDispatcher
 import com.ethran.notable.ui.SnackState
-import com.ethran.notable.ui.SyncWorkUiBridge
 import com.ethran.notable.ui.components.NotableApp
 import com.ethran.notable.ui.components.crashLogsAsText
 import com.ethran.notable.ui.theme.InkaTheme
@@ -93,16 +91,10 @@ class MainActivity : ComponentActivity() {
     lateinit var pageDataManager: dagger.Lazy<PageDataManager>
 
     @Inject
-    lateinit var syncScheduler: dagger.Lazy<SyncScheduler>
-
-    @Inject
     lateinit var snackDispatcher: SnackDispatcher
 
     @Inject
     lateinit var appEventUiBridge: AppEventUiBridge
-
-    @Inject
-    lateinit var syncWorkUiBridge: SyncWorkUiBridge
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,20 +114,6 @@ class MainActivity : ComponentActivity() {
         SCREEN_HEIGHT = applicationContext.resources.displayMetrics.heightPixels
 
         trackSystemGestureBlocking()
-
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                syncWorkUiBridge.syncUiEvents.collect { event ->
-                    val message = event.errorArg?.let { arg ->
-                        getString(event.messageResId, arg)
-                    } ?: getString(event.messageResId)
-                    // A failure message is longer and more important, so give it time to be read.
-                    snackDispatcher.showOrUpdateSnack(
-                        SnackConf(text = message, duration = if (event.isError) 7000 else 3000)
-                    )
-                }
-            }
-        }
 
         val snackState = SnackState()
 
@@ -159,9 +137,6 @@ class MainActivity : ComponentActivity() {
                             .registerComponentCallbacks(this@MainActivity.applicationContext)
                         editorSettingCacheManager.get().init()
                     }
-                    restorePeriodicSyncSchedule()
-                    // Trigger initial sync on app startup (fails silently if offline)
-                    triggerInitialSync()
                 }
                 isInitialized = true
             }
@@ -207,31 +182,6 @@ class MainActivity : ComponentActivity() {
             )
         )
         return true
-    }
-
-    private fun triggerInitialSync() {
-        lifecycleScope.launch {
-            try {
-                val settings = kvProxy.get().getSyncSettings()
-                if (settings.syncEnabled && settings.syncOnAppStart) {
-                    Log.i(TAG, "Triggering one-time sync on app startup via WorkManager")
-                    syncScheduler.get().triggerImmediateSync()
-                }
-            } catch (e: Exception) {
-                Log.i(TAG, "Initial sync setup failed: ${e.message}")
-            }
-        }
-    }
-
-    private fun restorePeriodicSyncSchedule() {
-        lifecycleScope.launch {
-            try {
-                val settings = kvProxy.get().getSyncSettings()
-                syncScheduler.get().reconcilePeriodicSync(settings)
-            } catch (e: Exception) {
-                Log.i(TAG, "Periodic sync reconcile failed: ${e.message}")
-            }
-        }
     }
 
     override fun onRestart() {

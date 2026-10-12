@@ -30,7 +30,6 @@ import com.ethran.notable.editor.utils.PenSetting
 import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.io.ExportFormat
 import com.ethran.notable.io.ExportTarget
-import com.ethran.notable.sync.SyncOrchestrator
 import com.ethran.notable.utils.AppResult
 import com.ethran.notable.ui.SnackConf
 import com.ethran.notable.ui.SnackDispatcher
@@ -184,10 +183,8 @@ class EditorViewModel @Inject constructor(
     private val editorSettingCacheManager: EditorSettingCacheManager,
     private val exportEngine: ExportEngine,
     val pageDataManager: PageDataManager,
-    private val syncOrchestrator: SyncOrchestrator,
     val snackDispatcher: SnackDispatcher,
     private val historyFactory: History.Factory,
-    @param:ApplicationScope private val appScope: CoroutineScope
 ) : ViewModel() {
     // ---- Toolbar / UI State (single flat flow) ----
     private val _toolbarState = MutableStateFlow(ToolbarUiState())
@@ -267,7 +264,7 @@ class EditorViewModel @Inject constructor(
 
     /**
      * Called when the EditorView is being disposed.
-     * Performs cleanup, exports linked files, and triggers auto-sync.
+     * Performs cleanup and exports linked files.
      */
     fun onDispose(page: PageView) {
         // 1. Finish selection operation
@@ -278,12 +275,6 @@ class EditorViewModel @Inject constructor(
 
         // 3. Cleanup page resources
         page.disposeOldPage()
-
-        // 4. Sync-on-close. syncFromPageId honors the "Sync when closing notes" setting. Run on the
-        //    application scope so it survives this view's teardown. Downloading here is safe: the
-        //    editor is closing, so nothing will overwrite a newer remote copy (P18).
-        val closingPageId = currentPageId
-        appScope.launch { syncOrchestrator.syncFromPageId(closingPageId) }
     }
 
     fun createHistory(page: PageView): History = historyFactory.create(page)
@@ -581,50 +572,6 @@ class EditorViewModel @Inject constructor(
                 backgroundPath = page.background,
                 backgroundPageNumber = bgPageNumber
             )
-        }
-
-        // Check-on-open (P22): hint if the server has a newer version, so the user doesn't
-        // unknowingly edit a stale copy and manufacture an avoidable conflict. Best-effort and
-        // off the load path (a cheap conditional GET on the manifest).
-        val bookIdForCheck = bookId
-        if (bookIdForCheck != null) {
-            appScope.launch {
-                if (syncOrchestrator.isRemoteNewer(bookIdForCheck)) {
-                    val snackId = "remote-newer-$bookIdForCheck"
-                    snackDispatcher.showOrUpdateSnack(
-                        SnackConf(
-                            id = snackId,
-                            text = "A newer version of this notebook is on the server. " +
-                                    "Sync to get the latest before editing.",
-                            duration = 8000,
-                            // "Sync now" closes the notebook first (to its pages list), then syncs.
-                            // Downloading into the open editor would clobber it (stale in-memory
-                            // state); syncing as it closes mirrors the safe sync-on-close path.
-                            actions = listOf(
-                                "Sync now" to {
-                                    snackDispatcher.removeSnack(snackId)
-                                    sendUiEvent(EditorUiEvent.NavigateToPages(bookIdForCheck))
-                                    appScope.launch {
-                                        val progressId = "sync-notebook-$bookIdForCheck"
-                                        snackDispatcher.showOrUpdateSnack(
-                                            SnackConf(id = progressId, text = "Syncing notebook…", duration = null)
-                                        )
-                                        val result = syncOrchestrator.syncNotebook(bookIdForCheck)
-                                        snackDispatcher.showOrUpdateSnack(
-                                            SnackConf(
-                                                id = progressId,
-                                                text = if (result is AppResult.Success) "Notebook synced"
-                                                else "Notebook sync failed",
-                                                duration = 3000
-                                            )
-                                        )
-                                    }
-                                }
-                            )
-                        )
-                    )
-                }
-            }
         }
     }
 

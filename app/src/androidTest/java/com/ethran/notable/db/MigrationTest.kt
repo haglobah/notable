@@ -8,6 +8,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ethran.notable.data.db.AppDatabase
+import com.ethran.notable.data.db.MIGRATION_32_33
+import com.ethran.notable.data.db.MIGRATION_37_38
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
 import org.junit.Rule
@@ -100,8 +102,10 @@ class MigrationTest {
 
         db.close()
 
-        // 2. Reopen DB with version 31 (latest AppDatabase version) to trigger migration
-        val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName).build()
+        // 2. Reopen at the latest version, with the app's manual migrations, to trigger migration
+        val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(MIGRATION_32_33, MIGRATION_37_38)
+            .build()
         val migratedDb = roomDb.openHelper.writableDatabase
 
         // 3. Verify renamed column exists with expected data
@@ -116,111 +120,80 @@ class MigrationTest {
     }
 
     /**
-     * 35 -> 36 does two things: adds the `page_sync_state` table, and renames
-     * `notebook_sync_state.localUpdatedAtAtSync` to `syncedLocalUpdatedAt`.
-     *
-     * The rename must **carry the value over** — Room recreates the table and copies rows, and a
-     * silently dropped anchor would reset every notebook to "dirty" and re-upload the whole library
-     * on the next sync. So this asserts the stored anchor, not just the column name.
+     * 37 -> 38 removes WebDAV sync: it drops `notebook_sync_state` and `page_sync_state`, and deletes
+     * the stored WebDAV settings (server, user, encrypted password) and measured server capabilities
+     * from `Kv`. Notebooks, pages, strokes, folders and the other `Kv` rows stay as they are.
      */
     @Test(timeout = 60000)
     @Throws(IOException::class)
-    fun migrate35To36_addsPageSyncStateAndRenamesSyncAnchor() {
-        val dbName = "migration-test-36"
+    fun migrate37To38_dropsWebDavTablesAndSettings() {
+        val dbName = "migration-test-38"
 
-        // 1. Create the v35 schema (page_sync_state does not exist yet) and seed a sync-state row
-        //    using the pre-rename column name.
-        val oldDb = helper.createDatabase(dbName, 35)
+        val oldDb = helper.createDatabase(dbName, 37)
+        oldDb.execSQL(
+            "INSERT INTO Folder (id, title, createdAt, updatedAt) VALUES ('f1', 'Folder', 1, 1)"
+        )
         oldDb.execSQL(
             """
-            INSERT INTO notebook_sync_state
-                (notebookId, state, lastSyncedAt, localUpdatedAtAtSync, remoteEtag, remoteUpdatedAt, lastError)
-            VALUES ('notebook1', 'SYNCED', 1620000000001, 1620000000000, '"nb-etag"', 1620000000002, NULL)
+            INSERT INTO Notebook (id, title, pageIds, parentFolderId, defaultBackground,
+                defaultBackgroundType, createdAt, updatedAt)
+            VALUES ('nb1', 'Book', '["p1"]', 'f1', 'blank', 'native', 1, 2)
             """.trimIndent()
+        )
+        oldDb.execSQL(
+            """
+            INSERT INTO Page (id, scroll, notebookId, background, backgroundType, createdAt, updatedAt)
+            VALUES ('p1', 0, 'nb1', 'blank', 'native', 1, 2)
+            """.trimIndent()
+        )
+        oldDb.execSQL(
+            """
+            INSERT INTO Stroke (id, size, pen, top, bottom, `left`, `right`, points, pageId,
+                createdAt, updatedAt)
+            VALUES ('s1', 2.0, 'BALLPEN', 0, 10, 0, 10, X'00', 'p1', 1, 2)
+            """.trimIndent()
+        )
+        oldDb.execSQL("INSERT INTO Kv (key, value) VALUES ('APP_SETTINGS', '{\"version\":1}')")
+        oldDb.execSQL(
+            "INSERT INTO Kv (key, value) VALUES ('SYNC_SETTINGS', " +
+                "'{\"syncEnabled\":true,\"serverUrl\":\"https://dav\",\"username\":\"u\",\"password\":\"enc\"}')"
+        )
+        oldDb.execSQL("INSERT INTO Kv (key, value) VALUES ('SYNC_SERVER_CAPABILITIES', '{}')")
+        oldDb.execSQL(
+            "INSERT INTO notebook_sync_state (notebookId, state, lastSyncedAt, syncedLocalUpdatedAt) " +
+                "VALUES ('nb1', 'SYNCED', 1, 2)"
+        )
+        oldDb.execSQL(
+            "INSERT INTO page_sync_state (pageId, notebookId, syncedLocalUpdatedAt, lastSyncedAt) " +
+                "VALUES ('p1', 'nb1', 2, 1)"
         )
         oldDb.close()
 
-        // 2. Reopen at the latest version to trigger the 35 -> 36 auto-migration.
-        val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName).build()
-        val migratedDb = roomDb.openHelper.writableDatabase
+        val db = helper.runMigrationsAndValidate(dbName, 38, true, MIGRATION_37_38)
 
-        // 3. The renamed anchor is readable under the new name, with its original value.
-        migratedDb.query(
-            "SELECT syncedLocalUpdatedAt, lastSyncedAt, remoteEtag FROM notebook_sync_state WHERE notebookId = 'notebook1'"
-        ).use {
-            assertTrue(it.moveToFirst())
-            assertEquals(1620000000000L, it.getLong(it.getColumnIndexOrThrow("syncedLocalUpdatedAt")))
-            // lastSyncedAt is a separate column and must not be confused with the anchor.
-            assertEquals(1620000000001L, it.getLong(it.getColumnIndexOrThrow("lastSyncedAt")))
-            assertEquals("\"nb-etag\"", it.getString(it.getColumnIndexOrThrow("remoteEtag")))
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' " +
+                "AND name IN ('notebook_sync_state', 'page_sync_state')"
+        ).use { assertEquals(0, it.count) }
+        db.query("SELECT key FROM Kv ORDER BY key").use {
+            val keys = buildList { while (it.moveToNext()) add(it.getString(0)) }
+            assertEquals(listOf("APP_SETTINGS"), keys)
         }
-
-        // 4. The new table exists and accepts a row with the expected columns.
-        migratedDb.execSQL(
-            """
-            INSERT INTO page_sync_state (pageId, notebookId, remoteEtag, syncedLocalUpdatedAt, lastSyncedAt)
-            VALUES ('page1', 'notebook1', '"etag-1"', 1620000000010, 1620000000011)
-            """.trimIndent()
-        )
-        migratedDb.query(
-            "SELECT remoteEtag, syncedLocalUpdatedAt FROM page_sync_state WHERE pageId = 'page1'"
-        ).use {
+        db.query("SELECT title, pageIds, parentFolderId FROM Notebook WHERE id = 'nb1'").use {
             assertTrue(it.moveToFirst())
-            assertEquals("\"etag-1\"", it.getString(it.getColumnIndexOrThrow("remoteEtag")))
-            assertEquals(1620000000010L, it.getLong(it.getColumnIndexOrThrow("syncedLocalUpdatedAt")))
+            assertEquals("Book", it.getString(0))
+            assertEquals("[\"p1\"]", it.getString(1))
+            assertEquals("f1", it.getString(2))
         }
-
-        roomDb.close()
-    }
-
-    /**
-     * 36 -> 37 adds the two nullable bulk-detection baseline columns
-     * (`remoteDirEtag`, `remoteDirServerKey`) to `notebook_sync_state`. It is purely additive: existing
-     * rows must be preserved untouched and the new columns must initialize to NULL, so a device that
-     * upgrades mid-life keeps every notebook's sync anchor and simply has no directory baseline yet.
-     */
-    @Test(timeout = 60000)
-    @Throws(IOException::class)
-    fun migrate36To37_addsDirBaselineColumnsAsNull() {
-        val dbName = "migration-test-37"
-
-        // 1. Create the v36 schema and seed a synced row (no baseline columns exist yet).
-        val oldDb = helper.createDatabase(dbName, 36)
-        oldDb.execSQL(
-            """
-            INSERT INTO notebook_sync_state
-                (notebookId, state, lastSyncedAt, syncedLocalUpdatedAt, remoteEtag, remoteUpdatedAt, lastError)
-            VALUES ('notebook1', 'SYNCED', 1620000000001, 1620000000000, '"nb-etag"', 1620000000002, NULL)
-            """.trimIndent()
-        )
-        oldDb.close()
-
-        // 2. Reopen at the latest version to trigger the 36 -> 37 auto-migration.
-        val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName).build()
-        val migratedDb = roomDb.openHelper.writableDatabase
-
-        // 3. The existing row survives and the two new columns are present and NULL.
-        migratedDb.query(
-            "SELECT remoteEtag, remoteDirEtag, remoteDirServerKey FROM notebook_sync_state WHERE notebookId = 'notebook1'"
-        ).use {
-            assertTrue(it.moveToFirst())
-            assertEquals("\"nb-etag\"", it.getString(it.getColumnIndexOrThrow("remoteEtag")))
-            assertTrue(it.isNull(it.getColumnIndexOrThrow("remoteDirEtag")))
-            assertTrue(it.isNull(it.getColumnIndexOrThrow("remoteDirServerKey")))
+        db.query("SELECT count(*) FROM Page WHERE notebookId = 'nb1'").use {
+            assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0))
         }
-
-        // 4. The new columns are writable.
-        migratedDb.execSQL(
-            "UPDATE notebook_sync_state SET remoteDirEtag = '\"dir-etag\"', remoteDirServerKey = 'srv' WHERE notebookId = 'notebook1'"
-        )
-        migratedDb.query(
-            "SELECT remoteDirEtag, remoteDirServerKey FROM notebook_sync_state WHERE notebookId = 'notebook1'"
-        ).use {
-            assertTrue(it.moveToFirst())
-            assertEquals("\"dir-etag\"", it.getString(it.getColumnIndexOrThrow("remoteDirEtag")))
-            assertEquals("srv", it.getString(it.getColumnIndexOrThrow("remoteDirServerKey")))
+        db.query("SELECT count(*) FROM Stroke WHERE pageId = 'p1'").use {
+            assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0))
         }
-
-        roomDb.close()
+        db.query("SELECT count(*) FROM Folder").use {
+            assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0))
+        }
+        db.close()
     }
 }

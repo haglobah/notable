@@ -12,7 +12,6 @@ import androidx.room.Update
 import androidx.room.Upsert
 import com.ethran.notable.data.model.BackgroundType
 import io.shipbook.shipbooksdk.ShipBook
-import kotlinx.coroutines.flow.Flow
 import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
@@ -54,9 +53,6 @@ interface NotebookDao {
 
     @Query("SELECT * FROM notebook")
     fun getAll(): List<Notebook>
-
-    @Query("SELECT * FROM notebook")
-    fun getAllFlow(): Flow<List<Notebook>>
 
     // Nullable: Room emits null when the row is absent (e.g. the notebook was deleted while a
     // screen still observes it) and re-emits on every write to the table. Typing it non-null let
@@ -104,8 +100,7 @@ interface NotebookDao {
 
 /**
  * Room access for notebooks. Writes here are Room-only: app code changes the library through
- * [com.ethran.notable.data.LibraryEdits], which puts each edit into the Automerge docs first. The
- * WebDAV sync still writes here directly until it is removed (plan Phase 5).
+ * [com.ethran.notable.data.LibraryEdits], which puts each edit into the Automerge docs first.
  */
 class BookRepository @Inject constructor(
     private val notebookDao: NotebookDao,
@@ -115,10 +110,6 @@ class BookRepository @Inject constructor(
 
     fun getAll(): List<Notebook> {
         return notebookDao.getAll()
-    }
-
-    fun getAllFlow(): Flow<List<Notebook>> {
-        return notebookDao.getAllFlow()
     }
 
     suspend fun create(notebook: Notebook) {
@@ -142,14 +133,6 @@ class BookRepository @Inject constructor(
         log.i("updating DB")
         val updatedNotebook = notebook.copy(updatedAt = Date())
         notebookDao.update(updatedNotebook)
-    }
-
-    /**
-     * Write the notebook exactly as given, unlike [update], which stamps `updatedAt = now()`.
-     * Used during sync when downloading from server, to keep the remote timestamp.
-     */
-    suspend fun updateVerbatim(notebook: Notebook) {
-        notebookDao.update(notebook)
     }
 
     fun getAllInFolder(folderId: String? = null): LiveData<List<Notebook>> {

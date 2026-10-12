@@ -108,3 +108,18 @@ val MIGRATION_32_33 = object : Migration(32, 33) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_Stroke_pageId` ON `Stroke` (`pageId`)")
     }
 }
+
+/**
+ * Migration 37 -> 38 removes WebDAV sync. It drops the WebDAV bookkeeping tables and deletes the
+ * stored WebDAV settings (server, user name, Keystore-encrypted password) and the measured server
+ * capabilities. Notebooks, pages, strokes, images and folders are not touched: the device library
+ * copies them into the Automerge docs on its first start.
+ */
+val MIGRATION_37_38 = object : Migration(37, 38) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP TABLE IF EXISTS `notebook_sync_state`")
+        db.execSQL("DROP INDEX IF EXISTS `index_page_sync_state_notebookId`")
+        db.execSQL("DROP TABLE IF EXISTS `page_sync_state`")
+        db.execSQL("DELETE FROM `Kv` WHERE `key` IN ('SYNC_SETTINGS', 'SYNC_SERVER_CAPABILITIES')")
+    }
+}

@@ -88,9 +88,6 @@ interface PageDao {
     @Query("SELECT * FROM page WHERE notebookId IS NULL")
     suspend fun getAllQuickPages(): List<Page>
 
-    @Query("SELECT id FROM page WHERE notebookId = :notebookId")
-    suspend fun getPageIdsForNotebook(notebookId: String): List<String>
-
     @Insert
     suspend fun create(page: Page): Long
 
@@ -141,9 +138,6 @@ class PageRepository @Inject constructor(
         return db.getByIds(ids)
     }
 
-    suspend fun getPageIdsForNotebook(notebookId: String): List<String> {
-        return db.getPageIdsForNotebook(notebookId)
-    }
     suspend fun getWithDataById(pageId: String): PageWithData? {
         val data = db.getPageWithDataById(pageId)
         if (data == null) {

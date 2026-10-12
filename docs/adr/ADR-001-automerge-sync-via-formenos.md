@@ -4,7 +4,7 @@
 
 ## Context
 
-Notable syncs through WebDAV (see `docs/webdav-sync-technical.md`). Several factors make that weak:
+Notable synced through WebDAV (its docs, `docs/webdav-sync-*.md`, were removed with it in Phase 5). Several factors make that weak:
 
 - **Whole-page files, last writer wins.** Reconciliation compares `Notebook.updatedAt`. Concurrent
   edits to one page become a `CONFLICT` badge that the user must resolve by hand.
@@ -159,7 +159,8 @@ and the metrics stack. Server work must stay small.
 ### WebDAV
 
 - WebDAV sync is removed once the new sync covers folders, notebooks, pages, strokes, images and
-  backgrounds.
+  backgrounds. Done in Phase 5 (2026-10-11): Room migration 37 → 38 drops its tables and stored
+  settings; leftover WorkManager work is cancelled at start.
 - A one-time migration reads the local Room data and writes the Automerge docs. It is idempotent
   and keyed by the existing UUIDs, so each device can run it safely.
 

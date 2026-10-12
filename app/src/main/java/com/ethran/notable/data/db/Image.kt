@@ -72,11 +72,6 @@ interface ImageDao {
     @Transaction
     @Query("SELECT * FROM Image WHERE id = :imageId")
     suspend fun getById(imageId: String): Image
-
-    /** URIs only, for a page — used by sync GC to enumerate referenced media without loading
-     *  the page's strokes (see NotebookSyncService.garbageCollectRemote). */
-    @Query("SELECT uri FROM Image WHERE pageId = :pageId")
-    suspend fun getUrisForPage(pageId: String): List<String?>
 }
 
 // Repository for image operations
@@ -126,10 +121,6 @@ class ImageRepository @Inject constructor(
 
     suspend fun deleteAll(ids: List<String>) {
         db.deleteAll(ids)
-    }
-
-    suspend fun getUrisForPage(pageId: String): List<String?> {
-        return db.getUrisForPage(pageId)
     }
 
     suspend fun getImageWithPointsById(imageId: String): Image {

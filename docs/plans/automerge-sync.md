@@ -177,7 +177,7 @@ Known gaps in part B:
   2026-10-11: foreground-only sync, no foreground service (ADR-001).
 - Notebook doc changes bump no `updatedAt` in the doc, so "edited" dates in the library don't move.
   Phase 4: stroke edits bump it once a minute, structural edits at once.
-- The WebDAV consent dialog still covers the Notable Sync section; it goes with WebDAV in Phase 5.
+- ~~The WebDAV consent dialog still covers the Notable Sync section.~~ Gone with WebDAV (Phase 5).
 - automerge-repo in Node logs `TimeoutNegativeWarning` on most client runs; not investigated.
 
 ## Phase 4 — Make Automerge authoritative
@@ -269,8 +269,32 @@ Known gaps in part B:
 
 ## Phase 5 — Remove WebDAV
 
-- [ ] Delete `sync/` WebDAV code, its settings UI, tests, and docs.
-- [ ] Drop the `page_sync_state` table with a Room migration.
+- [x] Delete the WebDAV code (everything in `sync/` but `sync/automerge/`, 56 files with tests,
+      serializers and `docs/webdav-sync-*.md`), its settings UI and "Experimental Feature" consent
+      dialog (`SyncSettingsTab.kt`; the three e-ink helpers moved to `EInkSettingsElements.kt`),
+      the conflict dialog, the WorkManager UI bridge, notebook sync badges, sync-on-close and
+      check-on-open in the editor, the WebDAV deletion queued on notebook delete,
+      `AppRepository.commitNotebookSync`/`replaceDownloadedPage`, KvProxy's sync settings and
+      server capabilities, DAO/repository methods only WebDAV used (`updateVerbatim`,
+      `getAllFlow`, `getPageIdsForNotebook`, `getUrisForPage`) and 96 unused `sync_*` strings.
+      The Sync tab shows only Notable Sync.
+- [x] Drop `notebook_sync_state` and `page_sync_state` with Room migration 37 → 38
+      (`MIGRATION_37_38`, manual). It also deletes the `SYNC_SETTINGS` (server, user,
+      Keystore-encrypted password) and `SYNC_SERVER_CAPABILITIES` rows from `Kv`. Notebooks,
+      pages, strokes, images and folders stay; the device library copies them as before.
+      `MigrationTest.migrate37To38_dropsWebDavTablesAndSettings` (instrumented, passes on the Note
+      Air 5C); the obsolete 35 → 36 and 36 → 37 cases asserted on the dropped tables and are gone.
+- [x] Leftover WorkManager work: `LegacyWebDavCleanup.cancelWork` (from `NotableApp.onCreate`)
+      cancels everything tagged `sync-work` and prunes. WorkManager itself fails a job whose
+      worker class is missing without crashing; the cancel also removes the system job.
+      `work-runtime` stays only for this.
+- [x] Device check (2026-10-11, Note Air 5C, `.dev`): seeded the old build's Room with WebDAV
+      settings (auto sync on), sync-state rows and a scheduled periodic `SyncWorker` job, then
+      installed the new build over it. No crash; WorkManager logged the cancel of the
+      `SyncWorker` work and the system job is gone; Room is at version 38 without the two tables
+      or the two `Kv` rows; 4 notebooks, 22 pages, 63 strokes as before; the library shows them;
+      the Sync tab shows only Notable Sync, with no consent dialog. Unit suite: 352 tests, 0
+      failures, 2 live tests skipped; `assembleDebug` builds.
 
 ## Phase 0 results
 

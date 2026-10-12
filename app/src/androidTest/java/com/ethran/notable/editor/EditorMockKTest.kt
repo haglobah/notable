@@ -1,7 +1,7 @@
 package com.ethran.notable.editor
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.ethran.notable.sync.SyncOrchestrator
+import com.ethran.notable.io.ExportEngine
 import io.mockk.mockk
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 class EditorMockKTest {
     @Test
     fun simpleMockKTest() {
-        val orchestrator = mockk<SyncOrchestrator>(relaxed = true)
-        assertNotNull(orchestrator)
+        val exportEngine = mockk<ExportEngine>(relaxed = true)
+        assertNotNull(exportEngine)
     }
 }

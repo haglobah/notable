@@ -232,10 +232,11 @@ dependencies {
     ksp libs.hilt.compiler
     implementation libs.androidx.hilt.navigation.compose
 
-    // WebDAV sync dependencies
-    implementation libs.androidx.work.runtime.ktx          // Background sync
+    // Sync dependencies
+    // Only cancels work left by the removed WebDAV sync (data/LegacyWebDavCleanup.kt).
+    implementation libs.androidx.work.runtime.ktx
     implementation libs.automerge         // CRDT sync (docs/adr/ADR-001)
-    implementation libs.okhttp              // HTTP/WebDAV client
+    implementation libs.okhttp              // HTTP client for Notable Sync
     testImplementation libs.okhttp.mockwebserver
 //    implementation("com.google.crypto.tink:tink-android:1.21.0")    // provides encryption for sync credentials
 

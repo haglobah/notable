@@ -58,8 +58,6 @@ import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.io.getLinkedFilesDir
-import com.ethran.notable.sync.SyncScheduler
-import com.ethran.notable.sync.SyncRequest
 import com.ethran.notable.ui.LocalSnackContext
 import com.ethran.notable.ui.SnackConf
 import com.ethran.notable.ui.components.BreadCrumb
@@ -76,7 +74,6 @@ private val log = ShipBook.getLogger("NotebookConfig")
 fun NotebookConfigDialog(
     appRepository: AppRepository,
     exportEngine: ExportEngine,
-    syncScheduler: SyncScheduler,
     bookId: String,
     onClose: () -> Unit) {
     val bookRepository  = appRepository.bookRepository
@@ -139,17 +136,6 @@ fun NotebookConfigDialog(
                 }
                 showDeleteDialog = false
                 onClose()
-
-                // Queue remote deletion in background so it is independent from this view lifecycle.
-                scope.launch {
-                    snackManager.runWithSnack("Deleting notebook...", 3000) {
-                        syncScheduler.triggerImmediateSync(
-                            SyncRequest.UploadDeletion(notebookId = bookId)
-                        )
-                        log.i("Queued notebook deletion upload for $bookId")
-                        "Notebook deleted. Sync queued."
-                    }
-                }
             },
             onCancel = {
                 showDeleteDialog = false

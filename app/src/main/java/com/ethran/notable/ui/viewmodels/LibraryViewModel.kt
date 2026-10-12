@@ -22,9 +22,6 @@ import com.ethran.notable.ui.SnackDispatcher
 import com.ethran.notable.utils.fold
 import com.ethran.notable.utils.isLatestVersion
 import com.ethran.notable.data.events.AppEventBus
-import com.ethran.notable.sync.NotebookSyncStatusStore
-import com.ethran.notable.sync.SyncBadge
-import com.ethran.notable.sync.SyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +43,6 @@ data class LibraryUiState(
     val folders: List<Folder> = emptyList(),
     val books: List<Notebook> = emptyList(),
     val singlePages: List<Page> = emptyList(),
-    val syncBadges: Map<String, SyncBadge> = emptyMap()
 )
 
 // Private data class for clean Flow combining
@@ -54,7 +50,6 @@ private data class LibraryDatabaseState(
     val folders: List<Folder> = emptyList(),
     val books: List<Notebook> = emptyList(),
     val singlePages: List<Page> = emptyList(),
-    val syncBadges: Map<String, SyncBadge> = emptyMap()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -67,8 +62,6 @@ class LibraryViewModel @Inject constructor(
     private val thumbnailBackfillQueue: ThumbnailBackfillQueue,
     val pageDataManager: PageDataManager,
     private val snackDispatcher: SnackDispatcher,
-    val syncScheduler: SyncScheduler,
-    private val syncStatusStore: NotebookSyncStatusStore,
     @param:ApplicationContext private val context: Context // Kept strictly for ImportEngine
 ) : ViewModel() {
 
@@ -91,11 +84,11 @@ class LibraryViewModel @Inject constructor(
     private val _singlePagesFlow =
         _folderId.flatMapLatest { id -> pageRepository.getSinglePagesInFolder(id).asFlow() }
 
-    // 2. Group the database flows (plus per-notebook sync badges) semantically
+    // 2. Group the database flows semantically
     private val _dbDataFlow = combine(
-        _foldersFlow, _booksFlow, _singlePagesFlow, syncStatusStore.badges
-    ) { folders, books, pages, badges ->
-        LibraryDatabaseState(folders, books, pages, badges)
+        _foldersFlow, _booksFlow, _singlePagesFlow
+    ) { folders, books, pages ->
+        LibraryDatabaseState(folders, books, pages)
     }
 
     // 3. Expose the final UI State
@@ -110,7 +103,6 @@ class LibraryViewModel @Inject constructor(
             folders = dbData.folders,
             books = dbData.books,
             singlePages = dbData.singlePages,
-            syncBadges = dbData.syncBadges
         )
     }.stateIn(
         scope = viewModelScope,

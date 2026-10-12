@@ -4,8 +4,8 @@ Read this first. Update the "State" and "Next" sections when you finish a piece 
 
 ## Project
 
-Notable is an Android note app for Onyx Boox e-ink tablets (Kotlin, Compose, Room). WebDAV sync is
-being replaced by Automerge CRDT sync through a server at https://notable.hagenlocher.me. There's
+Notable is an Android note app for Onyx Boox e-ink tablets (Kotlin, Compose, Room). WebDAV sync was
+replaced by Automerge CRDT sync (WebDAV removed in Phase 5) through a server at https://notable.hagenlocher.me. There's
 also a PWA for reading, uploading and downloading annotated PDFs. Decisions are in
 `docs/adr/ADR-001-automerge-sync-via-formenos.md`. Phases, results and known gaps are in
 `docs/plans/automerge-sync.md`.
@@ -37,6 +37,8 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   - `data/LibraryEdits.kt`: every folder, notebook, page and import write (via
     `AppRepository.edits`), each through the `ContentMirror`.
   - `AndroidAdapters.kt`: Room, files, background-limit adapters.
+- WebDAV leftovers: `data/LegacyWebDavCleanup.kt` (cancels old WorkManager work at start) and
+  `MIGRATION_37_38` in `data/db/Migrations.kt` (drops its tables and stored settings).
 - Debug hook: `editor/DebugEditHook.kt` (adb broadcasts drive `PageView`/`History`; ops `draw`,
   `erase`, `move`, `undo`, `redo`, `image`/`place`, `dump`, `delete-page`, `share-pdf --es target
   page|book`). Node peer:
@@ -79,6 +81,7 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
 ## State (2026-10-11)
 
 - Phases 0–3 are done and deployed. Phase 4 is done except "rebuild Room on demand" (optional).
+  Phase 5 (remove WebDAV) is done, not committed (last entry below).
 - Phase 4a: Committed in `a177f2e2`: `LocalDocWriter` and the projector fixes.
 - Committed (steps 1–3 of an older Next list; unit tests only, not on device):
   - **Durability.** `RepoLocalDocs.kt`: `DurableStorage` records finished puts; `RepoLocalDocs.edit`
@@ -262,6 +265,34 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
     for a native notebook with images (48 inks) and a PDF notebook; "Export page to PDF" from the
     menu wrote a valid 1-page PDF with both attachments. Files: `/tmp/ndc/android-*.pdf`.
 
+- Done, not committed (2026-10-11, **Phase 5: WebDAV removed**; unit suite, `assembleDebug`,
+  instrumented migration test and device check):
+  - Deleted 56 files: everything in `sync/` but `sync/automerge/` (incl. `serializers/`), their
+    unit and android tests, `NotebookSyncState.kt`, `PageSyncState.kt`, `SyncWorkUiBridge.kt`,
+    `ConflictResolutionDialog.kt`, `SyncSettingsTab.kt` (with the consent dialog),
+    `ApplySyncSettingsUpdateTest.kt`, `docs/webdav-sync-{technical,user}.md`. New:
+    `ui/views/EInkSettingsElements.kt` (`EInkSection`, `EInkTextField`, `eInkButtonColors`, used by
+    `NotableSyncSection`), `data/LegacyWebDavCleanup.kt`, `app/schemas/.../38.json`.
+  - Edited: `Db.kt` (version 38, two entities and DAOs gone), `Migrations.kt` (`MIGRATION_37_38`:
+    drop `notebook_sync_state`, `page_sync_state`; delete `Kv` rows `SYNC_SETTINGS`,
+    `SYNC_SERVER_CAPABILITIES`), `Kv.kt` (KvProxy without sync settings or `CryptoHelper`),
+    `AppRepository` (no `commitNotebookSync`, `replaceDownloadedPage`, sync-state repos, `db`),
+    `NotableApp` (calls the cleanup), `MainActivity` (no WebDAV scheduling or snack bridge),
+    `EditorViewModel` (no sync-on-close, check-on-open, `appScope`), `LibraryViewModel`,
+    `HomeView`, `NotebookCard` (no badges, conflict dialog), `NotebookConfig` (no WebDAV
+    deletion), `Settings.kt`/`SettingsViewModel` (Sync tab = `NotableSyncSection` only), DAO and
+    repository methods only WebDAV used, 96 `sync_*` strings (en, pl), `build.gradle` comments,
+    the editor androidTests, `MigrationTest`, `instructions.md`, ADR-001.
+  - Tests: `MigrationTest` (instrumented, 3 pass on the Note Air 5C via `am instrument`; red first:
+    `MIGRATION_37_38` didn't exist). Unit suite: 352, 0 failures, 2 live skipped (one earlier full
+    run had a `RepoLocalDocsTest` failure, see Known gaps). `assembleDebug`,
+    `compileDebugAndroidTestKotlin` build.
+  - Device: seeded the old `.dev` build with WebDAV settings, sync-state rows and a scheduled
+    periodic `SyncWorker`, installed the new build over it: no crash, the work and its system job
+    cancelled, Room 38 without the tables or `Kv` rows, 4 notebooks / 22 pages / 63 strokes kept,
+    library shows them, Sync tab shows only Notable Sync. Screenshots
+    `/tmp/ndc/phase5-{home,synctab}.png`. The test APK was uninstalled again.
+
 Known gaps:
 
 - The logout notice ("Not logged out: N edits and M files …") stays on screen after the counts
@@ -309,11 +340,16 @@ Known gaps:
 - A page or notebook debt replays the whole row (e.g. a retried rename also bumps the library
   entry's edited date). Harmless, but not the original edit's exact fields.
 - `RepoDocStore` and `UploadingBlobStore` are only used by `LiveServerMigrationTest` now.
-- **WebDAV still writes Room directly** (`NotebookSyncService`, `FolderSyncService`,
-  `SyncForceService`, `AppRepository.replaceDownloadedPage`/`commitNotebookSync`). Those changes
-  never reach the docs, and a later projection of the same rows overwrites them in Room. Don't use
-  both syncs on one device; WebDAV goes in Phase 5. Deleting a notebook still queues a WebDAV
-  deletion too (`NotebookConfig`).
+- **Phase 5 leftovers.** `work-runtime` stays only for `LegacyWebDavCleanup`; drop both once no
+  device can upgrade from a WebDAV build. Room version 38 is this fork's; upstream `Ethran/notable`
+  may use 38 differently, so a merge from upstream needs its schema renumbered. Leftover WebDAV
+  `.part`/`.bak` files next to images and files on WebDAV servers are not cleaned up.
+- `NotebookConfig` deletes a notebook in the dialog's `rememberCoroutineScope` and closes the
+  dialog at once, so the coroutine can be cancelled mid-delete (pre-existing; the WebDAV snack
+  that used to follow is gone).
+- `RepoLocalDocsTest` "peek reads a doc as stored…" failed once in a full unit run
+  (`FileSystemStorage.loadRange` → `UncheckedIOException`), passed 5 times alone and in the next
+  full run. Likely compaction deleting files during `peek`; not investigated.
 - A delete beats a concurrent edit of the same page: strokes drawn on a page that another device
   deleted are lost. Exception: an edit that lands after the merge but before the projection puts
   the page back with its Room content (nothing lost, the page reappears at the end).
@@ -327,8 +363,9 @@ Known gaps:
   folder delete does, through its notebook entries.
 - The editor leaving a deleted page may still write a preview file for it.
 - `/home/beat/projects/notable` (main) has an uncommitted UI refresh that changes
-  `LibraryViewModel`, `NotebookConfig`, `HomeView` and adds `PaperActions.kt`. When merged, its
-  writes must go through `appRepository.edits`.
+  `LibraryViewModel`, `NotebookConfig`, `NotebookCard`, `HomeView` and adds `PaperActions.kt`. When
+  merged, its writes must go through `appRepository.edits`, and its WebDAV uses (`SyncScheduler`,
+  `SyncBadge`, `NotebookSyncStatusStore`, the deletion queue) must go.
 
 - **PDF export ignores "paginate PDF"** (`AppSettings.paginatePdf`, still a toggle in General
   settings): every PDF is the projection, one page per notebook page, as tall as its content.
@@ -345,13 +382,12 @@ Known gaps:
 
 ## Next
 
-Phase 5, removing WebDAV (plan "Phase 5"):
+What's left overall:
 
-1. Delete the `sync/` WebDAV code (`NotebookSyncService`, `FolderSyncService`, `SyncForceService`,
-   `AppRepository.replaceDownloadedPage`/`commitNotebookSync`, the WebDAV deletion queue in
-   `NotebookConfig`), its settings UI, consent dialog, tests and docs.
-2. Drop the `page_sync_state` table with a Room migration.
-3. Decide the `paginatePdf` toggle (see Known gaps).
+1. Commit Phase 5 (orchestrator).
+2. Decide the `paginatePdf` toggle (see Known gaps): remove it, or paginate both projections.
+3. Merge main's UI refresh (see Known gaps) without its WebDAV parts.
 
 Optional, left from Phase 4: rebuild Room from the docs on demand; a live JVM test of attaching
-(like `LiveServerOfflineEditsTest`); check a PWA-uploaded EPUB on the Boox.
+(like `LiveServerOfflineEditsTest`); check a PWA-uploaded EPUB on the Boox. Server hardening and
+doc compaction are in the plan's "Open items".

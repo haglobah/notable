@@ -69,7 +69,6 @@ import com.ethran.notable.ui.components.ToolbarSettings
 import com.ethran.notable.ui.theme.InkaTheme
 import com.ethran.notable.ui.viewmodels.GestureRowModel
 import com.ethran.notable.ui.viewmodels.SettingsViewModel
-import com.ethran.notable.ui.viewmodels.SyncSettingsUiState
 import com.ethran.notable.utils.isNext
 import kotlinx.coroutines.launch
 
@@ -109,22 +108,6 @@ fun SettingsView(
         onUpdateSettings = { viewModel.updateSettings(it) },
         listOfGestures = viewModel.getGestureRows(),
         availableGestures = viewModel.availableGestures,
-        syncUiState = viewModel.syncUiState,
-        syncCallbacks = SyncSettingsCallbacks(
-            onUpdateSyncSettings = viewModel::updateSyncSettings,
-            onTogglePasswordVisibility = viewModel::onTogglePasswordVisibility,
-            onSaveCredentials = viewModel::onSaveCredentials,
-            onTestConnection = viewModel::onTestConnection,
-            onManualSync = viewModel::onManualSync,
-            onCancelSync = viewModel::onCancelSync,
-            onClearSyncLogs = viewModel::onClearSyncLogs,
-            danger = SyncDangerCallbacks(
-                onForceUploadRequested = viewModel::onForceUploadRequested,
-                onForceDownloadRequested = viewModel::onForceDownloadRequested,
-                onConfirmForceUpload = viewModel::onConfirmForceUpload,
-                onConfirmForceDownload = viewModel::onConfirmForceDownload,
-            ),
-        )
     )
 }
 
@@ -141,8 +124,6 @@ fun SettingsContent(
     selectedTabInitial: Int = 0,
     listOfGestures: List<GestureRowModel> = emptyList(),
     availableGestures: List<Pair<AppSettings.GestureAction, Any>> = emptyList(),
-    syncUiState: SyncSettingsUiState = SyncSettingsUiState(),
-    syncCallbacks: SyncSettingsCallbacks = SyncSettingsCallbacks(),
 ) {
     var selectedTab by remember { mutableIntStateOf(selectedTabInitial) }
     val tabs = listOf(
@@ -182,13 +163,7 @@ fun SettingsContent(
 
                     2 -> ToolbarSettings(settings, onUpdateSettings, scrollState)
 
-                    3 -> Column {
-                        NotableSyncSection()
-                        SyncSettings(
-                            state = syncUiState,
-                            callbacks = syncCallbacks,
-                        )
-                    }
+                    3 -> NotableSyncSection()
 
                     4 -> DebugSettings(settings, onUpdateSettings, goToWelcome, goToSystemInfo)
                 }

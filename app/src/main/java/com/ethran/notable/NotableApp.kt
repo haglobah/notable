@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import com.onyx.android.sdk.base.utils.ResManager
 import com.onyx.android.sdk.rx.RxManager
+import com.ethran.notable.data.LegacyWebDavCleanup
 import com.ethran.notable.sync.automerge.NotableSyncClient
 import dagger.hilt.android.HiltAndroidApp
 import io.shipbook.shipbooksdk.ShipBook
@@ -37,6 +38,8 @@ class NotableApp : Application() {
         // first stroke render throws UninitializedPropertyAccessException.
         ResManager.init(this)
         checkHiddenApiBypass()
+        // WebDAV sync was removed; cancel any of its work still scheduled from before the upgrade.
+        LegacyWebDavCleanup.cancelWork(this)
         // Reconnects the Automerge sync account, if one is logged in (off the main thread).
         notableSync.start()
         Log.i("NotableApp", "onCreate FINISH")

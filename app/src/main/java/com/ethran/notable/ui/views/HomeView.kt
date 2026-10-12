@@ -62,14 +62,11 @@ import com.ethran.notable.editor.ui.Topbar
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
 import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.navigation.NavigationDestination
-import com.ethran.notable.sync.SyncBadge
-import com.ethran.notable.sync.SyncScheduler
 import com.ethran.notable.ui.LocalSnackContext
 import com.ethran.notable.ui.SnackConf
 import com.ethran.notable.ui.components.BreadCrumb
 import com.ethran.notable.ui.components.NotebookCard
 import com.ethran.notable.ui.components.ShowPagesRow
-import com.ethran.notable.ui.dialogs.ConflictResolutionDialog
 import com.ethran.notable.ui.dialogs.EmptyBookWarningHandler
 import com.ethran.notable.ui.dialogs.FolderConfigDialog
 import com.ethran.notable.ui.dialogs.NotebookConfigDialog
@@ -122,7 +119,6 @@ fun Library(
             NotebookConfigDialog(
                 appRepository = viewModel.appRepository,
                 exportEngine = viewModel.exportEngine,
-                syncScheduler = viewModel.syncScheduler,
                 bookId = newlyCreatedBookId!!,
                 onClose = { viewModel.clearNewlyCreatedBookId() }
             )
@@ -134,7 +130,6 @@ fun Library(
     LibraryContent(
         appRepository = viewModel.appRepository,
         exportEngine = viewModel.exportEngine,
-        syncScheduler = viewModel.syncScheduler,
         uiState = uiState,
         onNavigateToFolder = { id -> navController.navigate(LibraryDestination.createRoute(id)) },
         onNavigateToSettings = { navController.navigate("settings") },
@@ -159,7 +154,6 @@ fun Library(
 fun LibraryContent(
     appRepository: AppRepository,
     exportEngine: ExportEngine,
-    syncScheduler: SyncScheduler,
     uiState: LibraryUiState,
     onNavigateToFolder: (String?) -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -205,10 +199,8 @@ fun LibraryContent(
         NotebookGrid(
             appRepository = appRepository,
             exportEngine = exportEngine,
-            syncScheduler = syncScheduler,
             books = uiState.books,
             isImporting = uiState.isImporting,
-            syncBadges = uiState.syncBadges,
             onNavigateToEditor = onNavigateToEditor,
             onDeleteEmptyBook = onDeleteEmptyBook,
             onCreateNewNotebook = onCreateNewNotebook,
@@ -319,10 +311,8 @@ fun FolderList(
 fun NotebookGrid(
     appRepository: AppRepository,
     exportEngine: ExportEngine,
-    syncScheduler: SyncScheduler,
     books: List<Notebook>,
     isImporting: Boolean,
-    syncBadges: Map<String, SyncBadge>,
     onNavigateToEditor: (String, String) -> Unit,
     onDeleteEmptyBook: (String) -> Unit,
     onCreateNewNotebook: () -> Unit,
@@ -367,19 +357,12 @@ fun NotebookGrid(
                     return@items
                 }
                 var isSettingsOpen by remember { mutableStateOf(false) }
-                var isConflictOpen by remember { mutableStateOf(false) }
                 NotebookCard(
                     bookId = book.id,
                     title = book.title,
                     pageIds = book.pageIds,
                     openPageId = book.openPageId,
-                    syncBadge = syncBadges[book.id],
-                    // A conflicted notebook opens the resolution dialog on tap — the reachable entry
-                    // point for the CONFLICT badge — instead of the editor.
-                    onOpen = { bookId, pageId ->
-                        if (syncBadges[bookId] == SyncBadge.CONFLICT) isConflictOpen = true
-                        else onNavigateToEditor(pageId, bookId)
-                    },
+                    onOpen = { bookId, pageId -> onNavigateToEditor(pageId, bookId) },
                     onOpenSettings = { isSettingsOpen = true },
                     onPreviewMissing = onPreviewMissing
                 )
@@ -388,15 +371,7 @@ fun NotebookGrid(
                     NotebookConfigDialog(
                         appRepository,
                         exportEngine = exportEngine,
-                        syncScheduler = syncScheduler,
                         bookId = book.id, onClose = { isSettingsOpen = false })
-                }
-
-                if (isConflictOpen) {
-                    ConflictResolutionDialog(
-                        bookId = book.id,
-                        title = book.title,
-                        onClose = { isConflictOpen = false })
                 }
             }
         }

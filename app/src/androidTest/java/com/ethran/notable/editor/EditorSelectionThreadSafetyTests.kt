@@ -11,14 +11,11 @@ import com.ethran.notable.data.PageDataManager
 import com.ethran.notable.data.datastore.EditorSettingCacheManager
 import com.ethran.notable.data.db.AppDatabase
 import com.ethran.notable.data.db.BookRepository
-import com.ethran.notable.data.db.CryptoHelper
 import com.ethran.notable.data.db.FolderRepository
 import com.ethran.notable.data.db.ImageRepository
 import com.ethran.notable.data.db.KvProxy
 import com.ethran.notable.data.db.KvRepository
-import com.ethran.notable.data.db.NotebookSyncStateRepository
 import com.ethran.notable.data.db.PageRepository
-import com.ethran.notable.data.db.PageSyncStateRepository
 import com.ethran.notable.data.db.Stroke
 import com.ethran.notable.data.db.StrokePoint
 import com.ethran.notable.data.db.StrokeRepository
@@ -27,7 +24,6 @@ import com.ethran.notable.editor.state.PlacementMode
 import com.ethran.notable.editor.state.SelectionState
 import com.ethran.notable.editor.utils.Pen
 import com.ethran.notable.io.ExportEngine
-import com.ethran.notable.sync.SyncOrchestrator
 import com.ethran.notable.testing.TestDatabaseFactory
 import com.ethran.notable.testing.TestNotebookSeeder
 import com.ethran.notable.ui.SnackDispatcher
@@ -161,40 +157,29 @@ class EditorSelectionThreadSafetyTests {
         val folderRepository = FolderRepository(db.folderDao())
 
         val kvRepository = KvRepository(db.kvDao(), context)
-        val kvProxy = KvProxy(kvRepository, CryptoHelper())
-
-        val notebookSyncStateRepository = NotebookSyncStateRepository(db.notebookSyncStateDao())
-        val pageSyncStateRepository = PageSyncStateRepository(db.pageSyncStateDao())
+        val kvProxy = KvProxy(kvRepository)
         val appRepository = AppRepository(
             bookRepository = bookRepository,
             pageRepository = pageRepository,
             strokeRepository = strokeRepository,
             imageRepository = imageRepository,
             folderRepository = folderRepository,
-            notebookSyncStateRepository = notebookSyncStateRepository,
-            pageSyncStateRepository = pageSyncStateRepository,
             kvProxy = kvProxy,
             edits = com.ethran.notable.data.LibraryEdits(
                 bookRepository, pageRepository, folderRepository, strokeRepository, imageRepository,
                 com.ethran.notable.data.ContentMirror.None,
             ),
-            db = db,
         )
 
         val editorSettingCacheManager = EditorSettingCacheManager(kvRepository)
 
         val exportEngine = mockk<ExportEngine>(relaxed = true)
         val pageDataManager = mockk<PageDataManager>(relaxed = true)
-        val syncOrchestrator = mockk<SyncOrchestrator>(relaxed = true).also {
-            coEvery { it.syncFromPageId(any()) } returns Unit
-        }
         val snackDispatcher = mockk<SnackDispatcher>(relaxed = true)
 
         val historyFactory = mockk<History.Factory>().also {
             every { it.create(any()) } returns mockk(relaxed = true)
         }
-
-        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         return EditorViewModel(
             context = context,
@@ -202,10 +187,8 @@ class EditorSelectionThreadSafetyTests {
             editorSettingCacheManager = editorSettingCacheManager,
             exportEngine = exportEngine,
             pageDataManager = pageDataManager,
-            syncOrchestrator = syncOrchestrator,
             snackDispatcher = snackDispatcher,
             historyFactory = historyFactory,
-            appScope = appScope,
         )
     }
 

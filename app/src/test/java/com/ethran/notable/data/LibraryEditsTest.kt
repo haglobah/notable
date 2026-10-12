@@ -19,7 +19,6 @@ import com.ethran.notable.data.db.StrokeDao
 import com.ethran.notable.data.db.StrokePoint
 import com.ethran.notable.data.db.StrokeRepository
 import com.ethran.notable.editor.utils.Pen
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -55,7 +54,6 @@ private class Store {
     val notebookDao = object : NotebookDao {
         override fun getAllInFolder(folderId: String?): LiveData<List<Notebook>> = throw NotImplementedError()
         override fun getAll() = notebooks.values.toList()
-        override fun getAllFlow(): Flow<List<Notebook>> = throw NotImplementedError()
         override fun getByIdLive(notebookId: String): LiveData<Notebook?> = throw NotImplementedError()
         override suspend fun getById(notebookId: String) = notebooks[notebookId]
         override suspend fun setOpenPageId(notebookId: String, pageId: String) {
@@ -100,7 +98,6 @@ private class Store {
         }
         override fun getSinglePagesInFolder(folderId: String?): LiveData<List<Page>> = throw NotImplementedError()
         override suspend fun getAllQuickPages() = pages.values.filter { it.notebookId == null }
-        override suspend fun getPageIdsForNotebook(notebookId: String) = pages.values.filter { it.notebookId == notebookId }.map { it.id }
         override suspend fun create(page: Page): Long { write("page+"); pages[page.id] = page; return 1 }
         override suspend fun update(page: Page) { write("page"); pages[page.id] = page }
         override suspend fun upsert(page: Page) { write("page"); pages[page.id] = page }
@@ -145,7 +142,6 @@ private class Store {
         override suspend fun idsForPage(pageId: String) = images.values.filter { it.pageId == pageId }.map { it.id }
         override suspend fun deleteAll(ids: List<String>) { write("images-"); ids.forEach { images.remove(it) } }
         override suspend fun getById(imageId: String) = images.getValue(imageId)
-        override suspend fun getUrisForPage(pageId: String) = images.values.filter { it.pageId == pageId }.map { it.uri }
     }
 }
 

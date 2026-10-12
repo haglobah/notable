@@ -1,25 +1,16 @@
 package com.ethran.notable.data
 
 import com.ethran.notable.data.datastore.GlobalAppSettings
-import androidx.room.withTransaction
-import com.ethran.notable.data.db.AppDatabase
 import com.ethran.notable.data.db.BookRepository
 import com.ethran.notable.data.db.FolderRepository
-import com.ethran.notable.data.db.Image
 import com.ethran.notable.data.db.ImageRepository
 import com.ethran.notable.data.db.KvProxy
-import com.ethran.notable.data.db.NotebookSyncStateRepository
-import com.ethran.notable.data.db.Page
 import com.ethran.notable.data.db.PageRepository
-import com.ethran.notable.data.db.PageSyncState
-import com.ethran.notable.data.db.PageSyncStateRepository
-import com.ethran.notable.data.db.Stroke
 import com.ethran.notable.data.db.StrokeRepository
 import com.ethran.notable.data.db.getPageIndex
 import com.ethran.notable.data.events.AppEvent
 import com.ethran.notable.data.model.BackgroundType
 import io.shipbook.shipbooksdk.ShipBook
-import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -32,62 +23,10 @@ class AppRepository @Inject constructor(
     val strokeRepository: StrokeRepository,
     val imageRepository: ImageRepository,
     val folderRepository: FolderRepository,
-    val notebookSyncStateRepository: NotebookSyncStateRepository,
-    val pageSyncStateRepository: PageSyncStateRepository,
     val kvProxy: KvProxy,
     /** Library and page changes, through the docs. Use these, not the repositories' writes. */
     val edits: LibraryEdits,
-    private val db: AppDatabase
 ) {
-    /**
-     * The atomic sync commit point, at page granularity. In one Room
-     * transaction: mark the notebook synced, upsert the freshly transferred pages' [PageSyncState]
-     * rows, and delete rows for pages that left the notebook. Pages skipped this sync keep their
-     * existing rows untouched. A crash before this commits leaves *no* per-page rows for the
-     * transfer, so the next sync re-transfers exactly those pages.
-     *
-     * Network-only follow-ups (remote GC, tombstone cleanup) stay OUTSIDE this transaction — the
-     * caller runs them after it returns.
-     */
-    suspend fun commitNotebookSync(
-        notebookId: String,
-        localUpdatedAt: Date,
-        remoteUpdatedAt: Date?,
-        manifestEtag: String?,
-        committedPageRows: List<PageSyncState>,
-        departedPageIds: List<String>,
-    ) {
-        db.withTransaction {
-            notebookSyncStateRepository.markSynced(
-                notebookId = notebookId,
-                localUpdatedAt = localUpdatedAt,
-                remoteUpdatedAt = remoteUpdatedAt,
-                remoteEtag = manifestEtag,
-            )
-            pageSyncStateRepository.upsertAll(committedPageRows)
-            pageSyncStateRepository.deleteByIds(departedPageIds)
-        }
-    }
-    /**
-     * Replace a downloaded page's content in a single transaction: an interrupted download can no
-     * longer leave a page with its old strokes deleted but new ones not yet inserted (sync P5).
-     * A null [pageRepository.getWithDataById] result means the page row is absent -> create it.
-     */
-    suspend fun replaceDownloadedPage(page: Page, strokes: List<Stroke>, images: List<Image>) {
-        db.withTransaction {
-            val existing = pageRepository.getWithDataById(page.id)
-            if (existing != null) {
-                strokeRepository.deleteAll(existing.strokes.map { it.id })
-                imageRepository.deleteAll(existing.images.map { it.id })
-                pageRepository.update(page)
-            } else {
-                pageRepository.create(page)
-            }
-            strokeRepository.create(strokes)
-            imageRepository.create(images)
-        }
-    }
-
     suspend fun getNextPageIdFromBookAndPageOrCreate(
         notebookId: String,
         pageId: String

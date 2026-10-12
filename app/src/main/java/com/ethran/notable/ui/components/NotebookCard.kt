@@ -9,31 +9,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.SyncProblem
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ethran.notable.R
 import com.ethran.notable.ui.theme.InkaTheme
-import com.ethran.notable.sync.SyncBadge
 import com.ethran.notable.ui.theme.Ink
 import com.ethran.notable.ui.theme.PaperLine
 import com.ethran.notable.ui.theme.SecondaryInk
@@ -46,7 +32,6 @@ fun NotebookCard(
     title: String,
     pageIds: List<String>,
     openPageId: String?,
-    syncBadge: SyncBadge? = null,
     onOpen: (bookId: String, pageId: String) -> Unit,
     onOpenSettings: (bookId: String) -> Unit,
     onPreviewMissing: (String) -> Unit = {},
@@ -72,19 +57,6 @@ fun NotebookCard(
             )
             // Keep the paper edge visible above the loaded preview.
             Box(Modifier.matchParentSize().border(1.dp, PaperLine))
-            syncBadge?.iconOrNull()?.let { icon ->
-                Icon(
-                    imageVector = icon,
-                    contentDescription = "Sync status: ${syncBadge.name}",
-                    tint = Ink,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .background(Color.White, CircleShape)
-                        .padding(4.dp)
-                        .size(18.dp)
-                )
-            }
         }
         Text(
             text = title,
@@ -105,17 +77,6 @@ fun NotebookCard(
     }
 }
 
-/** Icon for the corner badge, or null when there is nothing worth showing. */
-private fun SyncBadge.iconOrNull(): ImageVector? = when (this) {
-    SyncBadge.SYNCED -> Icons.Default.CloudDone
-    SyncBadge.NOT_SYNCED -> Icons.Default.CloudOff
-    SyncBadge.SCHEDULED -> Icons.Default.Schedule
-    SyncBadge.SYNCING -> Icons.Default.Sync
-    SyncBadge.REMOTE_AHEAD -> Icons.Default.CloudDownload
-    SyncBadge.CONFLICT -> Icons.Default.SyncProblem
-    SyncBadge.ERROR -> Icons.Default.ErrorOutline
-}
-
 @Preview(showBackground = true, widthDp = 196, heightDp = 320)
 @Composable
 private fun NotebookCardPreview() {
@@ -126,7 +87,6 @@ private fun NotebookCardPreview() {
             title = "Ideas for a quieter day",
             pageIds = listOf("page-1", "page-2", "page-3"),
             openPageId = "page-1",
-            syncBadge = SyncBadge.SYNCED,
             onOpen = { _, _ -> },
             onOpenSettings = {}
         )

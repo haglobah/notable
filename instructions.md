@@ -4,7 +4,7 @@ Notable is an Android note-taking app for Onyx BOOX e-ink tablets. Performance a
 
 **Tech Stack:** Kotlin, Jetpack Compose, Hilt, Room, OpenGL canvas
 **Source:** `app/src/main/java/com/ethran/notable` — read `docs/file-structure.md`
-**Key Docs:** `editor-data-flow.md`, `editor-state-and-view.md`, `database-structure.md`, `result-and-error-handling.md`, `webdav-sync-technical.md`
+**Key Docs:** `editor-data-flow.md`, `editor-state-and-view.md`, `database-structure.md`, `result-and-error-handling.md`, `adr/ADR-001-automerge-sync-via-formenos.md` (sync)
 **Schemas:** `app/schemas/` — Room migration snapshots live here
 
 ---
