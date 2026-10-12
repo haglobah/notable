@@ -19,9 +19,9 @@ Overview
 Currently supported formats
 Core (Maintainer: @Ethran)
 - PDF
-    - Book: multi-page; pagination via GlobalAppSettings.current.paginatePdf
-    - Page: single page (or paginated)
-    - Scales to A4 width; splits by A4 height if enabled
+    - The PWA's projection (`io/projection/`): one PDF page per notebook page, as tall as its
+      content, with the notebook doc embedded. No pagination.
+    - Book: every page. Page: that page only.
     - Copies a link on single-page export
 - PNG
     - Book: <file>-p1.png, <file>-p2.png, …

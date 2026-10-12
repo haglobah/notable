@@ -66,13 +66,6 @@ fun GeneralSettings(
             })
 
         SettingToggleRow(
-            label = stringResource(R.string.paginate_pdf),
-            value = settings.paginatePdf,
-            onToggle = { isChecked ->
-                onSettingsChange(settings.copy(paginatePdf = isChecked))
-            })
-
-        SettingToggleRow(
             label = stringResource(R.string.preview_pdf_pagination),
             value = settings.visualizePdfPagination,
             onToggle = { isChecked ->
