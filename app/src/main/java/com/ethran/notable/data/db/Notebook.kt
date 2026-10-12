@@ -74,6 +74,19 @@ interface NotebookDao {
     @Query("UPDATE notebook SET pageIds=:pageIds, updatedAt=:updatedAt WHERE id=:id")
     suspend fun setPageIds(id: String, pageIds: List<String>, updatedAt: Date)
 
+    // Metadata edits must not write an old snapshot over concurrent page or sync changes.
+    @Query("UPDATE notebook SET title=:title, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun rename(id: String, title: String, updatedAt: Date): Int
+
+    @Query("UPDATE notebook SET defaultBackgroundType=:type, defaultBackground=COALESCE(:background, defaultBackground), updatedAt=:updatedAt WHERE id=:id")
+    suspend fun setBackground(id: String, type: String, background: String?, updatedAt: Date): Int
+
+    @Query("UPDATE notebook SET linkedExternalUri=:uri, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun setLinkedUri(id: String, uri: String?, updatedAt: Date): Int
+
+    @Query("UPDATE notebook SET parentFolderId=:folderId, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun move(id: String, folderId: String?, updatedAt: Date): Int
+
     @Insert
     suspend fun create(notebook: Notebook): Long
 
@@ -119,6 +132,22 @@ class BookRepository @Inject constructor(
         log.i("updating DB")
         val updatedNotebook = notebook.copy(updatedAt = Date())
         notebookDao.update(updatedNotebook)
+    }
+
+    suspend fun rename(id: String, title: String) {
+        check(notebookDao.rename(id, title, Date()) == 1) { "Notebook no longer exists" }
+    }
+
+    suspend fun setBackground(id: String, type: String, background: String?) {
+        check(notebookDao.setBackground(id, type, background, Date()) == 1) { "Notebook no longer exists" }
+    }
+
+    suspend fun setLinkedUri(id: String, uri: String?) {
+        check(notebookDao.setLinkedUri(id, uri, Date()) == 1) { "Notebook no longer exists" }
+    }
+
+    suspend fun move(id: String, folderId: String?) {
+        check(notebookDao.move(id, folderId, Date()) == 1) { "Notebook no longer exists" }
     }
 
     /**

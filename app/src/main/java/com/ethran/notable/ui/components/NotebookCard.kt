@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +16,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudOff
@@ -27,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,7 +55,10 @@ fun NotebookCard(
     onPreviewMissing: (String) -> Unit = {},
 ) {
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().combinedClickable(
+        onClick = { onOpen(bookId, openPageId ?: pageIds.first()) },
+        onLongClick = { onOpenSettings(bookId) }
+    )) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -63,10 +69,7 @@ fun NotebookCard(
             PagePreview(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(3f / 4f)
-                    .combinedClickable(
-                        onClick = { onOpen(bookId, openPageId ?: pageIds[0]) },
-                        onLongClick = { onOpenSettings(bookId) }),
+                    .aspectRatio(3f / 4f),
                 pageId = pageIds[0],
                 onPreviewMissing = onPreviewMissing
             )
@@ -86,22 +89,28 @@ fun NotebookCard(
                 )
             }
         }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.subtitle2,
-            color = Ink,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 10.dp)
-        )
-        Text(
-            text = pluralStringResource(
-                R.plurals.notebook_page_count, pageIds.size, pageIds.size
-            ),
-            style = MaterialTheme.typography.caption,
-            color = SecondaryInk,
-            modifier = Modifier.padding(top = 2.dp)
-        )
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f).padding(top = 6.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.subtitle2,
+                    color = Ink,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = pluralStringResource(R.plurals.notebook_page_count, pageIds.size, pageIds.size),
+                    style = MaterialTheme.typography.caption,
+                    color = SecondaryInk,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            PaperIconAction(
+                description = stringResource(R.string.library_notebook_details, title),
+                icon = Icons.Default.MoreHoriz,
+                onClick = { onOpenSettings(bookId) }
+            )
+        }
     }
 }
 

@@ -2,7 +2,6 @@
     <string name="app_name" translatable="false">Notable</string>
     <string name="home_quick_pages">Quick pages</string>
     <string name="home_notebooks">Notebooks</string>
-    <string name="home_add_new_folder">Add new folder</string>
     <string name="home_new_folder">New Folder</string>
     <string name="home_view_name">Library</string>
     <string name="settings_title">Settings</string>
@@ -46,17 +45,11 @@
     <string name="gesture_action_toggle_pen_eraser">Toggle Pen / Eraser</string>
     <string name="gesture_action_toggle_zen_mode">Toggle Zen Mode</string>
     <string name="gesture_action_select">Select</string>
-    <string name="details_notebook_title">Title:</string>
-    <string name="details_notebook_default_background_template">Default Background Template</string>
     <string name="details_notebook_pages">Pages: %1$d</string>
-    <string name="details_notebook_in_folder">"In Folder: "</string>
     <string name="details_notebook_created">Created: %1$s</string>
     <string name="details_notebook_last_updated">Last Updated: %1$s</string>
-    <string name="details_notebook_buttons_delete">Delete</string>
     <string name="details_notebook_buttons_move">Move</string>
     <string name="details_notebook_buttons_export">Export</string>
-    <string name="details_notebook_buttons_copy">Copy</string>
-    <string name="details_notebook_linked_to">Linked to: %1$s</string>
     <string name="welcome_view_title">Welcome to Notable</string>
     <string name="welcome_view_subtitle">For optimal experience, please complete these setup steps:</string>
     <string name="welcome_view_file_access">File Access</string>
@@ -296,4 +289,29 @@
         <item quantity="one">%d page</item>
         <item quantity="other">%d pages</item>
     </plurals>
+    <string name="library_notebook_details">Details for %1$s</string>
+    <string name="library_folders">Folders</string>
+    <string name="library_new_quick_page">Quick page</string>
+    <string name="library_new_folder">New folder</string>
+    <string name="details_heading">Notebook details</string>
+    <string name="details_done">Done</string>
+    <string name="details_saving">Saving…</string>
+    <string name="details_name">Name</string>
+    <string name="details_template">Page template</string>
+    <string name="details_template_builtin">Built-in template</string>
+    <string name="details_template_linked_pdf">Linked PDF</string>
+    <string name="details_template_cover">Cover image</string>
+    <string name="details_template_image">Image</string>
+    <string name="details_template_repeating">Repeating image</string>
+    <string name="details_template_pdf">PDF page</string>
+    <string name="details_link">Linked file</string>
+    <string name="details_unlinked">No linked file</string>
+    <string name="details_unlink">Unlink</string>
+    <string name="details_link_action">Link file</string>
+    <string name="details_location">Location</string>
+    <string name="details_delete_title">Delete notebook</string>
+    <string name="details_delete_message">Delete “%1$s”? This cannot be undone.</string>
+    <string name="details_save_failed">Could not save changes. Please try again.</string>
+    <string name="details_retry">Try again</string>
+    <string name="details_delete_sync_failed">Notebook deleted locally, but remote deletion could not be queued. Check sync before reconnecting.</string>
 </resources>
