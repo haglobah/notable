@@ -15,8 +15,6 @@ import dagger.hilt.components.SingletonComponent
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -36,6 +34,7 @@ const val thumbnailGeneratorStaleMs = 60000 // 1 min
 @InstallIn(SingletonComponent::class)
 interface ThumbnailGeneratorEntryPoint {
     fun thumbnailGenerator(): ThumbnailGenerator
+    fun thumbnailUpdates(): ThumbnailUpdates
 }
 
 /**
@@ -50,18 +49,12 @@ class ThumbnailGenerator @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val pageContentRenderer: PageContentRenderer,
     private val pageRepository: PageRepository,
+    private val thumbnailUpdates: ThumbnailUpdates,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val log = ShipBook.getLogger("ThumbnailGenerator")
     private val inFlightLock = Mutex()
     private val inFlight = mutableMapOf<String, CompletableDeferred<ThumbnailEnsureResult>>()
-
-    private val _thumbnailUpdated = MutableSharedFlow<String>(extraBufferCapacity = 64)
-
-    /**
-     * Flow of page IDs whose thumbnails have been updated (generated or refreshed).
-     */
-    val thumbnailUpdated = _thumbnailUpdated.asSharedFlow()
 
 
     /**
@@ -97,7 +90,7 @@ class ThumbnailGenerator @Inject constructor(
         try {
             val result = generate(page, mode)
             if (result == ThumbnailEnsureResult.GENERATED) {
-                _thumbnailUpdated.tryEmit(pageId)
+                thumbnailUpdates.announce(pageId)
             }
             marker.complete(result)
             return result
@@ -120,9 +113,11 @@ class ThumbnailGenerator @Inject constructor(
                 maxHeightPx = null
             )
         )
+        var saved = false
         bitmap.useAndRecycle { rendered ->
-            savePageThumbnail(context, rendered, page.id, mode)
+            saved = savePageThumbnail(context, rendered, page.id, mode)
         }
+        if (!saved) throw IllegalStateException("Thumbnail could not be saved for pageId=${page.id}")
         log.d("Thumbnail generated for pageId=${page.id}")
         return ThumbnailEnsureResult.GENERATED
     }

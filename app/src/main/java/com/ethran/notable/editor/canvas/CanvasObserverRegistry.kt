@@ -351,7 +351,7 @@ class CanvasObserverRegistry(
             CanvasEventBus.saveCurrent.collect {
                 // Push current bitmap to persist layer so preview has something to load
                 pageDataManager.cacheBitmap(page.currentPageId, page.windowedBitmap)
-                pageDataManager.saveTopic.tryEmit(page.currentPageId)
+                pageDataManager.requestPreviewSave(page.currentPageId)
             }
         }
     }

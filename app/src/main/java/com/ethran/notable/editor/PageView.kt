@@ -201,7 +201,6 @@ class PageView(
             }
             loadPage()
             log.d("Page loaded (Init with id: $currentPageId)")
-            pageDataManager.collectAndPersistBitmapsBatch(context, coroutineScope)
         }
     }
 
@@ -228,7 +227,7 @@ class PageView(
         log.d("changePage Entry: $oldId -> $newPageId")
 
         coroutineScope.launch(Dispatchers.IO) {
-            pageDataManager.onExit(oldId, windowedBitmap, coroutineScope)
+            pageDataManager.onExit(oldId, windowedBitmap)
             pageDataManager.setPage(newPageId)
             zoomLevel.value = pageDataManager.getPageZoom(currentPageId)
             pageDataManager.getCachedBitmap(newPageId)?.let { cached ->
@@ -267,7 +266,7 @@ class PageView(
     */
     fun disposeOldPage() {
         log.d("Dispose old page")
-        pageDataManager.onExit(currentPageId, windowedBitmap, coroutineScope)
+        pageDataManager.onExit(currentPageId, windowedBitmap)
         cleanJob()
     }
 

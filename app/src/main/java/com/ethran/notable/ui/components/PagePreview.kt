@@ -6,7 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -18,6 +19,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.ethran.notable.editor.utils.getThumbnailFile
 import com.ethran.notable.io.ThumbnailGeneratorEntryPoint
+import com.ethran.notable.io.thumbnailCacheKey
 import dagger.hilt.EntryPoints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filter
@@ -26,8 +28,9 @@ import kotlinx.coroutines.withContext
 /**
  * Renders a preview image for a page.
  *
- * Automatically listens to [ThumbnailGenerator] updates to refresh the image
- * when a new thumbnail is generated.
+ * Reloads when [ThumbnailUpdates] announces the page. The image is keyed on the thumbnail file's
+ * modification time, so a thumbnail rewritten by the editor or dropped by sync is never shown
+ * from an older cache entry.
  */
 @Composable
 fun PagePreview(
@@ -41,44 +44,47 @@ fun PagePreview(
         return
     }
 
-    // Get the generator via EntryPoint since this is a stateless Composable
-    val thumbnailGenerator = remember(context) {
+    // Get the signal via EntryPoint since this is a stateless Composable
+    val thumbnailUpdates = remember(context) {
         EntryPoints.get(
             context.applicationContext, ThumbnailGeneratorEntryPoint::class.java
-        ).thumbnailGenerator()
+        ).thumbnailUpdates()
     }
-
-    // Key to force Coil to reload the image when the thumbnail changes
-    var refreshTrigger by remember { mutableLongStateOf(0L) }
 
     val imgFile = remember(pageId) {
         getThumbnailFile(context, pageId)
     }
 
-    // Listen for updates specifically for this pageId
+    // Bumped whenever this page's thumbnail file changes
+    var refreshTrigger by remember(pageId) { mutableIntStateOf(0) }
+    // Null until the file has been checked; then the key, or null while the file is missing
+    var cacheKey by remember(pageId) { mutableStateOf<String?>(null) }
+
     LaunchedEffect(pageId) {
-        thumbnailGenerator.thumbnailUpdated.filter { it == pageId }.collect {
-            refreshTrigger = System.currentTimeMillis()
+        thumbnailUpdates.updated.filter { it == pageId }.collect {
+            refreshTrigger++
         }
     }
 
-    // Check if the file exists initially or when refreshed
     LaunchedEffect(pageId, refreshTrigger) {
-        val exists = withContext(Dispatchers.IO) { imgFile.exists() }
-        if (!exists) {
+        val key = withContext(Dispatchers.IO) { thumbnailCacheKey(imgFile) }
+        cacheKey = key
+        if (key == null) {
             onPreviewMissing(pageId)
         }
     }
 
+    val key = cacheKey
+    if (key == null) {
+        Box(modifier = modifier.background(Color.White))
+        return
+    }
+
     val painter = rememberAsyncImagePainter(
         model = ImageRequest.Builder(context).data(imgFile)
-            // Use the refreshTrigger in the cache key to bypass Coil's cache
-            .apply {
-                if (refreshTrigger > 0) {
-                    memoryCacheKey("${imgFile.absolutePath}_$refreshTrigger")
-                    diskCacheKey("${imgFile.absolutePath}_$refreshTrigger")
-                }
-            }.build()
+            .memoryCacheKey(key)
+            .diskCacheKey(key)
+            .build()
     )
 
     Image(

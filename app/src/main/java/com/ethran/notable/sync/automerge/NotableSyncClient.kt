@@ -17,6 +17,7 @@ import com.ethran.notable.data.db.PageDao
 import com.ethran.notable.data.db.StrokeDao
 import com.ethran.notable.data.getDbDir
 import com.ethran.notable.di.ApplicationScope
+import com.ethran.notable.io.ThumbnailUpdates
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CompletableDeferred
@@ -120,6 +121,7 @@ class NotableSyncClient @Inject constructor(
     private val imageDao: ImageDao,
     private val pendingWrites: PendingLocalWrites,
     private val events: AppEventBus,
+    private val thumbnailUpdates: ThumbnailUpdates,
     @param:ApplicationScope private val scope: CoroutineScope,
 ) : ContentMirror {
     private val root = File(context.filesDir, "notable-sync")
@@ -650,6 +652,7 @@ class NotableSyncClient @Inject constructor(
             File(context.filesDir, dir).listFiles { f -> f.name == pageId || f.name.startsWith("$pageId-") || f.name.startsWith("$pageId.") }
                 ?.forEach { if (!it.delete()) log.w("could not delete stale preview ${it.path}") }
         }
+        thumbnailUpdates.announce(pageId)
     }
 
     private fun warn(w: List<String>) {

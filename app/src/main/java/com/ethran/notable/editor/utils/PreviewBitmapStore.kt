@@ -341,11 +341,11 @@ private fun decodeBitmapFromFile(file: File): Bitmap? {
 }
 
 /**
- * Persist a thumbnail for a page.
+ * Persist a thumbnail for a page. Returns true if the thumbnail file was written.
  */
 fun savePageThumbnail(
     context: Context, bitmap: Bitmap, pageID: String, mode: PreviewSaveMode = PreviewSaveMode.REGULAR
-) {
+): Boolean {
     ensureNotMainThread("savePageThumbnail")
     val finalFile = getThumbnailFile(context, pageID)
     finalFile.parentFile?.mkdirs()
@@ -361,20 +361,27 @@ fun savePageThumbnail(
             if (!success) {
                 log.e("savePageThumbnail: Failed to compress bitmap")
                 tempFile.delete()
-                return
+                return false
             }
         }
         if (tempFile.exists() && tempFile.length() > 0) {
-            tempFile.renameTo(finalFile)
+            if (!tempFile.renameTo(finalFile)) {
+                log.e("savePageThumbnail: could not rename temp file for $pageID")
+                tempFile.delete()
+                return false
+            }
             log.d("savePageThumbnail: thumbnail saved for $pageID")
+            return true
         } else {
             log.e("savePageThumbnail: temp file missing or empty, aborting rename")
             tempFile.delete()
+            return false
         }
     } catch (e: Exception) {
         tempFile.delete()
         log.e("savePageThumbnail: Exception while saving thumbnail: ${e.message}")
         logCallStack("savePageThumbnail")
+        return false
     } finally {
         if (optimized.bitmap != scaledBitmap) optimized.bitmap.recycle()
         if (scaledBitmap != bitmap) scaledBitmap.recycle()

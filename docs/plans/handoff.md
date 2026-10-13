@@ -512,6 +512,12 @@ Known gaps:
 - Deleting a folder here doesn't announce its pages (the editor can't be open then); a remote
   folder delete does, through its notebook entries.
 - The editor leaving a deleted page may still write a preview file for it.
+- Library cards always show a notebook's first page, so annotations on other pages never appear
+  on the card (open question for Beat: last-opened page instead?).
+- `utils/flowExtensions.kt` `chunked(ms)` busy-spins a core for the whole window; still used by
+  `BackgroundFileWatcher` (`chunked(10)`).
+- Editor-written thumbnails come from the windowed screen bitmap, so PDF text on a card is a
+  little coarser than in a generator-rendered thumbnail.
 - Strings unused before the UI merge (both branches): `home_new_folder`, `app_latest_version`,
   `work_in_progress`, `export_page_to_error`, `exporting_the_page_to`, `exporting_the_book_to`,
   `cleared_all_strokes`, `toolbar_settings_edit_pen`, `pen_name_charcoal_classic`.

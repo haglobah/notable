@@ -2,6 +2,7 @@ package com.ethran.notable.data
 
 import android.content.ComponentCallbacks2
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.res.Configuration
 import android.database.SQLException
 import android.database.sqlite.SQLiteConstraintException
@@ -25,8 +26,8 @@ import com.ethran.notable.data.model.BackgroundType.ImageRepeating
 import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.editor.utils.saveHQPagePreview
 import com.ethran.notable.editor.utils.savePageThumbnail
+import com.ethran.notable.io.ThumbnailUpdates
 import com.ethran.notable.io.loadBackgroundBitmap
-import com.ethran.notable.utils.chunked
 import com.ethran.notable.utils.logCallStack
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineScope
@@ -36,7 +37,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.launch
 import java.io.File
 import java.lang.ref.SoftReference
@@ -108,10 +108,12 @@ internal class PageCacheEntry(val pageId: String) {
 // Cache manager companion object
 @Singleton
 class PageDataManager @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val appRepository: AppRepository,
     private val appEventBus: AppEventBus,
     private val backgroundFileWatcher: BackgroundFileWatcher,
     private val viewport: PageViewportState,
+    private val thumbnailUpdates: ThumbnailUpdates,
     mirror: ContentMirror,
     pendingWrites: PendingLocalWrites,
 ) {
@@ -207,7 +209,11 @@ class PageDataManager @Inject constructor(
 
     val dataLoadingScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    val saveTopic = MutableSharedFlow<String>()
+    /** Saves page previews in this manager's scope, so leaving the editor doesn't lose them. */
+    private val previewSaves = PagePersistQueue(dataScope) { pageId -> persistPreview(pageId) }
+
+    /** Writes the page's cached bitmap as its full preview and thumbnail, off the caller's scope. */
+    fun requestPreviewSave(pageId: String) = previewSaves.request(pageId)
 
     /** Ids of cached pages that just took a [RemotePageEdit]; the open editor redraws on these. */
     private val _remoteApplied = MutableSharedFlow<RemotePageEdit>(extraBufferCapacity = 64)
@@ -855,33 +861,15 @@ class PageDataManager @Inject constructor(
         }
     }
 
-    fun collectAndPersistBitmapsBatch(
-        context: Context, scope: CoroutineScope
-    ) {
-        scope.launch(Dispatchers.IO) {
-            saveTopic.buffer(10).chunked(1000).collect { pageIdBatch ->
-                val uniquePageIds = pageIdBatch.distinct()
-                if (uniquePageIds.isEmpty()) return@collect
-
-                log.i("Persisting batch of bitmaps for pages: $uniquePageIds")
-
-                for (pageId in uniquePageIds) {
-                    val bitmap = synchronized(lock) { entries[pageId]?.bitmap?.get() }
-                    val currentZoomLevel = viewport.zoom(pageId)
-                    val currentScroll = viewport.scroll(pageId)
-
-                    if (bitmap == null || bitmap.isRecycled) {
-                        log.e("Page $pageId: Bitmap is recycled/null — cannot persist it")
-                        continue
-                    }
-
-                    scope.launch(Dispatchers.IO) {
-                        saveHQPagePreview(context, bitmap, pageId, currentScroll, currentZoomLevel)
-                        savePageThumbnail(context, bitmap, pageId)
-                    }
-                }
-            }
+    private fun persistPreview(pageId: String) {
+        val bitmap = synchronized(lock) { entries[pageId]?.bitmap?.get() }
+        if (bitmap == null || bitmap.isRecycled) {
+            log.e("Page $pageId: Bitmap is recycled/null — cannot persist it")
+            return
         }
+        log.i("Persisting preview of page $pageId")
+        saveHQPagePreview(context, bitmap, pageId, viewport.scroll(pageId), viewport.zoom(pageId))
+        if (savePageThumbnail(context, bitmap, pageId)) thumbnailUpdates.announce(pageId)
     }
 
     /*
@@ -1268,13 +1256,11 @@ class PageDataManager @Inject constructor(
         }
     }
 
-    fun onExit(targetPageId: String, windowedBitmap: Bitmap, scope: CoroutineScope) {
+    fun onExit(targetPageId: String, windowedBitmap: Bitmap) {
         log.i("Page exit, is page loaded: ${validatePageDataLoaded(targetPageId)}")
         if (validatePageDataLoaded(targetPageId)) {
             cacheBitmap(targetPageId, windowedBitmap)
-            scope.launch {
-                saveTopic.emit(targetPageId)
-            }
+            requestPreviewSave(targetPageId)
             recomputeHeight(targetPageId)
             // Size accounting is kept current on every setStrokes/setImages, so no recompute here.
         }
