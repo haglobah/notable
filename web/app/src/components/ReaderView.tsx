@@ -7,7 +7,9 @@ import { edited, kindOf } from "../lib/library.ts"
 import { canvasWidthOf, contentHeight, resolveBackground, type PageBackground } from "../lib/geometry.ts"
 import { drawImageBackground, drawImages, drawStrokes, drawTemplate } from "../lib/draw.ts"
 import { pageSizes, projectPdf, renderPage } from "../lib/pdfClient.ts"
-import { docKeyId, type DocKey } from "../lib/pdfProtocol.ts"
+import { docKeyId, docKeyOf, type DocKey } from "../lib/pdfProtocol.ts"
+import { inkSignature } from "../lib/cover.ts"
+import { loadImage } from "../lib/paint.ts"
 import { pdfFileName } from "../lib/project.ts"
 import { useSession } from "./session.tsx"
 
@@ -118,16 +120,13 @@ function Download(p: { handle: DocHandle<unknown>; entry: NotebookEntry }) {
 
 type Sized = { id: string; page: Page; bg: PageBackground; key: DocKey | null; height: number }
 
-const keyOf = (bg: PageBackground): DocKey | null =>
-  bg.kind !== "document" ? null : bg.format === "pdf" ? { format: "pdf", blob: bg.blob } : { format: "epub", blob: bg.blob, layout: bg.layout }
-
 function Pages(p: { nb: Notebook; entry: NotebookEntry }) {
   const cw = () => canvasWidthOf(p.nb)
   // Each source document's page sizes, fetched once; a document page fixes the page's height.
   const [sizes, setSizes] = createSignal<Record<string, [number, number][] | Error>>({})
   createEffect(() => {
     for (const id of p.nb.pageOrder) {
-      const key = keyOf(resolveBackground(p.nb, p.entry, id))
+      const key = docKeyOf(resolveBackground(p.nb, p.entry, id))
       if (!key) continue
       const k = docKeyId(key)
       if (k in sizes()) continue
@@ -138,7 +137,7 @@ function Pages(p: { nb: Notebook; entry: NotebookEntry }) {
   const pages = createMemo(() => new Map(p.nb.pageOrder.map((id): [string, Sized] => {
     const page = p.nb.pages[id]
     const bg = resolveBackground(p.nb, p.entry, id)
-    const key = keyOf(bg)
+    const key = docKeyOf(bg)
     let height = contentHeight(page, cw())
     if (key && bg.kind === "document") {
       const sz = sizes()[docKeyId(key)]
@@ -165,21 +164,6 @@ function Pages(p: { nb: Notebook; entry: NotebookEntry }) {
       </For>
     </ol>
   )
-}
-
-const imageCache = new Map<string, Promise<ImageBitmap>>()
-function loadImage(hash: string): Promise<ImageBitmap> {
-  let p = imageCache.get(hash)
-  if (!p) {
-    p = fetch(`/api/blobs/${hash}`, { credentials: "same-origin" }).then(async r => {
-      if (!r.ok) throw new Error(`image ${hash.slice(0, 12)}…: HTTP ${r.status}`)
-      return createImageBitmap(await r.blob())
-    })
-    p.catch(() => imageCache.delete(hash))
-    imageCache.set(hash, p)
-    if (imageCache.size > 16) imageCache.delete(imageCache.keys().next().value!)
-  }
-  return p
 }
 
 /** Larger canvases hit iOS's per-canvas limit and a phone's memory. */
@@ -251,14 +235,8 @@ function PageView(p: { sized: Sized; cw: number; n: number; docError: Error | nu
     }
   })
 
-  // Ink: images and strokes. Strokes are immutable, so count + edit times tell a change apart.
-  const inkSig = createMemo(() => {
-    const pg = p.sized.page
-    let t = 0
-    for (const s of Object.values(pg.strokes)) t += s.updatedAt.getTime()
-    for (const i of Object.values(pg.images)) t += i.updatedAt.getTime()
-    return `${Object.keys(pg.strokes).length}:${Object.keys(pg.images).length}:${t}`
-  })
+  // Ink: images and strokes.
+  const inkSig = createMemo(() => inkSignature(p.sized.page))
   createEffect(() => {
     const px = pixels(), on = near()
     inkSig()

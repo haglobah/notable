@@ -3,6 +3,7 @@ import { A, useParams } from "@solidjs/router"
 import { childFolders, countIn, edited, entriesIn, folderPath, kindOf } from "../lib/library.ts"
 import { useSession } from "./session.tsx"
 import { Glyph } from "./Marks.tsx"
+import { Cover } from "./Cover.tsx"
 import { DropZone, UploadList } from "./Uploads.tsx"
 
 export function LibraryView() {
@@ -60,16 +61,14 @@ export function LibraryView() {
                   </ul>
                 </Show>
                 <Show when={entries().length > 0}>
-                  <ul class="shelf" aria-label="Documents and notebooks">
+                  <ul class="shelf cards" aria-label="Documents and notebooks">
                     <For each={entries()}>
                       {e => (
                         <li>
-                          <A class="item" href={`/n/${e.id}`}>
-                            <Glyph kind={kindOf(e)} />
-                            <span>
-                              <span class="item-title">{e.title || "Untitled"}</span>
-                              <span class="item-meta" style={{ display: "block" }}>{kindOf(e)}, edited {edited(e.updatedAt)}</span>
-                            </span>
+                          <A class="card" href={`/n/${e.id}`}>
+                            <Cover entry={e} />
+                            <span class="card-title">{e.title || "Untitled"}</span>
+                            <span class="item-meta">{kindOf(e)}, edited {edited(e.updatedAt)}</span>
                           </A>
                         </li>
                       )}

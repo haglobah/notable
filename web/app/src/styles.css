@@ -178,6 +178,24 @@ button, input { font: inherit; color: inherit; }
 .item:hover { background: color-mix(in srgb, var(--sheet) 70%, transparent); }
 .item-title { font-family: var(--serif); font-variation-settings: "opsz" 18; font-size: 1.15rem; line-height: 1.3; font-weight: 500; overflow-wrap: anywhere; }
 .item-meta { font-size: 0.875rem; color: var(--graphite-soft); margin-top: 0.15rem; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); gap: 1.25rem 0.75rem; }
+.card {
+  display: block; padding: 0.4rem; margin: -0.4rem; border-radius: var(--radius-control);
+  text-decoration: none; color: inherit; min-width: 0;
+}
+.card:hover { background: color-mix(in srgb, var(--sheet) 70%, transparent); }
+.cover {
+  position: relative; aspect-ratio: 3 / 4; display: grid; place-items: center; overflow: hidden;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius-sheet);
+}
+.cover-page { position: absolute; inset: 0; width: 100%; height: 100%; display: block; visibility: hidden; }
+.cover-page.shown { visibility: visible; }
+.card-title {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  margin-top: 0.5rem; font-family: var(--serif); font-variation-settings: "opsz" 14; font-size: 0.95rem;
+  line-height: 1.3; font-weight: 500; overflow-wrap: anywhere;
+}
+.card .item-meta { display: block; font-size: 0.8rem; }
 .glyph { width: 2.25rem; height: 3rem; display: block; overflow: visible; }
 .glyph .sheet { fill: var(--sheet); stroke: var(--rule); stroke-width: 1.2; }
 .glyph .mark { fill: none; stroke: var(--graphite-soft); stroke-width: 1.2; stroke-linecap: round; }
