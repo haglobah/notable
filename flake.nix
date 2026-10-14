@@ -7,11 +7,20 @@
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
+    # The sync server's own flake, for buildJobs below.
+    web.url = "path:./web";
   };
 
   outputs = inputs:
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+
+      # Built on every push to main by noldor's nix-builds service into the
+      # R2 cache, which formenos substitutes the sync server from. The
+      # service reads the root flake, so the web flake is re-exported here.
+      flake.buildJobs.x86_64-linux = {
+        inherit (inputs.web.packages.x86_64-linux) notable-server;
+      };
 
       perSystem = { system, ... }:
         let
