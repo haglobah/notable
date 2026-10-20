@@ -610,7 +610,8 @@ class NotableSyncClient @Inject constructor(
         try {
             if (url == s.libraryUrl) {
                 val plan = handle.withDocument { projector.prepareLibrary(it, url) }.get(60, TimeUnit.SECONDS)
-                val result = mirror.exclusive { projector.apply(plan) }
+                val result = mirror.exclusive { if (projector.isCurrent(plan)) projector.apply(plan) else null }
+                    ?: return requeue(s, url)
                 result.edits.forEach { dropPagePreviews(it.pageId) }
                 if (!RemoteEdits.publish(result.edits)) log.w("editor missed ${result.edits.size} deleted pages")
                 result.follow.forEach { e ->
@@ -621,7 +622,8 @@ class NotableSyncClient @Inject constructor(
                 warn(result.warnings)
             } else {
                 val plan = handle.withDocument { projector.prepareNotebook(it, url) }.get(60, TimeUnit.SECONDS)
-                val result = mirror.exclusive { projector.apply(plan) }
+                val result = mirror.exclusive { if (projector.isCurrent(plan)) projector.apply(plan) else null }
+                    ?: return requeue(s, url)
                 result.edits.forEach { dropPagePreviews(it.pageId) }
                 if (!RemoteEdits.publish(result.edits)) log.w("editor cache missed ${result.edits.size} remote edits; pages reload on open")
                 warn(result.warnings)
@@ -640,6 +642,12 @@ class NotableSyncClient @Inject constructor(
             // Its heads were not advanced; try again later even if nothing else changes.
             scope.launch { delay(30_000); if (session === s) s.queue.trySend(url) }
         }
+    }
+
+    /** A local write settled while [url]'s plan was prepared; prepare it again from the new heads. */
+    private fun requeue(s: Session, url: String) {
+        _projection.value = _projection.value.copy(running = false)
+        s.queue.trySend(url)
     }
 
     /**

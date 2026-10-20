@@ -200,6 +200,8 @@ class AutomergeProjector(
 
     class LibraryPlan internal constructor(
         val url: String,
+        /** The stored heads the diff started from; see [isCurrent]. */
+        internal val from: Array<ChangeHash>?,
         val heads: Array<ChangeHash>,
         val library: AmLibrary,
         val deletedFolders: Set<String>,
@@ -230,7 +232,21 @@ class AutomergeProjector(
                 }
             }
         }
-        return LibraryPlan(url, heads, library, deletedFolders, deletedEntries, touched)
+        return LibraryPlan(url, last, heads, library, deletedFolders, deletedEntries, touched)
+    }
+
+    /**
+     * False once a settle moved the plan's doc heads after the plan read them. Plans are prepared
+     * outside the mirror lock, so one can start before a local commit settles: applying it would
+     * write that commit back to Room as a remote edit, and set the heads back past later settles,
+     * so the next projection does it again. Call under the mirror lock, and prepare anew if false.
+     */
+    fun isCurrent(plan: LibraryPlan) = startsAt(plan.url, plan.from)
+    fun isCurrent(plan: NotebookPlan) = startsAt(plan.url, plan.from)
+
+    private fun startsAt(url: String, from: Array<ChangeHash>?): Boolean {
+        val now = state.heads(url)
+        return if (from == null) now == null else now != null && sameHeads(now, from)
     }
 
     fun apply(plan: LibraryPlan): LibraryProjection {
@@ -362,6 +378,8 @@ class AutomergeProjector(
 
     class NotebookPlan internal constructor(
         val url: String,
+        /** The stored heads the diff started from; see [isCurrent]. */
+        internal val from: Array<ChangeHash>?,
         val heads: Array<ChangeHash>,
         internal val shell: AmNotebook?,
         internal val pages: Map<String, AmPage>,
@@ -373,14 +391,14 @@ class AutomergeProjector(
         val last = state.heads(url)
         if (last == null) {
             val nb = AutomergeSchema.readNotebook(doc)
-            return NotebookPlan(url, heads, nb, nb.pages, null)
+            return NotebookPlan(url, null, heads, nb, nb.pages, null)
         }
-        if (sameHeads(last, heads)) return NotebookPlan(url, heads, null, emptyMap(), Delta())
+        if (sameHeads(last, heads)) return NotebookPlan(url, last, heads, null, emptyMap(), Delta())
         val delta = Delta()
         for (patch in doc.diff(last, heads)) delta.add(keysOf(patch), patch.action)
         val shell = AutomergeSchema.readNotebookShell(doc)
         val pages = delta.pagesToRead().mapNotNull { AutomergeSchema.readPage(doc, it) }.associateBy { it.id }
-        return NotebookPlan(url, heads, shell, pages, delta)
+        return NotebookPlan(url, last, heads, shell, pages, delta)
     }
 
     fun apply(plan: NotebookPlan): NotebookProjection {

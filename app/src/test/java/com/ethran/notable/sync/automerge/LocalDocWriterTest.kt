@@ -263,6 +263,25 @@ class LocalDocWriterTest {
     }
 
     @Test
+    fun `a plan prepared before the settle is stale and the next one is empty`() {
+        val d = migratedDevice()
+        val url = d.docs.library().notebooks.getValue("nb1").docUrl
+        val change = LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1")))
+        val receipt = d.writer.write(change)
+        // prepared outside the mirror lock, while the pen-up's Room write is still running
+        val stale = d.projector.prepareNotebook(d.docs.docs.getValue(url), url)
+        d.room.roomWrite(change)
+        d.writer.settle(receipt)
+        d.room.sink.writes = 0
+
+        assertFalse("applying it would echo s2 into the editor", d.projector.isCurrent(stale))
+        val fresh = d.projector.prepareNotebook(d.docs.docs.getValue(url), url)
+        assertTrue(d.projector.isCurrent(fresh))
+        assertTrue(d.projector.apply(fresh).edits.isEmpty())
+        assertEquals(0, d.room.sink.writes)
+    }
+
+    @Test
     fun `a notebook created here after the migration gets a doc and a library entry`() {
         val d = migratedDevice()
         d.create(LocalChange.PageUpserted(page("q1", "nb2"))) // page row first, as BookRepository.create does
