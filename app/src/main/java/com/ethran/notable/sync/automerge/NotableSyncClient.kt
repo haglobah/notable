@@ -18,6 +18,8 @@ import com.ethran.notable.data.db.StrokeDao
 import com.ethran.notable.data.getDbDir
 import com.ethran.notable.di.ApplicationScope
 import com.ethran.notable.io.ThumbnailUpdates
+import com.ethran.notable.utils.AppResult
+import com.ethran.notable.utils.DomainError
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CompletableDeferred
@@ -123,7 +125,7 @@ class NotableSyncClient @Inject constructor(
     private val events: AppEventBus,
     private val thumbnailUpdates: ThumbnailUpdates,
     @param:ApplicationScope private val scope: CoroutineScope,
-) : ContentMirror {
+) : ContentMirror, CodeDocs {
     private val root = File(context.filesDir, "notable-sync")
     private val accounts = AccountStore(File(root, "account.json"), KeystoreCipher(crypto))
     private val library = DeviceLibrary(root)
@@ -150,6 +152,12 @@ class NotableSyncClient @Inject constructor(
     @Volatile
     private var session: Session? = null
 
+    private val _code = MutableStateFlow<CodeDocState>(CodeDocState.Opening)
+    /** The code doc of the open library (ADR-002), re-read on every change of it or the library. */
+    override val code: StateFlow<CodeDocState> = _code.asStateFlow()
+    /** One code doc edit at a time, so this device never makes two code docs. */
+    private val codeLock = Mutex()
+
     private val commitLatency = LatencyStats()
     private val mirror = DocFirstMirror(
         writer = { session?.writer },
@@ -173,6 +181,8 @@ class NotableSyncClient @Inject constructor(
         var projectionJob: Job? = null
         /** Retries [outbox] and uploads [blobs]; see [startBackground]. */
         var backgroundJob: Job? = null
+        /** Follows the library's code doc; see [startCodeWatch]. */
+        var codeJob: Job? = null
         val queue = Channel<String>(Channel.UNLIMITED)
         val handles = java.util.concurrent.ConcurrentHashMap<String, DocHandle>()
         val listeners = java.util.concurrent.ConcurrentHashMap<String, ListenerRegistration>()
@@ -393,6 +403,7 @@ class NotableSyncClient @Inject constructor(
         } catch (e: Exception) {
             val why = e.message ?: e.javaClass.simpleName
             log.e("the device library could not be opened", e)
+            _code.value = CodeDocState.None
             _local.value = LocalLibraryStatus(owner = runCatching { library.state()?.owner }.getOrNull(), openError = why)
         }
     }
@@ -463,7 +474,76 @@ class NotableSyncClient @Inject constructor(
             canvasWidth = canvasWidth().toDouble(),
         )
         s.wake.trySend(Unit)
+        startCodeWatch(s, url)
     }
+
+    /**
+     * Follows the code doc (ADR-002): the library's `codeDocUrl`, which another device may set at
+     * any time, and that doc's changes. Each change publishes the doc's definitions in [code].
+     * Listeners only signal; the reads run on this job (automerge-java forbids blocking in them).
+     */
+    private fun startCodeWatch(s: Session, libraryUrl: String) {
+        s.codeJob?.cancel()
+        s.codeJob = scope.launch(Dispatchers.IO) {
+            val changed = Channel<Unit>(Channel.CONFLATED)
+            val library = findWithRetry(s.repo, libraryUrl) ?: return@launch
+            s.listeners["code:library"] = library.addChangeListener { changed.trySend(Unit) }
+            var followed: String? = null
+            var handle: DocHandle? = null
+            changed.trySend(Unit)
+            while (true) {
+                changed.receive()
+                if (session !== s) break
+                try {
+                    val url = library.withDocument { AutomergeSchema.codeDocUrlOf(it) }.get(60, TimeUnit.SECONDS)
+                    if (url != followed) {
+                        s.listeners.remove("code:doc")?.let { runCatching { it.remove() } }
+                        handle = url?.let { findWithRetry(s.repo, it) ?: throw IllegalStateException("the code doc $it has not arrived yet") }
+                        handle?.let { h -> s.listeners["code:doc"] = h.addChangeListener { changed.trySend(Unit) } }
+                        followed = url
+                    }
+                    val h = handle
+                    _code.value = if (url == null || h == null) CodeDocState.None
+                    else CodeDocState.Ready(url, h.withDocument { AutomergeSchema.readCode(it) }.get(60, TimeUnit.SECONDS))
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+                    log.e("reading the code doc failed", cause)
+                    _code.value = CodeDocState.Unreadable(followed ?: "?", cause.message ?: cause.javaClass.simpleName)
+                    // A doc that hasn't arrived yet: try again later even if nothing else changes.
+                    scope.launch { delay(30_000); changed.trySend(Unit) }
+                }
+            }
+        }
+    }
+
+    /** The open library's code doc writer, or why there is none. */
+    private suspend fun codeWriter(): CodeDocWriter {
+        firstOpen.await()
+        val s = session ?: throw IllegalStateException(
+            "the notebook library is not open" + (_local.value.openError?.let { ": $it" } ?: "")
+        )
+        val url = s.libraryUrl ?: throw IllegalStateException("the notebook library is not ready yet")
+        return CodeDocWriter(RepoLocalDocs(s.repo, s.storage, url))
+    }
+
+    private suspend fun <T> codeEdit(block: (CodeDocWriter) -> T): AppResult<T, DomainError> = withContext(Dispatchers.IO) {
+        try {
+            AppResult.Success(codeLock.withLock { block(codeWriter()) })
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.e("code doc edit failed", e)
+            AppResult.Error(DomainError.SyncError("The code doc could not be written: ${e.message ?: e.javaClass.simpleName}"))
+        }
+    }
+
+    override suspend fun define(def: AmCodeDef) = codeEdit { it.define(def) }
+
+    override suspend fun undefine(name: String) = codeEdit { it.undefine(name) }
+
+    override suspend fun codeDocBytes() = codeEdit { it.save() }
 
     /**
      * The session's edits for the docs: `pending-doc-writes.json`. An unreadable file is moved
@@ -524,6 +604,8 @@ class NotableSyncClient @Inject constructor(
         session = null
         s.writer = null
         s.backgroundJob?.cancel()
+        s.codeJob?.cancel()
+        _code.value = CodeDocState.Opening
         s.outbox.release()
         s.projectionJob?.cancel()
         s.listeners.values.forEach { runCatching { it.remove() } }
