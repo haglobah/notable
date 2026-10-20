@@ -15,6 +15,9 @@ interface GestureActions {
     fun goToNextPage()
     fun goToPreviousPage()
     fun toggleTool()
+
+    /** Switch to the select tool, or back to the tool used before it. */
+    fun toggleSelectTool()
     fun toggleZen()
     fun undo()
     fun redo()

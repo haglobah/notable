@@ -55,6 +55,10 @@ data class AppSettings(
     // Gestures
     val doubleTapAction: GestureAction = GestureAction.Undo,
     val twoFingerTapAction: GestureAction = GestureAction.ChangeTool,
+    // Off by default: while either is set, the shorter tap sequence waits
+    // DOUBLE_TAP_TIMEOUT_MS for the next tap before firing.
+    val tripleTapAction: GestureAction = GestureAction.None,
+    val twoFingerDoubleTapAction: GestureAction = GestureAction.None,
     val swipeLeftAction: GestureAction = GestureAction.NextPage,
     val swipeRightAction: GestureAction = GestureAction.PreviousPage,
     // Fired by *three*-finger swipes (two fingers are pan/zoom); the field
@@ -81,7 +85,7 @@ data class AppSettings(
 
     ) {
     enum class GestureAction {
-        None, Undo, Redo, PreviousPage, NextPage, ChangeTool, ToggleZen, Select
+        None, Undo, Redo, PreviousPage, NextPage, ChangeTool, ToggleZen, Select, ToggleSelectTool
     }
 
     enum class Position {

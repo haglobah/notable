@@ -127,6 +127,21 @@ class EditorControlTower(
         viewModel.onToolbarAction(ToolbarAction.ChangeMode(if (mode == Mode.Draw) Mode.Erase else Mode.Draw))
     }
 
+    // Tool to return to when toggling out of select; Draw if select was
+    // entered some other way (e.g. from the toolbar).
+    private var modeBeforeSelect = Mode.Draw
+
+    override fun toggleSelectTool() {
+        val mode = viewModel.toolbarState.value.mode
+        val next = if (mode == Mode.Select) {
+            modeBeforeSelect
+        } else {
+            modeBeforeSelect = mode
+            Mode.Select
+        }
+        viewModel.onToolbarAction(ToolbarAction.ChangeMode(next))
+    }
+
     override fun toggleZen() {
         viewModel.onToolbarAction(ToolbarAction.ToggleToolbar)
     }

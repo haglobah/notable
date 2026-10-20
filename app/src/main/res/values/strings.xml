@@ -26,6 +26,8 @@
     <string name="app_check_updates">Check for newer version</string>
     <string name="gestures_double_tap_action">Double Tap Action</string>
     <string name="gestures_two_finger_tap_action">Two Finger Tap Action</string>
+    <string name="gestures_triple_tap_action">Triple Tap Action</string>
+    <string name="gestures_two_finger_double_tap_action">Two Finger Double Tap Action</string>
     <string name="gestures_swipe_left_action">Swipe Left Action</string>
     <string name="gestures_swipe_right_action">Swipe Right Action</string>
     <string name="gestures_three_finger_swipe_left_action">Three Finger Swipe Left Action</string>
@@ -43,6 +45,7 @@
     <string name="gesture_action_toggle_pen_eraser">Toggle Pen / Eraser</string>
     <string name="gesture_action_toggle_zen_mode">Toggle Zen Mode</string>
     <string name="gesture_action_select">Select</string>
+    <string name="gesture_action_toggle_select_tool">Toggle Select Tool</string>
     <string name="details_notebook_pages">Pages: %1$d</string>
     <string name="details_notebook_created">Created: %1$s</string>
     <string name="details_notebook_last_updated">Last Updated: %1$s</string>

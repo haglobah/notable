@@ -70,6 +70,14 @@ class SettingsViewModel @Inject constructor(
             settings.twoFingerTapAction,
         ) { a -> updateSettings(settings.copy(twoFingerTapAction = a)) },
         GestureRowModel(
+            R.string.gestures_triple_tap_action,
+            settings.tripleTapAction,
+        ) { a -> updateSettings(settings.copy(tripleTapAction = a)) },
+        GestureRowModel(
+            R.string.gestures_two_finger_double_tap_action,
+            settings.twoFingerDoubleTapAction,
+        ) { a -> updateSettings(settings.copy(twoFingerDoubleTapAction = a)) },
+        GestureRowModel(
             (R.string.gestures_swipe_left_action),
             settings.swipeLeftAction,
         ) { a -> updateSettings(settings.copy(swipeLeftAction = a)) },
@@ -97,6 +105,7 @@ class SettingsViewModel @Inject constructor(
         AppSettings.GestureAction.ChangeTool to R.string.gesture_action_toggle_pen_eraser,
         AppSettings.GestureAction.ToggleZen to R.string.gesture_action_toggle_zen_mode,
         AppSettings.GestureAction.Select to R.string.gesture_action_select,
+        AppSettings.GestureAction.ToggleSelectTool to R.string.gesture_action_toggle_select_tool,
     )
 
 

@@ -27,6 +27,8 @@
 
     <string name="gestures_double_tap_action">Podwójne stuknięcie</string>
     <string name="gestures_two_finger_tap_action">Stuknięcie dwoma palcami</string>
+    <string name="gestures_triple_tap_action">Potrójne stuknięcie</string>
+    <string name="gestures_two_finger_double_tap_action">Podwójne stuknięcie dwoma palcami</string>
     <string name="gestures_swipe_left_action">Przeciągnięcie w lewo</string>
     <string name="gestures_swipe_right_action">Przeciągnięcie w prawo</string>
     <string name="gestures_three_finger_swipe_left_action">Przeciągnięcie trzema palcami w lewo</string>
@@ -48,6 +50,7 @@
 
     <!-- Notebook details -->
     <string name="gesture_action_select">Zaznaczenie</string>
+    <string name="gesture_action_toggle_select_tool">Przełącz narzędzie zaznaczania</string>
     <string name="details_notebook_pages">Strony: %1$d</string>
     <string name="details_notebook_created">Utworzono: %1$s</string>
     <string name="details_notebook_last_updated">Ostatnia aktualizacja: %1$s</string>

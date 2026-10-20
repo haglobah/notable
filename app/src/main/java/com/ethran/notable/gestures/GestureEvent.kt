@@ -4,9 +4,9 @@ import androidx.compose.ui.unit.IntRect
 
 /**
  * A recognized gesture — the value between recognition and acting on it.
- * Produced by [classifyGesture] at gesture end (plus [DoubleTap] and
- * [HoldSelect], which the receiver emits itself: double-tap needs awaiting a
- * second down, hold-select is the end of a modal mode). Continuous modes
+ * Produced by [classifyGesture] at gesture end (plus the multi-tap events
+ * and [HoldSelect], which the receiver emits itself: multi-taps need awaiting
+ * further downs, hold-select is the end of a modal mode). Continuous modes
  * (smooth scroll and the two-finger transform — pan plus continuous zoom)
  * stay streamed callbacks — they are not events.
  *
@@ -19,6 +19,8 @@ sealed interface GestureEvent {
 
     data class Tap(val fingers: Int) : GestureEvent
     data object DoubleTap : GestureEvent
+    data object TripleTap : GestureEvent
+    data object TwoFingerDoubleTap : GestureEvent
     data class Swipe(val fingers: Int, val direction: Direction) : GestureEvent
     data class HoldSelect(val rect: IntRect) : GestureEvent
 

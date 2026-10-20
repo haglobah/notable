@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
@@ -307,15 +308,37 @@ private fun finishModalGesture(recognizer: Recognizer, ctx: GestureContext): Boo
 
 /**
  * End-of-gesture handling: classify what the fingers did into
- * [GestureEvent]s, then act on each. The one-finger tap is special-cased
- * because double-tap recognition needs to await a second down — pump
- * territory, not classification.
+ * [GestureEvent]s, then act on each. Taps are special-cased because
+ * multi-tap recognition needs to await further downs — pump territory, not
+ * classification.
  */
 private suspend fun AwaitPointerEventScope.handleGestureEnd(
     recognizer: Recognizer,
     ctx: GestureContext,
 ) {
-    val events = classifyGesture(
+    val events = classify(recognizer, ctx)
+    if (events.isNotEmpty()) log.v("Gesture events: $events")
+
+    for (event in events) {
+        when {
+            event is GestureEvent.Tap && event.fingers == 1 -> {
+                handleOneFingerTap(recognizer.tracker, ctx)
+                return
+            }
+
+            event is GestureEvent.Tap && event.fingers == 2 &&
+                    ctx.appSettings.twoFingerDoubleTapAction != AppSettings.GestureAction.None -> {
+                handleTwoFingerTap(recognizer.tracker, ctx)
+                return
+            }
+
+            else -> dispatchEvent(event, ctx)
+        }
+    }
+}
+
+private fun classify(recognizer: Recognizer, ctx: GestureContext): List<GestureEvent> =
+    classifyGesture(
         tracker = recognizer.tracker,
         mode = recognizer.mode,
         flags = GestureFlags(
@@ -324,18 +347,84 @@ private suspend fun AwaitPointerEventScope.handleGestureEnd(
         ),
         thresholds = ctx.thresholds,
     )
-    if (events.isNotEmpty()) log.v("Gesture events: $events")
 
-    for (event in events) {
-        if (event is GestureEvent.Tap && event.fingers == 1) {
-            if (awaitDoubleTap(recognizer.tracker, ctx)) {
-                dispatchEvent(GestureEvent.DoubleTap, ctx)
-                return
-            }
-        } else {
-            dispatchEvent(event, ctx)
+/**
+ * A one-finger tap only seeds the double/triple-tap sequence. Without a
+ * triple-tap action the second down alone fires the double tap; with one,
+ * the second tap is tracked to its end and a third down is awaited, so the
+ * double tap fires [DOUBLE_TAP_TIMEOUT_MS] later.
+ */
+private suspend fun AwaitPointerEventScope.handleOneFingerTap(
+    first: PointerTracker,
+    ctx: GestureContext,
+) {
+    val secondDown = awaitNextTapDown(first, ctx) ?: return
+    if (ctx.appSettings.tripleTapAction == AppSettings.GestureAction.None) {
+        dispatchEvent(GestureEvent.DoubleTap, ctx)
+        return
+    }
+    withFollowUpGesture(secondDown, ctx) { second ->
+        when {
+            second.mode != GestureMode.Normal || !isOneFingerTap(second.tracker, ctx.thresholds) ->
+                finishStandaloneGesture(second, ctx)
+
+            awaitNextTapDown(second.tracker, ctx) != null ->
+                dispatchEvent(GestureEvent.TripleTap, ctx)
+
+            else -> dispatchEvent(GestureEvent.DoubleTap, ctx)
         }
     }
+}
+
+/**
+ * A two-finger tap waits for a second one. Anything else that follows
+ * resolves the first as a plain two-finger tap and is then handled as its own
+ * gesture (without starting another tap sequence).
+ */
+private suspend fun AwaitPointerEventScope.handleTwoFingerTap(
+    first: PointerTracker,
+    ctx: GestureContext,
+) {
+    val secondDown = awaitNextTapDown(first, ctx)
+    if (secondDown == null) {
+        dispatchEvent(GestureEvent.Tap(fingers = 2), ctx)
+        return
+    }
+    withFollowUpGesture(secondDown, ctx) { second ->
+        if (GestureEvent.Tap(fingers = 2) in classify(second, ctx)) {
+            dispatchEvent(GestureEvent.TwoFingerDoubleTap, ctx)
+        } else {
+            dispatchEvent(GestureEvent.Tap(fingers = 2), ctx)
+            finishStandaloneGesture(second, ctx)
+        }
+    }
+}
+
+/**
+ * Tracks the gesture starting at [down] to its end and hands its recognizer
+ * to [onCompleted]; an aborted or consumed follow-up is dropped. Cleans up
+ * like the outer gesture loop does.
+ */
+private suspend fun AwaitPointerEventScope.withFollowUpGesture(
+    down: PointerInputChange,
+    ctx: GestureContext,
+    onCompleted: suspend AwaitPointerEventScope.(Recognizer) -> Unit,
+) {
+    val recognizer = Recognizer()
+    recognizer.tracker.update(down)
+    try {
+        if (trackGesture(recognizer, ctx) != TrackResult.Completed) return
+        if (ctx.shouldAbort()) return
+        onCompleted(recognizer)
+    } finally {
+        cleanupGesture(recognizer, ctx)
+    }
+}
+
+/** Ends a gesture without starting a tap sequence from it. */
+private fun finishStandaloneGesture(recognizer: Recognizer, ctx: GestureContext) {
+    if (finishModalGesture(recognizer, ctx)) return
+    classify(recognizer, ctx).forEach { dispatchEvent(it, ctx) }
 }
 
 /**
@@ -353,6 +442,9 @@ private fun dispatchEvent(event: GestureEvent, ctx: GestureContext) {
         }
 
         GestureEvent.DoubleTap -> resolveGesture(ctx.appSettings.doubleTapAction, ctx)
+        GestureEvent.TripleTap -> resolveGesture(ctx.appSettings.tripleTapAction, ctx)
+        GestureEvent.TwoFingerDoubleTap ->
+            resolveGesture(ctx.appSettings.twoFingerDoubleTapAction, ctx)
 
         is GestureEvent.Swipe -> {
             val action = when (event.fingers) {
@@ -392,28 +484,27 @@ private fun dispatchEvent(event: GestureEvent, ctx: GestureContext) {
 }
 
 /**
- * Waits [DOUBLE_TAP_TIMEOUT_MS] for a second tap after a one-finger tap.
- * Returns true if a double-tap was recognized.
+ * Waits [DOUBLE_TAP_TIMEOUT_MS] for the next tap of a sequence after the
+ * gesture recorded in [previous]. Returns its down, or null if none came.
  */
-private suspend fun AwaitPointerEventScope.awaitDoubleTap(
-    tracker: PointerTracker,
+private suspend fun AwaitPointerEventScope.awaitNextTapDown(
+    previous: PointerTracker,
     ctx: GestureContext,
-): Boolean {
+): PointerInputChange? {
     return withTimeoutOrNull(DOUBLE_TAP_TIMEOUT_MS) {
-        val secondDown = awaitFirstDown()
-        val deltaTime = secondDown.uptimeMillis - tracker.lastInputTimestamp
-        log.v("Second down detected: ${secondDown.type}, position: ${secondDown.position}, deltaTime: $deltaTime")
+        val nextDown = awaitFirstDown()
+        val deltaTime = nextDown.uptimeMillis - previous.lastInputTimestamp
+        log.v("Next tap down detected: ${nextDown.type}, position: ${nextDown.position}, deltaTime: $deltaTime")
         if (deltaTime < DOUBLE_TAP_MIN_MS) {
             ctx.actions.showHint("Too quick for double click! time between: $deltaTime")
             return@withTimeoutOrNull null
-        } else {
-            log.v("double click!")
         }
-        if (secondDown.type != PointerType.Touch) {
-            log.i("Ignoring non-touch input during double-tap detection")
+        if (nextDown.type != PointerType.Touch) {
+            log.i("Ignoring non-touch input during multi-tap detection")
             return@withTimeoutOrNull null
         }
-    } != null
+        nextDown
+    }
 }
 
 
@@ -475,6 +566,8 @@ private fun resolveGesture(
         AppSettings.GestureAction.NextPage -> ctx.actions.goToNextPage()
 
         AppSettings.GestureAction.ChangeTool -> ctx.actions.toggleTool()
+
+        AppSettings.GestureAction.ToggleSelectTool -> ctx.actions.toggleSelectTool()
 
         AppSettings.GestureAction.ToggleZen -> ctx.actions.toggleZen()
 
