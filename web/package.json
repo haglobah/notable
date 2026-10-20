@@ -5,7 +5,8 @@
   "workspaces": [
     "schema",
     "server",
-    "app"
+    "app",
+    "repl"
   ],
   "engines": {
     "node": ">=24"

@@ -1,0 +1,25 @@
+{
+  "name": "@notable/repl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": { "notable-repl": "./src/cli.ts" },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "test": "node --test --test-concurrency=1 test/*.test.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@automerge/automerge": "3.5.0",
+    "@notable/schema": "0.1.0",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/ws": "8.18.2",
+    "typescript": "7.0.2"
+  }
+}
