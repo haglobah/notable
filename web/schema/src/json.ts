@@ -2,7 +2,7 @@
  * The expected-content JSON stored next to each golden fixture: dates as ISO-8601, bytes as
  * base64, everything else as in the model. Kotlin reads the same files (FixtureJson.kt).
  */
-import type { Library, Notebook, Page, Source } from "./model.ts"
+import type { CodeImage, Library, Notebook, Page, Source } from "./model.ts"
 
 type J = any
 
@@ -11,6 +11,7 @@ const b64 = (v: string) => Uint8Array.from(Buffer.from(v, "base64"))
 
 export function libraryFromJson(j: J): Library {
   return {
+    ...(j.codeDocUrl === undefined ? {} : { codeDocUrl: j.codeDocUrl }),
     folders: Object.fromEntries(Object.entries<J>(j.folders).map(([id, f]) =>
       [id, { id, title: f.title, parentId: f.parentId, createdAt: d(f.createdAt), updatedAt: d(f.updatedAt) }])),
     notebooks: Object.fromEntries(Object.entries<J>(j.notebooks).map(([id, n]) =>
@@ -45,6 +46,7 @@ export function notebookFromJson(j: J): Notebook {
 
 export function libraryToJson(l: Library): J {
   return {
+    ...(l.codeDocUrl === undefined ? {} : { codeDocUrl: l.codeDocUrl }),
     folders: Object.fromEntries(Object.values(l.folders).map(f =>
       [f.id, { title: f.title, parentId: f.parentId, createdAt: f.createdAt.toISOString(), updatedAt: f.updatedAt.toISOString() }])),
     notebooks: Object.fromEntries(Object.values(l.notebooks).map(n =>
@@ -72,5 +74,19 @@ export function notebookToJson(n: Notebook): J {
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
     }])),
+  }
+}
+
+export function codeFromJson(j: J): CodeImage {
+  return {
+    defs: Object.fromEntries(Object.entries<J>(j.defs).map(([name, x]) =>
+      [name, { name, source: x.source, hostApi: x.hostApi, updatedAt: d(x.updatedAt), device: x.device }])),
+  }
+}
+
+export function codeToJson(c: CodeImage): J {
+  return {
+    defs: Object.fromEntries(Object.values(c.defs).map(x =>
+      [x.name, { source: x.source, hostApi: x.hostApi, updatedAt: x.updatedAt.toISOString(), device: x.device }])),
   }
 }

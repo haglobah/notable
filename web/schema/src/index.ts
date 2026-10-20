@@ -1,5 +1,6 @@
 export * from "./model.ts"
 export * from "./write.ts"
-export { readLibrary, readNotebook, SchemaError } from "./read.ts"
+export { readLibrary, readNotebook, readCode, SchemaError } from "./read.ts"
+export { putDef, deleteDef, codeHistory, type DefVersion } from "./code.ts"
 export { decodeStrokePoints, Sb2Error, type StrokePoint, type DecodedStroke } from "./sb2.ts"
-export { libraryFromJson, notebookFromJson, libraryToJson, notebookToJson } from "./json.ts"
+export { libraryFromJson, notebookFromJson, libraryToJson, notebookToJson, codeFromJson, codeToJson } from "./json.ts"

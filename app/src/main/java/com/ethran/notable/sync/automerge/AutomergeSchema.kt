@@ -20,6 +20,10 @@ import java.util.Date
 object AutomergeSchema {
     const val LIBRARY = "notable/library"
     const val NOTEBOOK = "notable/notebook"
+    /** The live code image (ADR-002); versioned on its own. */
+    const val CODE = "notable/code"
+    /** The newest code doc version this reader understands. */
+    const val CODE_VERSION = 1
     /** Version of new docs: they hold nothing a version-1 reader would misread. */
     const val VERSION = 1L
     /** The newest version this reader understands. */
@@ -33,6 +37,7 @@ object AutomergeSchema {
         doc.startTransaction().apply {
             set(ObjectId.ROOT, "schema", NewValue.str(LIBRARY))
             set(ObjectId.ROOT, "version", VERSION.toInt())
+            library.codeDocUrl?.let { set(ObjectId.ROOT, "codeDocUrl", NewValue.str(it)) }
             val folders = set(ObjectId.ROOT, "folders", ObjectType.MAP)
             library.folders.values.forEach { putFolder(this, folders, it) }
             val notebooks = set(ObjectId.ROOT, "notebooks", ObjectType.MAP)
@@ -56,6 +61,47 @@ object AutomergeSchema {
             commit()
         }
     }
+
+    fun newCodeDocument(code: AmCodeImage): Document = Document().also { doc ->
+        doc.startTransaction().apply {
+            set(ObjectId.ROOT, "schema", NewValue.str(CODE))
+            set(ObjectId.ROOT, "version", CODE_VERSION)
+            val defs = set(ObjectId.ROOT, "defs", ObjectType.MAP)
+            code.defs.values.forEach { putCodeDef(this, defs, it) }
+            commit()
+        }
+    }
+
+    /**
+     * Redefines [d.name]: a new whole map replaces the old entry, never single fields of it, so two
+     * concurrent redefinitions resolve to one of them whole.
+     */
+    fun putCodeDef(tx: Transaction, defs: ObjectId, d: AmCodeDef) {
+        require(AmCodeDef.isDefName(d.name)) { "not a definition name: '${d.name}' (expected kind/name, e.g. command/clear-page)" }
+        require(d.hostApi >= 1) { "hostApi must be a positive integer, got ${d.hostApi}" }
+        val o = tx.set(defs, d.name, ObjectType.MAP)
+        tx.set(o, "source", NewValue.str(d.source))
+        tx.set(o, "hostApi", d.hostApi)
+        tx.set(o, "updatedAt", d.updatedAt)
+        tx.set(o, "device", NewValue.str(d.device))
+    }
+
+    /** The defs map of a code doc, for edits in a transaction. */
+    fun codeDefsOf(doc: Document): ObjectId {
+        val r = Reader(doc)
+        r.header(CODE, CODE_VERSION.toLong())
+        return r.map(ObjectId.ROOT, "defs", "defs")
+    }
+
+    /** The library's code doc URL, or null before the first definition; read without the rest. */
+    fun codeDocUrlOf(library: Document): String? {
+        val r = Reader(library)
+        r.header(LIBRARY)
+        return if (r.has(ObjectId.ROOT, "codeDocUrl")) r.str(ObjectId.ROOT, "codeDocUrl", "") else null
+    }
+
+    /** Points the library at its code doc (set once, on first use; see ADR-002). */
+    fun setCodeDocUrl(tx: Transaction, url: String) = tx.set(ObjectId.ROOT, "codeDocUrl", NewValue.str(url))
 
     fun putFolder(tx: Transaction, folders: ObjectId, f: AmFolder) {
         val o = tx.set(folders, f.id, ObjectType.MAP)
@@ -151,6 +197,8 @@ object AutomergeSchema {
         val folders = r.map(ObjectId.ROOT, "folders", "folders")
         val notebooks = r.map(ObjectId.ROOT, "notebooks", "notebooks")
         return AmLibrary(
+            // Optional (ADR-002): absent until the first definition is written.
+            codeDocUrl = if (r.has(ObjectId.ROOT, "codeDocUrl")) r.str(ObjectId.ROOT, "codeDocUrl", "") else null,
             folders = r.keys(folders).associateWith { id ->
                 val p = "folders.$id"
                 val o = r.map(folders, id, p)
@@ -173,6 +221,20 @@ object AutomergeSchema {
                 )
             },
         )
+    }
+
+    /** The code doc (ADR-002). Entries are read whole; a malformed one fails the doc, naming it. */
+    fun readCode(doc: Document): AmCodeImage {
+        val r = Reader(doc)
+        r.header(CODE, CODE_VERSION.toLong())
+        val defs = r.map(ObjectId.ROOT, "defs", "defs")
+        return AmCodeImage(r.keys(defs).associateWith { name ->
+            val p = "defs.$name"
+            val o = r.map(defs, name, p)
+            val hostApi = r.int(o, "hostApi", p)
+            if (hostApi < 1 || hostApi > Int.MAX_VALUE) throw SchemaException("$p.hostApi: invalid $hostApi")
+            AmCodeDef(name, r.str(o, "source", p), hostApi.toInt(), r.date(o, "updatedAt", p), r.str(o, "device", p))
+        })
     }
 
     private fun readSource(r: Reader, o: ObjectId, p: String): AmSource = when (val kind = r.str(o, "kind", p)) {
@@ -463,11 +525,11 @@ object AutomergeSchema {
         fun get(obj: ObjectId, key: String, p: String): AmValue =
             doc.get(obj, key).orElseThrow { SchemaException("${at(p, key)}: missing") }
 
-        fun header(expected: String) {
+        fun header(expected: String, supported: Long = SUPPORTED_VERSION) {
             val schema = str(ObjectId.ROOT, "schema", "")
             if (schema != expected) throw SchemaException("schema: expected '$expected', got '$schema'")
             val version = int(ObjectId.ROOT, "version", "")
-            if (version > SUPPORTED_VERSION) throw SchemaException("version: doc is version $version, newer than supported $SUPPORTED_VERSION; update the app")
+            if (version > supported) throw SchemaException("version: doc is version $version, newer than supported $supported; update the app")
             if (version < 1) throw SchemaException("version: invalid $version")
         }
 

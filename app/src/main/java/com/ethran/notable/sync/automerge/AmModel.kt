@@ -12,6 +12,11 @@ import java.util.Date
 data class AmLibrary(
     val folders: Map<String, AmFolder>,
     val notebooks: Map<String, AmNotebookEntry>,
+    /**
+     * `automerge:` URL of the library's code doc (ADR-002). Null until the first definition is
+     * written, and in libraries written before it existed.
+     */
+    val codeDocUrl: String? = null,
 )
 
 data class AmFolder(
@@ -119,6 +124,32 @@ data class AmImage(
     val createdAt: Date,
     val updatedAt: Date,
 )
+
+/** The code doc (ADR-002): one whole, immutable entry per definition name. */
+data class AmCodeImage(val defs: Map<String, AmCodeDef>)
+
+/**
+ * One definition. [source] is one JavaScript expression (usually a function), stored as a scalar
+ * string: two merged character edits of one function would not parse. Redefining replaces the
+ * whole entry, so the last writer wins per name; undefining deletes it.
+ */
+data class AmCodeDef(
+    /** Namespaced, e.g. "command/clear-page" (see [isDefName]). */
+    val name: String,
+    val source: String,
+    /** The host API version the source was written for; newer than the kernel's → failed. */
+    val hostApi: Int,
+    val updatedAt: Date,
+    /** Who wrote it, e.g. "android:Note Air 5C" or "pwa". */
+    val device: String,
+) {
+    companion object {
+        private val NAME = Regex("^[a-z][a-z0-9-]*/[A-Za-z0-9._-][A-Za-z0-9._/-]*$")
+
+        /** `<kind>/<rest>`: a lowercase kind, then letters, digits and `._-/`. Same rule as TS `isDefName`. */
+        fun isDefName(name: String) = NAME.matches(name)
+    }
+}
 
 /** A document that does not match the schema. Never repaired silently. */
 class SchemaException(message: String) : RuntimeException(message)

@@ -11,8 +11,9 @@
  */
 import { ImmutableString, getConflicts } from "@automerge/automerge"
 import {
-  BASE_VERSION, DELETED_PAGES_VERSION, LIBRARY_SCHEMA, NOTEBOOK_SCHEMA,
-  type Background, type Folder, type Image, type Library, type Notebook, type NotebookEntry, type Page, type Source, type Stroke,
+  BASE_VERSION, CODE_SCHEMA, CODE_VERSION, DELETED_PAGES_VERSION, LIBRARY_SCHEMA, NOTEBOOK_SCHEMA, isDefName,
+  type Background, type CodeDef, type CodeImage, type Folder, type Image, type Library, type Notebook, type NotebookEntry,
+  type Page, type Source, type Stroke,
 } from "./model.ts"
 
 const s = (v: string) => new ImmutableString(v)
@@ -43,6 +44,7 @@ export const notebookEntryValue = (x: NotebookEntry) => ({
 export const libraryValue = (x: Library) => ({
   schema: s(LIBRARY_SCHEMA),
   version: BASE_VERSION,
+  ...(x.codeDocUrl === undefined ? {} : { codeDocUrl: s(x.codeDocUrl) }),
   folders: Object.fromEntries(Object.values(x.folders).map(v => [v.id, folderValue(v)])),
   notebooks: Object.fromEntries(Object.values(x.notebooks).map(v => [v.id, notebookEntryValue(v)])),
 })
@@ -123,3 +125,21 @@ export function markPageLive(d: Record<string, any>, pageId: string) {
   if ("deleted" in page) delete page.deleted
   page.deleted = false
 }
+
+/*
+ * The code doc (ADR-002). A definition is a whole, immutable entry: redefining puts a new map
+ * under the name (`d.defs[name] = codeDefValue(def)`), never edits fields of the old one, so two
+ * concurrent redefinitions resolve to one of them whole. Undefining deletes the key.
+ */
+
+export const codeDefValue = (x: CodeDef) => {
+  if (!isDefName(x.name)) throw new TypeError(`not a definition name: '${x.name}' (expected kind/name, e.g. command/clear-page)`)
+  if (!Number.isInteger(x.hostApi) || x.hostApi < 1) throw new TypeError(`hostApi must be a positive integer, got ${x.hostApi}`)
+  return { source: s(x.source), hostApi: int(x.hostApi), updatedAt: x.updatedAt, device: s(x.device) }
+}
+
+export const codeValue = (x: CodeImage) => ({
+  schema: s(CODE_SCHEMA),
+  version: CODE_VERSION,
+  defs: Object.fromEntries(Object.values(x.defs).map(v => [v.name, codeDefValue(v)])),
+})

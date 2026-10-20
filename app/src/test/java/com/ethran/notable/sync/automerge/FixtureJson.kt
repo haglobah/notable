@@ -22,6 +22,14 @@ import java.util.Date
 object FixtureJson {
     fun library(file: File): AmLibrary = library(Json.parseToJsonElement(file.readText()).jsonObject)
     fun notebook(file: File): AmNotebook = notebook(Json.parseToJsonElement(file.readText()).jsonObject)
+    fun code(file: File): AmCodeImage = code(Json.parseToJsonElement(file.readText()).jsonObject)
+    /** The code doc URL `code-v1.json` names, which `library-code-v1.automerge` points at. */
+    fun codeDocUrl(file: File): String = Json.parseToJsonElement(file.readText()).jsonObject.str("codeDocUrl")
+
+    fun code(o: JsonObject) = AmCodeImage(o.obj("defs").mapValues { (name, v) ->
+        val d = v.jsonObject
+        AmCodeDef(name, d.str("source"), d.getValue("hostApi").jsonPrimitive.int, d.date("updatedAt"), d.str("device"))
+    })
 
     private fun JsonObject.str(k: String) = getValue(k).jsonPrimitive.content
     private fun JsonObject.strOrNull(k: String) = get(k).let { if (it == null || it is JsonNull) null else it.jsonPrimitive.content }
@@ -29,6 +37,7 @@ object FixtureJson {
     private fun JsonObject.obj(k: String) = getValue(k).jsonObject
 
     fun library(o: JsonObject) = AmLibrary(
+        codeDocUrl = o.strOrNull("codeDocUrl"),
         folders = o.obj("folders").mapValues { (id, v) ->
             val f = v.jsonObject
             AmFolder(id, f.str("title"), f.strOrNull("parentId"), f.date("createdAt"), f.date("updatedAt"))

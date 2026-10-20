@@ -1,0 +1,35 @@
+{
+  "codeDocUrl": "automerge:6cOdEdOcUrLpLaCeHoLdEr123456",
+  "defs": {
+    "command/hello": {
+      "source": "() => notable.snack(\"Hallo – 🙂 from the image\")",
+      "hostApi": 1,
+      "updatedAt": "2026-10-20T08:00:00.000Z",
+      "device": "android:Note Air 5C"
+    },
+    "command/count-notebooks": {
+      "source": "({\n  title: \"Count notebooks\",\n  run: () => {\n    const n = Object.keys(notable.library().notebooks).length\n    notable.snack(n + \" notebooks\")\n    return n\n  },\n})",
+      "hostApi": 1,
+      "updatedAt": "2026-10-20T08:01:00.000Z",
+      "device": "pwa"
+    },
+    "command/broken": {
+      "source": "(() => {\n  const ok = 1\n  throw new Error(\"broken on purpose\")\n})()",
+      "hostApi": 1,
+      "updatedAt": "2026-10-20T08:02:00.000Z",
+      "device": "pwa"
+    },
+    "command/syntax": {
+      "source": "() => {",
+      "hostApi": 1,
+      "updatedAt": "2026-10-20T08:03:00.000Z",
+      "device": "pwa"
+    },
+    "command/future": {
+      "source": "() => notable.fromTheFuture()",
+      "hostApi": 2,
+      "updatedAt": "2026-10-20T08:04:00.000Z",
+      "device": "android:Note Air 5C"
+    }
+  }
+}

@@ -5,6 +5,8 @@
  *   fixtures/page-deleted.automerge          notebook-v1 with p-2 deleted
  *   fixtures/page-delete-vs-draw.automerge   p-2 deleted in one copy and drawn on (stroke
  *                                            "drawn-after-delete") in another, merged
+ *   fixtures/code-v1.json, code-v1.automerge  the code doc (ADR-002): expected content and the doc
+ *   fixtures/library-code-v1.automerge       library-v1 with codeDocUrl (code-v1.json's)
  * Stroke points are the Kotlin encoder's bytes from fixtures/sb2-strokes.json.
  *
  * Run: npm run fixtures (from web/schema). Regenerate only for an intentional schema change.
@@ -13,7 +15,8 @@ import { readFileSync, writeFileSync } from "node:fs"
 import * as A from "@automerge/automerge"
 import {
   libraryValue, notebookValue, libraryToJson, notebookToJson, strokeValue, deletePage, markPageLive,
-  type Library, type Notebook,
+  codeValue, codeToJson,
+  type CodeImage, type Library, type Notebook,
 } from "../src/index.ts"
 
 const dir = new URL("../fixtures/", import.meta.url)
@@ -105,11 +108,53 @@ const notebook: Notebook = {
   },
 }
 
+// Read by both runtimes' tests too: what loads, what fails and why must match on both clients.
+const CODE_DOC_URL = "automerge:6cOdEdOcUrLpLaCeHoLdEr123456"
+const code: CodeImage = {
+  defs: {
+    "command/hello": {
+      name: "command/hello", source: `() => notable.snack("Hallo – 🙂 from the image")`, hostApi: 1,
+      updatedAt: t("2026-10-20T08:00:00.000Z"), device: "android:Note Air 5C",
+    },
+    "command/count-notebooks": {
+      name: "command/count-notebooks",
+      source: [
+        "({",
+        "  title: \"Count notebooks\",",
+        "  run: () => {",
+        "    const n = Object.keys(notable.library().notebooks).length",
+        "    notable.snack(n + \" notebooks\")",
+        "    return n",
+        "  },",
+        "})",
+      ].join("\n"),
+      hostApi: 1, updatedAt: t("2026-10-20T08:01:00.000Z"), device: "pwa",
+    },
+    "command/broken": {
+      name: "command/broken",
+      source: ["(() => {", "  const ok = 1", "  throw new Error(\"broken on purpose\")", "})()"].join("\n"),
+      hostApi: 1, updatedAt: t("2026-10-20T08:02:00.000Z"), device: "pwa",
+    },
+    "command/syntax": {
+      name: "command/syntax", source: "() => {", hostApi: 1,
+      updatedAt: t("2026-10-20T08:03:00.000Z"), device: "pwa",
+    },
+    "command/future": {
+      name: "command/future", source: "() => notable.fromTheFuture()", hostApi: 2,
+      updatedAt: t("2026-10-20T08:04:00.000Z"), device: "android:Note Air 5C",
+    },
+  },
+}
+
 const write = (name: string, data: string | Uint8Array) => writeFileSync(new URL(name, dir), data)
 write("library-v1.json", JSON.stringify(libraryToJson(library), null, 2) + "\n")
 write("notebook-v1.json", JSON.stringify(notebookToJson(notebook), null, 2) + "\n")
 write("library-v1.automerge", A.save(A.from(libraryValue(library) as Record<string, unknown>)))
 write("notebook-v1.automerge", A.save(A.from(notebookValue(notebook) as Record<string, unknown>)))
+
+write("code-v1.json", JSON.stringify({ codeDocUrl: CODE_DOC_URL, ...codeToJson(code) }, null, 2) + "\n")
+write("code-v1.automerge", A.save(A.from(codeValue(code) as Record<string, unknown>)))
+write("library-code-v1.automerge", A.save(A.from(libraryValue({ ...library, codeDocUrl: CODE_DOC_URL }) as Record<string, unknown>)))
 
 // Delete against draw (ADR-001): the drawing brings the page back.
 type D = Record<string, any>
@@ -119,4 +164,4 @@ const deleter = A.change(A.clone(origin), d => deletePage(d, "p-2"))
 const drawer = A.change(A.clone(origin), d => { d.pages["p-2"].strokes["drawn-after-delete"] = drawn; markPageLive(d, "p-2") })
 write("page-deleted.automerge", A.save(deleter))
 write("page-delete-vs-draw.automerge", A.save(A.merge(A.clone(deleter), drawer)))
-console.log("wrote library-v1, notebook-v1 and page-delete fixtures")
+console.log("wrote library-v1, notebook-v1, page-delete and code fixtures")

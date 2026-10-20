@@ -6,8 +6,8 @@
 import { isImmutableString } from "@automerge/automerge"
 import { isPageDeleted } from "./write.ts"
 import {
-  LIBRARY_SCHEMA, NOTEBOOK_SCHEMA, SCHEMA_VERSION,
-  type Background, type EntryKind, type Library, type Notebook, type Page, type Source,
+  CODE_SCHEMA, CODE_VERSION, LIBRARY_SCHEMA, NOTEBOOK_SCHEMA, SCHEMA_VERSION,
+  type Background, type CodeDef, type CodeImage, type EntryKind, type Library, type Notebook, type Page, type Source,
 } from "./model.ts"
 
 export class SchemaError extends Error {}
@@ -70,12 +70,12 @@ function bytes(o: Obj, k: string, p: string): Uint8Array {
   return Uint8Array.from(v)
 }
 
-function header(doc: Obj, expected: string) {
+function header(doc: Obj, expected: string, supported = SCHEMA_VERSION) {
   const schema = str(doc, "schema", "")
   if (schema !== expected) throw new SchemaError(`schema: expected '${expected}', got '${schema}'`)
   const version = int(field(doc, "version", ""), "version")
-  if (version > SCHEMA_VERSION) {
-    throw new SchemaError(`version: doc is version ${version}, newer than supported ${SCHEMA_VERSION}; update the app`)
+  if (version > supported) {
+    throw new SchemaError(`version: doc is version ${version}, newer than supported ${supported}; update the app`)
   }
   if (version < 1) throw new SchemaError(`version: invalid ${version}`)
 }
@@ -85,7 +85,10 @@ export function readLibrary(doc: unknown): Library {
   header(d, LIBRARY_SCHEMA)
   const folders = map(d, "folders", "")
   const notebooks = map(d, "notebooks", "")
+  // Optional (ADR-002): absent until the first definition is written.
+  const codeDocUrl = "codeDocUrl" in d && d.codeDocUrl !== undefined ? scalar(d.codeDocUrl, "codeDocUrl") : undefined
   return {
+    ...(codeDocUrl === undefined ? {} : { codeDocUrl }),
     folders: Object.fromEntries(Object.keys(folders).map(id => {
       const p = `folders.${id}`
       const o = map(folders, id, "folders")
@@ -106,6 +109,22 @@ export function readLibrary(doc: unknown): Library {
         createdAt: date(o, "createdAt", p),
         updatedAt: date(o, "updatedAt", p),
       }]
+    })),
+  }
+}
+
+/** The code doc (ADR-002). Entries are read whole; a malformed one fails the doc, naming it. */
+export function readCode(doc: unknown): CodeImage {
+  const d = doc as Obj
+  header(d, CODE_SCHEMA, CODE_VERSION)
+  const defs = map(d, "defs", "")
+  return {
+    defs: Object.fromEntries(Object.keys(defs).map((name): [string, CodeDef] => {
+      const p = `defs.${name}`
+      const o = map(defs, name, "defs")
+      const hostApi = int(field(o, "hostApi", p), `${p}.hostApi`)
+      if (hostApi < 1) throw new SchemaError(`${p}.hostApi: invalid ${hostApi}`)
+      return [name, { name, source: str(o, "source", p), hostApi, updatedAt: date(o, "updatedAt", p), device: str(o, "device", p) }]
     })),
   }
 }

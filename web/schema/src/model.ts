@@ -6,6 +6,8 @@
 
 export const LIBRARY_SCHEMA = "notable/library"
 export const NOTEBOOK_SCHEMA = "notable/notebook"
+/** The live code image (ADR-002); versioned on its own, see CODE_VERSION. */
+export const CODE_SCHEMA = "notable/code"
 /** The newest version readers understand. */
 export const SCHEMA_VERSION = 2
 /** New docs: they hold nothing a version-1 reader would misread. */
@@ -19,6 +21,11 @@ export const DEFAULT_CANVAS_WIDTH = 1860
 export type Library = {
   folders: Record<string, Folder>
   notebooks: Record<string, NotebookEntry>
+  /**
+   * `automerge:` URL of the library's code doc (ADR-002). Optional: it is set when the first
+   * definition is written, and libraries written before it existed lack it.
+   */
+  codeDocUrl?: string
 }
 
 export type Folder = { id: string; title: string; parentId: string | null; createdAt: Date; updatedAt: Date }
@@ -97,3 +104,30 @@ export type Image = {
   createdAt: Date
   updatedAt: Date
 }
+
+/* ------------------------------ code doc (ADR-002) ------------------------------ */
+
+/** The newest code doc version readers understand. */
+export const CODE_VERSION = 1
+
+/** The code doc: one whole, immutable entry per definition name. */
+export type CodeImage = { defs: Record<string, CodeDef> }
+
+/**
+ * One definition. `source` is one JavaScript expression (usually a function) and a scalar string,
+ * never collaborative Text: two merged character edits of one function would not parse.
+ * Redefining replaces the whole entry, so the last writer wins per name; undefining deletes it.
+ */
+export type CodeDef = {
+  /** Namespaced, e.g. "command/clear-page" (see isDefName). */
+  name: string
+  source: string
+  /** The host API version the source was written for; newer than the kernel's → failed. */
+  hostApi: number
+  updatedAt: Date
+  /** Who wrote it, e.g. "android:Note Air 5C" or "pwa"; shown in `ls` and history. */
+  device: string
+}
+
+/** `<kind>/<rest>`: a lowercase kind, then letters, digits and `._-/`. */
+export const isDefName = (name: string) => /^[a-z][a-z0-9-]*\/[A-Za-z0-9._-][A-Za-z0-9._/-]*$/.test(name)

@@ -11,7 +11,7 @@ Map keys are ids. Ids are not repeated inside entries.
 **Library doc** (one per account):
 
 ```
-{ schema: "notable/library", version: 1,
+{ schema: "notable/library", version: 1, codeDocUrl?,
   folders:   { <folderId>: { title, parentId|null, createdAt, updatedAt } },
   notebooks: { <notebookId>: { docUrl, title, folderId|null, kind: "notebook"|"quickPage",
                                source: { kind: "none"|"pdf"|"epub", blob|null, layout?: {w,h,em} },
@@ -29,6 +29,25 @@ Map keys are ids. Ids are not repeated inside entries.
                                                 createdAt, updatedAt } },
                        images:  { <imageId>: { blob, rect: [x,y,w,h], createdAt, updatedAt } } } } }
 ```
+
+**Code doc** (one per library, ADR-002; its own `version`):
+
+```
+{ schema: "notable/code", version: 1,
+  defs: { <name>: { source, hostApi, updatedAt, device } } }
+```
+
+- `codeDocUrl` (optional, scalar string) in the library points at it. It is set when the first
+  definition is written; until then the image is empty. Adding it kept the library at `version: 1`:
+  both readers ignore keys they don't know.
+- `name` is `<kind>/<rest>` (`command/clear-page`, `toolbar/layout`; `isDefName`). `source` is one
+  JavaScript expression, a scalar string, never Text. `hostApi` is the integer host API version the
+  source needs. `device` names the writer.
+- **Each definition is a whole, immutable entry**, like strokes: redefining puts a new map under the
+  name (`putDef` / `AutomergeSchema.putCodeDef`), undefining deletes the key (`deleteDef`). Two
+  concurrent redefinitions resolve to one of them whole.
+- History is Automerge's: `codeHistory(doc, name)` lists every version a name had, including a
+  concurrent loser. Rollback writes one again with a new `updatedAt`.
 
 - `blob` is the sha256 hex digest of a file in the server's blob store.
 - `background.type` is an Android `BackgroundType` key: `native`, `image`, `imagerepeating`,
@@ -93,6 +112,8 @@ Map keys are ids. Ids are not repeated inside entries.
 | `*-from-kotlin.automerge` | Kotlin `GoldenFixtureTest` |
 | `page-deleted.automerge`, `page-delete-vs-draw.automerge` | `npm run fixtures` (p-2 deleted; deleted in one copy and drawn on in another, merged) |
 | `page-deleted-from-kotlin.automerge`, `page-delete-vs-draw-from-kotlin.automerge` | Kotlin `GoldenFixtureTest` |
+| `code-v1.json`, `code-v1.automerge`, `library-code-v1.automerge` | `npm run fixtures` (the code doc, and library-v1 with `codeDocUrl`); the defs are also loaded by both runtimes' tests |
+| `code-from-kotlin.automerge`, `library-code-from-kotlin.automerge` | Kotlin `CodeDocSchemaTest` |
 | `projection-v1.json` | `npm run projection-fixture` in `web/app` (TS `project()`); read by Kotlin `ProjectionParityTest` |
 
 Regenerate only for an intentional change. Kotlin fixtures: `UPDATE_FIXTURES=1 ./gradlew
