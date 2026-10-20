@@ -11,6 +11,7 @@ import { docKeyId, docKeyOf, type DocKey } from "../lib/pdfProtocol.ts"
 import { inkSignature } from "../lib/cover.ts"
 import { loadImage } from "../lib/paint.ts"
 import { pdfFileName } from "../lib/project.ts"
+import { MIN_ZOOM, attachPinchZoom, type PinchZoom } from "../lib/zoom.ts"
 import { useSession } from "./session.tsx"
 
 /** Read-only pages with the Boox's ink on top, updating live, and the one download: a PDF. */
@@ -172,16 +173,33 @@ function Pages(p: { nb: Notebook; entry: NotebookEntry; onCurrent: (index: numbe
     return v instanceof Error ? v : null
   }
 
+  let scroller!: HTMLDivElement
+  let list!: HTMLOListElement
+  let pinch: PinchZoom | undefined
+  const [zoom, setZoom] = createSignal(MIN_ZOOM)
+  onMount(() => {
+    pinch = attachPinchZoom(scroller, list, zoom, setZoom)
+    onCleanup(() => pinch!.detach())
+  })
+  const fit = () => pinch?.zoomTo(MIN_ZOOM, { x: window.innerWidth / 2, y: window.innerHeight / 2 })
+
   return (
-    <ol class="pages">
-      <For each={p.nb.pageOrder}>
-        {(id, i) => (
-          <Show when={pages().get(id)}>
-            {x => <PageView sized={x()} cw={cw()} n={i() + 1} docError={docError(x().key)} onCurrent={() => p.onCurrent(i())} />}
-          </Show>
-        )}
-      </For>
-    </ol>
+    <>
+      <div class="pages-scroller" ref={scroller}>
+        <ol class="pages" ref={list} style={{ width: `${zoom() * 100}%`, "--zoom": zoom() }}>
+          <For each={p.nb.pageOrder}>
+            {(id, i) => (
+              <Show when={pages().get(id)}>
+                {x => <PageView sized={x()} cw={cw()} n={i() + 1} docError={docError(x().key)} onCurrent={() => p.onCurrent(i())} />}
+              </Show>
+            )}
+          </For>
+        </ol>
+      </div>
+      <Show when={zoom() > MIN_ZOOM}>
+        <button class="button zoom-fit" type="button" onClick={fit}>Fit width ({Math.round(zoom() * 100)}%)</button>
+      </Show>
+    </>
   )
 }
 

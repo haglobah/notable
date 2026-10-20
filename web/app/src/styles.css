@@ -237,7 +237,13 @@ button, input { font: inherit; color: inherit; }
 .reader-progress { color: var(--graphite-soft); font-size: 0.925rem; font-variant-numeric: tabular-nums; }
 
 /* Pages are paper in both themes: the ink and the documents were made on white. */
-.pages { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+/* Zoomed pages scroll sideways here and down with the window; pinching is ours (lib/zoom.ts), not the browser's. */
+.pages-scroller { overflow-x: auto; overflow-y: hidden; touch-action: pan-x pan-y; overscroll-behavior-x: contain; }
+.pages { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(1rem * var(--zoom, 1)); }
+.zoom-fit {
+  position: fixed; z-index: 10; right: var(--gutter); bottom: calc(var(--gutter) + env(safe-area-inset-bottom));
+  font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+}
 .page {
   position: relative; width: 100%; background: #ffffff; border-radius: var(--radius-sheet);
   box-shadow: 0 0 0 1px var(--rule), 0 1px 3px rgb(0 0 0 / 0.08); overflow: hidden;
