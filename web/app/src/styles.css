@@ -262,3 +262,17 @@ button, input { font: inherit; color: inherit; }
 .center { min-height: 60dvh; display: grid; place-items: center; text-align: center; padding: var(--gutter); color: var(--graphite-soft); }
 .problem { max-width: 32rem; margin: 3rem auto; padding: 0 var(--gutter); }
 .problem h1 { font-family: var(--serif); font-weight: 500; }
+
+/* Live code (ADR-002) */
+.code-view { max-width: var(--measure); }
+.code-head { font-family: var(--serif); font-weight: 500; font-size: 1.15rem; margin: 1.5rem 0 0.75rem; }
+.code-hint { margin: 0 0 0.75rem; font-size: 0.9rem; color: var(--graphite-soft); }
+.code-failed { margin: 0 0 1rem; padding-left: 1.1rem; font-size: 0.9rem; color: var(--warn); }
+.code-log { list-style: none; margin: 0 0 0.75rem; padding: 0; display: grid; gap: 0.5rem; }
+.code-in, .code-out { margin: 0; padding: 0.5rem 0.7rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85rem; border-radius: var(--radius-control); }
+.code-in { background: var(--sheet); color: var(--graphite-soft); }
+.code-out:not(.alert) { background: var(--pen-wash); }
+.code-form { display: grid; gap: 0.5rem; justify-items: start; }
+.code-input { width: 100%; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace; padding: 0.6rem 0.7rem; border: 1px solid var(--rule); border-radius: var(--radius-control); background: var(--sheet); color: var(--graphite); }
+.code-safe { display: flex; gap: 0.5rem; align-items: center; margin-top: 1.5rem; font-size: 0.9rem; color: var(--graphite-soft); }
+.toast { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); max-width: calc(100vw - 2 * var(--gutter)); margin: 0; padding: 0.7rem 1rem; border-radius: var(--radius-control); background: var(--graphite); color: var(--paper); font-size: 0.95rem; }

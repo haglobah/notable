@@ -21,8 +21,11 @@ buildNpmPackage {
       ../package-lock.json
       ../schema/package.json
       ../schema/src
+      ../schema/runtime
       ../server/package.json
       ../server/src
+      ../repl/package.json
+      ../repl/src
       ../app/package.json
       ../app/index.html
       ../app/vite.config.ts
@@ -32,7 +35,7 @@ buildNpmPackage {
     ];
   };
 
-  npmDepsHash = "sha256-SovRMUmywvp92YyEFI9yHUolBLssk2RNxAMre7pwPZ8=";
+  npmDepsHash = "sha256-aNT6Vl7+1MqZEh4QDjdQFx9GPc6iAakUMPmfzo2J/Rc=";
 
   nodejs = nodejs_24;
   nativeBuildInputs = [ makeWrapper ];

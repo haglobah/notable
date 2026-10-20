@@ -3,6 +3,7 @@ import type { Repo } from "@automerge/automerge-repo"
 import type { LibraryState } from "../lib/library.ts"
 import type { Me } from "../lib/session.ts"
 import type { Uploads } from "./Uploads.tsx"
+import type { ImageService } from "../image/service.ts"
 
 export type Session = {
   me: Me
@@ -10,6 +11,8 @@ export type Session = {
   library: Accessor<LibraryState>
   uploads: Uploads
   connected: Accessor<boolean>
+  /** The live code image (ADR-002). */
+  image: ImageService
   logOut: () => Promise<void>
 }
 

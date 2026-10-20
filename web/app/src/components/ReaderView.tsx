@@ -72,10 +72,29 @@ export function ReaderView() {
           </Show>
           <Show when={handle() && nb()}>
             <Download handle={handle()!} entry={e()} />
-            <Pages nb={nb()!} entry={e()} />
+            <Commands />
+            <Pages nb={nb()!} entry={e()} onCurrent={i => {
+              const n = nb()
+              s.image.setOpenPage(n ? { id: n.pageOrder[i], notebookId: e().kind === "quickPage" ? null : e().id, index: i, pageCount: n.pageOrder.length } : null)
+            }} />
           </Show>
         </article>
       )}
+    </Show>
+  )
+}
+
+/** The live code image's commands (ADR-002); errors show as a toast. */
+function Commands() {
+  const s = useSession()
+  onCleanup(() => s.image.setOpenPage(null))
+  return (
+    <Show when={s.image.commands().length > 0}>
+      <div class="reader-actions" aria-label="Commands">
+        <For each={s.image.commands()}>
+          {c => <button class="button quiet" type="button" onClick={() => s.image.runCommand(c.id)}>{c.title}</button>}
+        </For>
+      </div>
     </Show>
   )
 }
@@ -120,7 +139,7 @@ function Download(p: { handle: DocHandle<unknown>; entry: NotebookEntry }) {
 
 type Sized = { id: string; page: Page; bg: PageBackground; key: DocKey | null; height: number }
 
-function Pages(p: { nb: Notebook; entry: NotebookEntry }) {
+function Pages(p: { nb: Notebook; entry: NotebookEntry; onCurrent: (index: number) => void }) {
   const cw = () => canvasWidthOf(p.nb)
   // Each source document's page sizes, fetched once; a document page fixes the page's height.
   const [sizes, setSizes] = createSignal<Record<string, [number, number][] | Error>>({})
@@ -158,7 +177,7 @@ function Pages(p: { nb: Notebook; entry: NotebookEntry }) {
       <For each={p.nb.pageOrder}>
         {(id, i) => (
           <Show when={pages().get(id)}>
-            {x => <PageView sized={x()} cw={cw()} n={i() + 1} docError={docError(x().key)} />}
+            {x => <PageView sized={x()} cw={cw()} n={i() + 1} docError={docError(x().key)} onCurrent={() => p.onCurrent(i())} />}
           </Show>
         )}
       </For>
@@ -169,7 +188,7 @@ function Pages(p: { nb: Notebook; entry: NotebookEntry }) {
 /** Larger canvases hit iOS's per-canvas limit and a phone's memory. */
 const MAX_CANVAS_PIXELS = 12_000_000
 
-function PageView(p: { sized: Sized; cw: number; n: number; docError: Error | null }) {
+function PageView(p: { sized: Sized; cw: number; n: number; docError: Error | null; onCurrent: () => void }) {
   let box!: HTMLLIElement
   let bgCanvas!: HTMLCanvasElement
   let inkCanvas!: HTMLCanvasElement
@@ -182,9 +201,12 @@ function PageView(p: { sized: Sized; cw: number; n: number; docError: Error | nu
     // Draw pages within about a screen of the viewport; free the canvases of the rest.
     const io = new IntersectionObserver(es => setNear(es[0].isIntersecting), { rootMargin: "120% 0px" })
     io.observe(box)
+    // The page across the middle of the viewport is the open page (notable.page()).
+    const middle = new IntersectionObserver(es => { if (es[0].isIntersecting) p.onCurrent() }, { rootMargin: "-50% 0px -50% 0px" })
+    middle.observe(box)
     const ro = new ResizeObserver(() => setWidth(box.clientWidth))
     ro.observe(box)
-    onCleanup(() => { io.disconnect(); ro.disconnect() })
+    onCleanup(() => { io.disconnect(); middle.disconnect(); ro.disconnect() })
   })
 
   const pixels = createMemo(() => {

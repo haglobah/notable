@@ -10,6 +10,8 @@ import { createUploads } from "./components/Uploads.tsx"
 import { SessionContext, useSession } from "./components/session.tsx"
 import { LibraryView } from "./components/LibraryView.tsx"
 import { ReaderView } from "./components/ReaderView.tsx"
+import { CodeView } from "./components/CodeView.tsx"
+import { startImage } from "./image/service.ts"
 
 type Phase =
   | { p: "checking" }
@@ -96,6 +98,8 @@ export function App() {
 function LoggedIn(props: { me: Me; repo: Repo; library: DocHandle<unknown>; offline: boolean; onEnded: () => void; onLoggedOut: () => Promise<void> }) {
   const library = useLibrary(props.library)
   const uploads = createUploads({ repo: props.repo, library: props.library, maxBlobBytes: props.me.maxBlobBytes, onUnauthorized: props.onEnded })
+  const image = startImage(props.repo, props.library, library)
+  onCleanup(() => image.stop())
   const [connected, setConnected] = createSignal(props.repo.peers.length > 0)
   const net = props.repo.networkSubsystem
   const onPeer = () => setConnected(true)
@@ -127,13 +131,14 @@ function LoggedIn(props: { me: Me; repo: Repo; library: DocHandle<unknown>; offl
     for (const item of shared) uploads.add([item.file], null, () => item.remove())
   })
 
-  const session = { me: props.me, repo: props.repo, library, uploads, connected, logOut: props.onLoggedOut }
+  const session = { me: props.me, repo: props.repo, library, uploads, connected, image, logOut: props.onLoggedOut }
   return (
     <SessionContext.Provider value={session}>
       <Router root={Shell}>
         <Route path="/" component={LibraryView} />
         <Route path="/f/:folderId" component={LibraryView} />
         <Route path="/n/:notebookId" component={ReaderView} />
+        <Route path="/code" component={CodeView} />
         <Route path="*" component={NotFound} />
       </Router>
     </SessionContext.Provider>
@@ -167,6 +172,7 @@ function Shell(props: ParentProps) {
       <header class="topbar">
         <Wordmark href="/" />
         <div class="topbar-end">
+          <a class="button text" href="/code">Code</a>
           <span class={`status${s.connected() ? " connected" : ""}`} role="status">
             {s.connected() ? "Connected" : "Offline"}
           </span>
@@ -189,6 +195,9 @@ function Shell(props: ParentProps) {
         </p>
       </Show>
       <main>{props.children}</main>
+      <Show when={s.image.toast()}>
+        {t => <p class="toast" role="status">{t()}</p>}
+      </Show>
     </div>
   )
 }
