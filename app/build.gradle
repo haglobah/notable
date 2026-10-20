@@ -119,6 +119,8 @@ android {
     namespace = 'com.ethran.notable'
     sourceSets {
         androidTest.assets.srcDirs += files("${project.projectDir}/schemas")
+        // The live code image's prelude, shared with the PWA (docs/adr/ADR-002).
+        main.assets.srcDirs += files("${project.projectDir}/../web/schema/runtime")
     }
     testOptions {
         unitTests {
@@ -129,6 +131,12 @@ android {
             // fail at class-init with ExceptionInInitializerError / NoSuchMethodException.
         }
     }
+}
+
+// The QuickJS Android AAR carries only Android .so files, which a JVM test can't load. Unit tests
+// run the same classes from quickjs-kt-jvm, whose jar has the desktop libraries.
+configurations.matching { it.name.endsWith('UnitTestRuntimeClasspath') }.configureEach {
+    exclude group: 'io.github.dokar3', module: 'quickjs-kt-android'
 }
 
 tasks.withType(Test).configureEach {
@@ -238,6 +246,10 @@ dependencies {
     implementation libs.automerge         // CRDT sync (docs/adr/ADR-001)
     implementation libs.okhttp              // HTTP client for Notable Sync
     testImplementation libs.okhttp.mockwebserver
+    // Live code image (docs/adr/ADR-002): QuickJS, and the REPL's WebSocket server.
+    implementation libs.quickjs.kt.android
+    testImplementation libs.quickjs.kt.jvm
+    implementation libs.java.websocket
 //    implementation("com.google.crypto.tink:tink-android:1.21.0")    // provides encryption for sync credentials
 
     // Added so that R8 optimization don't fail

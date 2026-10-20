@@ -142,6 +142,17 @@ private fun ToolbarMenuContent(
             onAction(ToolbarAction.NavigateToBugReport)
             onAction(ToolbarAction.ToggleMenu)
         }
+
+        // Commands of the live code image and their built-ins (ADR-002).
+        if (uiState.commands.isNotEmpty()) {
+            DividerCentered()
+            uiState.commands.forEach { command ->
+                MenuItem(command.title) {
+                    onAction(ToolbarAction.RunCommand(command.id))
+                    onAction(ToolbarAction.ToggleMenu)
+                }
+            }
+        }
     }
 }
 

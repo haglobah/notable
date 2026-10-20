@@ -36,6 +36,8 @@ material = "1.11.4"
 materialIconsExtended = "1.7.8"
 navigationCompose = "2.10.2"
 okhttp = "5.5.0"
+javaWebsocket = "1.6.0"
+quickjsKt = "1.0.15"
 onyxsdkBase = "1.8.9"
 onyxsdkDevice = "1.3.6"
 onyxsdkPen = "1.5.8"
@@ -92,6 +94,12 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 lz4-java = { group = "at.yawk.lz4", name = "lz4-java", version.ref = "lz4Java" }
 mockk-android = { group = "io.mockk", name = "mockk-android", version.ref = "mockk" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+# QuickJS for the live code image (ADR-002). The Android AAR has the arm64 JNI library; JVM unit
+# tests use the -jvm artifact, which carries desktop libraries (see app/build.gradle).
+quickjs-kt-android = { group = "io.github.dokar3", name = "quickjs-kt-android", version.ref = "quickjsKt" }
+quickjs-kt-jvm = { group = "io.github.dokar3", name = "quickjs-kt-jvm", version.ref = "quickjsKt" }
+# WebSocket server for the live REPL (127.0.0.1 only).
+java-websocket = { group = "org.java-websocket", name = "Java-WebSocket", version.ref = "javaWebsocket" }
 okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
 onyxsdk-base = { group = "com.onyx.android.sdk", name = "onyxsdk-base", version.ref = "onyxsdkBase" }
 onyxsdk-device = { group = "com.onyx.android.sdk", name = "onyxsdk-device", version.ref = "onyxsdkDevice" }

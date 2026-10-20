@@ -5,6 +5,7 @@ import android.util.Log
 import com.onyx.android.sdk.base.utils.ResManager
 import com.onyx.android.sdk.rx.RxManager
 import com.ethran.notable.data.LegacyWebDavCleanup
+import com.ethran.notable.image.ImageService
 import com.ethran.notable.sync.automerge.NotableSyncClient
 import dagger.hilt.android.HiltAndroidApp
 import io.shipbook.shipbooksdk.ShipBook
@@ -22,6 +23,9 @@ class NotableApp : Application() {
 
     @Inject
     lateinit var notableSync: NotableSyncClient
+
+    @Inject
+    lateinit var liveImage: ImageService
 
     override fun onCreate() {
         Log.i("NotableApp", "onCreate START")
@@ -42,6 +46,8 @@ class NotableApp : Application() {
         LegacyWebDavCleanup.cancelWork(this)
         // Reconnects the Automerge sync account, if one is logged in (off the main thread).
         notableSync.start()
+        // The live code image (ADR-002): its own thread, fed by the code doc; safe mode decides here.
+        liveImage.start()
         Log.i("NotableApp", "onCreate FINISH")
     }
 

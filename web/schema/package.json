@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./runtime/prelude.js": "./runtime/prelude.js"
+  },
   "scripts": {
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit -p .",

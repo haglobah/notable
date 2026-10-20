@@ -751,6 +751,13 @@ class NotableSyncClient @Inject constructor(
         _projection.value = _projection.value.copy(warnings = (_projection.value.warnings + w).takeLast(20))
     }
 
+    /** The library as this device has it now, or null while it isn't open. Blocking; never on the main thread. */
+    fun libraryNow(): AmLibrary? {
+        val s = session ?: return null
+        val url = s.libraryUrl ?: return null
+        return RepoLocalDocs(s.repo, s.storage, url).edit(url) { AutomergeSchema.readLibrary(it) }
+    }
+
     /** A notebook's library entry and its doc's `save()` bytes, as this device has them now. */
     class NotebookSnapshot(val entry: AmNotebookEntry, val doc: ByteArray, val pendingWrites: Int)
 

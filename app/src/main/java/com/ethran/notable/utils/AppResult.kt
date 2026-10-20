@@ -47,6 +47,9 @@ sealed class DomainError(
 
     data class DrawingError(val message: String) : DomainError(message)
 
+    /** A definition of the live code image failed: it threw, timed out or doesn't parse (ADR-002). */
+    data class ScriptError(val message: String) : DomainError(message)
+
     // Sync Errors
     data object SyncAuthError : DomainError("Authentication failed. Please check your credentials.")
     data object SyncConfigError : DomainError("Sync is not configured correctly.")

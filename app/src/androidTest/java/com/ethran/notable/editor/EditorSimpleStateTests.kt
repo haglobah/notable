@@ -93,6 +93,7 @@ class EditorSimpleStateTests {
             pageDataManager = pageDataManager,
             snackDispatcher = snackDispatcher,
             historyFactory = historyFactory,
+            editorImage = com.ethran.notable.image.EditorImage.None,
         )
     }
 }

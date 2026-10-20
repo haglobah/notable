@@ -27,6 +27,9 @@ import com.ethran.notable.editor.utils.DeviceCompat
 import com.ethran.notable.editor.utils.Eraser
 import com.ethran.notable.editor.utils.Pen
 import com.ethran.notable.editor.utils.PenSetting
+import com.ethran.notable.image.EditorImage
+import com.ethran.notable.image.ImageCommand
+import com.ethran.notable.image.OpenPage
 import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.io.ExportFormat
 import com.ethran.notable.io.ExportTarget
@@ -97,6 +100,9 @@ data class ToolbarUiState(
     val hasClipboard: Boolean = false,
     val isDrawing: Boolean = true,
     val isQuickNavOpen: Boolean = false,
+
+    /** Menu commands: built-ins and the live code image's (ADR-002). */
+    val commands: List<ImageCommand> = emptyList(),
 ) {
     /** The active preset's setting — what the drawing pipeline draws with. The fallback
      * only triggers if the active preset was deleted mid-session. */
@@ -137,6 +143,8 @@ sealed class ToolbarAction {
     /** Share the page ([book] false) or the notebook as the PDF projection. */
     data class SharePdf(val book: Boolean) : ToolbarAction()
     data class BackgroundChanged(val type: String, val path: String?) : ToolbarAction()
+    /** A command of the live code image, or its built-in (ADR-002). */
+    data class RunCommand(val id: String) : ToolbarAction()
 
     object NavigateToLibrary : ToolbarAction()
     object NavigateToBugReport : ToolbarAction()
@@ -185,6 +193,7 @@ class EditorViewModel @Inject constructor(
     val pageDataManager: PageDataManager,
     val snackDispatcher: SnackDispatcher,
     private val historyFactory: History.Factory,
+    private val editorImage: EditorImage,
 ) : ViewModel() {
     // ---- Toolbar / UI State (single flat flow) ----
     private val _toolbarState = MutableStateFlow(ToolbarUiState())
@@ -193,6 +202,9 @@ class EditorViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             ClipboardStore.content.collect { setHasClipboard(it != null) }
+        }
+        viewModelScope.launch {
+            editorImage.commands.collect { commands -> _toolbarState.update { it.copy(commands = commands) } }
         }
         // The pen presets in AppSettings are the source of truth for per-pen color/size;
         // mirror them into ToolbarUiState.penSettings so the (non-Compose) drawing
@@ -275,6 +287,7 @@ class EditorViewModel @Inject constructor(
 
         // 3. Cleanup page resources
         page.disposeOldPage()
+        if (editorImage.openPage?.id == currentPageId) editorImage.openPage = null
     }
 
     fun createHistory(page: PageView): History = historyFactory.create(page)
@@ -334,6 +347,7 @@ class EditorViewModel @Inject constructor(
             }
 
             is ToolbarAction.BackgroundChanged -> handleBackgroundChange(action.type, action.path)
+            is ToolbarAction.RunCommand -> editorImage.runCommand(action.id)
 
             ToolbarAction.Undo -> sendCanvasCommand(CanvasCommand.Undo)
             ToolbarAction.Redo -> sendCanvasCommand(CanvasCommand.Redo)
@@ -561,6 +575,7 @@ class EditorViewModel @Inject constructor(
             else -> 0
         }
 
+        editorImage.openPage = OpenPage(pageId, bookId, pageIndex, totalPages)
         _toolbarState.update {
             it.copy(
                 notebookId = bookId,

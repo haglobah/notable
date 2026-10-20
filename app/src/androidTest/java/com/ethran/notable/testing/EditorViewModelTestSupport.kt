@@ -77,6 +77,7 @@ internal fun createEditorViewModelForTest(context: Context, db: AppDatabase): Ed
         pageDataManager = pageDataManager,
         snackDispatcher = snackDispatcher,
         historyFactory = historyFactory,
+        editorImage = com.ethran.notable.image.EditorImage.None,
     )
 }
 

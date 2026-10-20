@@ -40,6 +40,7 @@ import com.ethran.notable.data.db.KvProxy
 import com.ethran.notable.data.db.StrokeMigrationHelper
 import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.editor.utils.DeviceCompat
+import com.ethran.notable.image.ImageService
 import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.ui.AppEventUiBridge
 import com.ethran.notable.ui.LocalSnackContext
@@ -96,6 +97,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var appEventUiBridge: AppEventUiBridge
 
+    @Inject
+    lateinit var imageService: ImageService
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableFullScreen()
@@ -139,6 +143,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 isInitialized = true
+            }
+            // Safe mode's start counter (ADR-002): the first screen is up.
+            LaunchedEffect(isInitialized) {
+                if (isInitialized) imageService.firstScreenDrawn()
             }
             InkaTheme {
                 CompositionLocalProvider(LocalSnackContext provides snackState) {

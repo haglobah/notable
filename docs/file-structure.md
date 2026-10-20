@@ -44,7 +44,18 @@ com.ethran.notable/
 
 - gestures/ — Custom gesture detection (QuickNav gestures, Editor receiver).
 
+- image/ — The live code image (docs/adr/ADR-002-live-code-image.md): definitions from the synced code doc, run in QuickJS.
+    - JsRuntime.kt — The QuickJS runtime on its own thread, with memory and per-evaluation time limits; `ImageHost` (host API).
+    - LiveImage.kt — Registry by name (late binding), failed definitions, built-in fallbacks, commands, REPL eval.
+    - ImageService.kt — Hilt singleton: starts the image (or safe mode), feeds it the code doc, host API v1, REPL server.
+    - BootGuard.kt — Safe mode's failed-start counter.
+    - ReplProtocol.kt / ReplServer.kt — The live REPL (WebSocket on 127.0.0.1); the CLI is `web/repl`.
+    - EditorImage.kt — What the editor uses: menu commands and the open page.
+    - The JS prelude both clients load is `web/schema/runtime/prelude.js` (packaged as an asset).
+
 - di/ — Dependency injection (Hilt modules).
+
+- sync/automerge/ — Automerge sync (ADR-001); CodeDocs.kt holds the code doc's writer and state (ADR-002).
 
 - utils/ — Generic helpers (Permissions, Debugging, Flow extensions).
 

@@ -163,7 +163,10 @@ fun SettingsContent(
 
                     2 -> ToolbarSettings(settings, onUpdateSettings, scrollState)
 
-                    3 -> NotableSyncSection()
+                    3 -> Column {
+                        NotableSyncSection()
+                        LiveImageSection()
+                    }
 
                     4 -> DebugSettings(settings, onUpdateSettings, goToWelcome, goToSystemInfo)
                 }
