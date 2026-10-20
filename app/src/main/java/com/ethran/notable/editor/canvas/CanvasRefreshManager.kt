@@ -103,8 +103,9 @@ class CanvasRefreshManager(
     }
 
     /** Synchronous variant of [drawCanvasToView] (no `post{}` hop). Locks, draws the page
-     *  bitmap for [dirtyRect], and posts — on the calling thread. */
-    private fun drawBitmapToSurfaceSync(dirtyRect: Rect?) {
+     *  bitmap for [dirtyRect], and posts — on the calling thread. Gets through a frozen screen
+     *  without touching the firmware's live ink, so it never pauses writing. */
+    fun drawBitmapToSurfaceSync(dirtyRect: Rect?) {
         val zoneToRedraw = dirtyRect ?: Rect(0, 0, page.viewWidth, page.viewHeight)
         var canvas: Canvas? = null
         try {

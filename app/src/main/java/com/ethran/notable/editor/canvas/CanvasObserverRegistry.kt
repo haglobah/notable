@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class CanvasObserverRegistry(
@@ -228,7 +229,15 @@ class CanvasObserverRegistry(
                 log.d("remote edit on open page: +${edit.upsertStrokes.size} -${edit.deleteStrokes.size} strokes")
                 if (edit.pageChanged) page.refreshCurrentPage()
                 pageDataManager.recomputeHeight(edit.pageId)
-                CanvasEventBus.forceUpdate.emit(null)
+                // Not forceUpdate: its refresh pauses the live ink for 300–500 ms
+                // (resetScreenFreeze), so strokes written meanwhile only show up afterwards.
+                // Pushing the bitmap directly leaves the firmware's ink layer alone.
+                withContext(Dispatchers.Main) {
+                    CanvasEventBus.drawingInProgress.withLock {
+                        page.drawAreaScreenCoordinates(Rect(0, 0, page.viewWidth, page.viewHeight))
+                    }
+                }
+                withContext(Dispatchers.Default) { refreshManager.drawBitmapToSurfaceSync(null) }
             }
         }
     }
