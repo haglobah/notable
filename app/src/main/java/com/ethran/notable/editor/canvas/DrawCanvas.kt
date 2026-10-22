@@ -77,11 +77,10 @@ class DrawCanvas(
 
     private val strokeHistoryBatch = mutableListOf<String>()
     internal fun commitToHistory() {
-        if (strokeHistoryBatch.isNotEmpty()) history.addOperationsToHistory(
-            operations = listOf(
-                Operation.DeleteStroke(strokeHistoryBatch.map { it })
-            )
-        )
+        // One undo step per stroke, so undo removes just the last stroke drawn.
+        strokeHistoryBatch.forEach { strokeId ->
+            history.addOperationsToHistory(listOf(Operation.DeleteStroke(listOf(strokeId))))
+        }
         strokeHistoryBatch.clear()
         //testing if it will help with undo hiding strokes.
         refreshManager.drawCanvasToView(null)

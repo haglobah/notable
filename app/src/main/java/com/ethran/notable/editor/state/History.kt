@@ -169,12 +169,17 @@ class History @AssistedInject constructor(
             return
         }
         undoList.add(operations)
-        if (undoList.size > 5) undoList.removeAt(0)
+        if (undoList.size > MAX_UNDO_STEPS) undoList.removeAt(0)
         redoList.clear()
     }
 
     @AssistedFactory
     interface Factory {
         fun create(pageView: PageView): History
+    }
+
+    private companion object {
+        // Each pen stroke is its own step, so this has to cover a handful of words, not five.
+        const val MAX_UNDO_STEPS = 100
     }
 }
