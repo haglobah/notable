@@ -131,8 +131,9 @@ and the metrics stack. Server work must stay small.
   not a browser cookie. Asking HT only at login also keeps sync working through an HT outage.
   Once HT's OIDC provider (ht ADR-005) is live, a redirect sign-in for the PWA can build on the
   same account link.
-- An HT account gets in only after the admin links it (`notable-admin user link`), even with open
-  signup: anyone can create an HT account.
+- An HT account gets in only when the config links it to an account (`NOTABLE_HT_LINKS`), even
+  with open signup: anyone can create an HT account. Beat chose a declared link over an admin
+  command, so it lives in noldor with the rest of the host.
 - Trade-off: ending HT sessions or changing the HT password doesn't end Notable sessions.
 
 ### Sync runs in the foreground only (2026-10-11)

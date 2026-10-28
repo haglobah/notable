@@ -28,6 +28,7 @@ printf 'a password\n' | NOTABLE_STATE_DIR=/var/lib/notable node src/cli.ts user 
 | `NOTABLE_MAX_BLOB_MIB` | `512` | Largest file upload |
 | `NOTABLE_STATIC_DIR` | unset | The built PWA (`web/app/dist`). Served from the same origin, so the session cookie reaches `/api` and `/sync`. Unset serves only the API. The NixOS module sets it to the packaged app. |
 | `NOTABLE_HT_URL` | unset | humane tools' auth server, e.g. `https://todos.humane.tools`. See [humane tools sign-in](#humane-tools-sign-in). |
+| `NOTABLE_HT_LINKS` | unset | `name=email,…`: which humane tools account may sign in as which account |
 | `NOTABLE_SESSION_IDLE_DAYS` | `180` | A session unused this long expires |
 | `NOTABLE_ARGON2_MEMORY_KIB`, `NOTABLE_ARGON2_PASSES` | `19456`, `2` | argon2id cost (OWASP baseline). Existing hashes keep their own parameters. |
 
@@ -77,10 +78,11 @@ in the login form always means HT. The clients need nothing new.
   password logins.
 - HT's own session from that sign-in is signed out at once. Ending HT sessions or changing the HT
   password therefore doesn't end Notable sessions; use `notable-admin sessions revoke`.
-- No HT account gets in on its own, even with open signup. The admin links one with
-  `notable-admin user link <name> <email>`. Its first sign-in records HT's user id, and later
-  sign-ins match on that id, so an email change at HT keeps working. Relinking or unlinking
-  clears it.
+- No HT account gets in on its own, even with open signup: `NOTABLE_HT_LINKS` lists the links
+  (`humaneToolsLinks` in the NixOS module). It is the whole set, applied at every start; accounts
+  left out lose their link, and names without an account are logged and skipped. A link's first
+  sign-in records HT's user id, and later sign-ins match on that id, so an email change at HT
+  keeps working. Changing a link's email forgets the id.
 - The request carries no cookies and no Fetch Metadata, so Better Auth skips its origin check.
   HT needn't list this server in its `trustedOrigins`.
 - Failed email logins count toward the same rate limits as password logins. HT also limits
@@ -125,8 +127,6 @@ notable-admin user add <name>         # password on stdin (no echo on a TTY)
 notable-admin user passwd <name>      # also logs the user out everywhere
 notable-admin user del <name>         # type the name to confirm
 notable-admin user list
-notable-admin user link <name> <email>  # humane tools sign-in, see above
-notable-admin user unlink <name>
 notable-admin sessions revoke <name>
 ```
 
@@ -177,6 +177,7 @@ The closure is about 290 MiB, almost all of it Node. The package itself is 56 Mi
 | `publicOrigin` | `null` | Set it in production; see `NOTABLE_PUBLIC_ORIGIN` |
 | `openSignup` | `false` | Allow `POST /api/signup` |
 | `humaneToolsUrl` | `null` | See `NOTABLE_HT_URL` |
+| `humaneToolsLinks` | `{}` | See `NOTABLE_HT_LINKS` |
 | `trustProxy` | `false` | Use `X-Forwarded-For` for rate limiting |
 | `maxBlobSizeMiB` | `512` | Upload limit |
 | `environment` | `{}` | Other `NOTABLE_*` variables |

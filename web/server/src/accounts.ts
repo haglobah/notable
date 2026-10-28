@@ -11,7 +11,7 @@ export type User = { id: number; username: string; libraryDocId: string | null }
 export type SessionUser = User & { sessionHash: string }
 
 export class AccountError extends Error {
-  code: "invalid-username" | "weak-password" | "invalid-email" | "exists" | "no-such-user"
+  code: "invalid-username" | "weak-password" | "exists" | "no-such-user"
   constructor(code: AccountError["code"], message: string) {
     super(message)
     this.code = code
@@ -55,8 +55,8 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX blob_owners_user ON blob_owners(user_id);
   `,
-  // humane tools sign-in (ht.ts): the admin links an account to an HT email; the first sign-in
-  // with it records HT's user id, which later sign-ins match even after an email change.
+  // humane tools sign-in (ht.ts): NOTABLE_HT_LINKS links an account to an HT email; the first
+  // sign-in with it records HT's user id, which later sign-ins match even after an email change.
   `
   ALTER TABLE users ADD COLUMN ht_email TEXT;
   ALTER TABLE users ADD COLUMN ht_user_id TEXT;
@@ -195,17 +195,27 @@ export class Accounts {
     }
   }
 
-  /** Lets the humane tools account with this email sign in as `rawUsername`; null unlinks. */
-  linkHt(rawUsername: string, email: string | null) {
-    const u = this.#mustUser(rawUsername)
-    const normalized = email?.trim().toLowerCase() || null
-    if (normalized !== null && !/^[^@\s]+@[^@\s]+$/.test(normalized)) throw new AccountError("invalid-email", `not an email address: ${email}`)
+  /**
+   * Makes `links` (username -> HT email) the whole set of humane tools links: listed accounts get
+   * their email, all others lose theirs. A changed link forgets HT's user id, so the next sign-in
+   * records it again. Returns the listed usernames that have no account.
+   */
+  setHtLinks(links: Map<string, string>): string[] {
+    const users = this.db.prepare("SELECT id, username, ht_email FROM users").all() as { id: number; username: string; ht_email: string | null }[]
+    const changed = users.filter(u => (links.get(u.username) ?? null) !== u.ht_email)
+    this.db.exec("BEGIN")
     try {
-      this.db.prepare("UPDATE users SET ht_email = ?, ht_user_id = NULL WHERE id = ?").run(normalized, u.id)
+      // Clear first, so two accounts can swap emails without a UNIQUE conflict.
+      const set = this.db.prepare("UPDATE users SET ht_email = ?, ht_user_id = NULL WHERE id = ?")
+      for (const u of changed) set.run(null, u.id)
+      for (const u of changed) if (links.has(u.username)) set.run(links.get(u.username)!, u.id)
+      this.db.exec("COMMIT")
     } catch (e) {
-      if (String(e).includes("UNIQUE")) throw new AccountError("exists", `${normalized} is already linked to another account`)
+      this.db.exec("ROLLBACK")
       throw e
     }
+    const known = new Set(users.map(u => u.username))
+    return [...links.keys()].filter(name => !known.has(name))
   }
 
   /** The account linked to this humane tools account, recording HT's user id on first sign-in. */

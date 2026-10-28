@@ -16,6 +16,8 @@ export type Config = {
   sessionIdleDays: number
   /** humane tools' auth server, e.g. "https://todos.humane.tools". Logins with an email go there (ht.ts). */
   htUrl: string | null
+  /** Username -> humane tools email: the accounts HT may sign in as. Applied whole at every start. */
+  htLinks: Map<string, string>
   argon2: Argon2Params
 }
 
@@ -40,6 +42,20 @@ export function argon2FromEnv(env: NodeJS.ProcessEnv = process.env): Argon2Param
   }
 }
 
+/** "name=email,name=email" as a map, lower-cased; one email per account and one account per email. */
+export function parseHtLinks(raw: string | undefined): Map<string, string> {
+  const links = new Map<string, string>()
+  const emails = new Set<string>()
+  for (const entry of (raw ?? "").split(",").map(e => e.trim()).filter(Boolean)) {
+    const [name, email, ...rest] = entry.split("=").map(p => p.trim().toLowerCase())
+    if (!name || !email || rest.length || !/^[^@\s]+@[^@\s]+$/.test(email)) throw new Error(`NOTABLE_HT_LINKS: expected name=email, got "${entry}"`)
+    if (links.has(name) || emails.has(email)) throw new Error(`NOTABLE_HT_LINKS: "${entry}" repeats an account or an email`)
+    links.set(name, email)
+    emails.add(email)
+  }
+  return links
+}
+
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
   const stateDir = env.NOTABLE_STATE_DIR
   if (!stateDir) throw new Error("NOTABLE_STATE_DIR is required")
@@ -60,6 +76,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     staticDir: env.NOTABLE_STATIC_DIR || null,
     sessionIdleDays: int(env, "NOTABLE_SESSION_IDLE_DAYS", 180),
     htUrl: env.NOTABLE_HT_URL ? new URL(env.NOTABLE_HT_URL).origin : null,
+    htLinks: parseHtLinks(env.NOTABLE_HT_LINKS),
     argon2: argon2FromEnv(env),
   }
 }

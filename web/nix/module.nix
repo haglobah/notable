@@ -20,7 +20,10 @@ let
     NOTABLE_STATIC_DIR = "${cfg.package}/share/notable/app";
   }
   // lib.optionalAttrs (cfg.publicOrigin != null) { NOTABLE_PUBLIC_ORIGIN = cfg.publicOrigin; }
-  // lib.optionalAttrs (cfg.humaneToolsUrl != null) { NOTABLE_HT_URL = cfg.humaneToolsUrl; }
+  // lib.optionalAttrs (cfg.humaneToolsUrl != null) {
+    NOTABLE_HT_URL = cfg.humaneToolsUrl;
+    NOTABLE_HT_LINKS = lib.concatStringsSep "," (lib.mapAttrsToList (name: email: "${name}=${email}") cfg.humaneToolsLinks);
+  }
   // cfg.environment;
 
   # Runs the admin CLI as the service user against the service's state, so files it creates
@@ -86,7 +89,19 @@ in
       example = "https://todos.humane.tools";
       description = ''
         humane tools' auth server. A login with an email instead of a username is checked there,
-        and signs in as the account linked with `notable-admin user link <name> <email>`.
+        and signs in as the account linked in `humaneToolsLinks`.
+      '';
+    };
+
+    humaneToolsLinks = mkOption {
+      type = types.attrsOf types.str;
+      default = { };
+      example = {
+        alice = "alice@example.org";
+      };
+      description = ''
+        Notable account name to the humane tools email that may sign in as it. The whole set,
+        applied at every start: accounts left out lose their link. The accounts must exist.
       '';
     };
 

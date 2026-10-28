@@ -1,9 +1,9 @@
 import { test, describe, before, after } from "node:test"
 import assert from "node:assert/strict"
 import { createServer, type Server } from "node:http"
-import { spawnSync } from "node:child_process"
-import { join } from "node:path"
 import { startHarness, type Harness } from "./helpers.ts"
+import { Accounts } from "../src/accounts.ts"
+import { parseHtLinks } from "../src/config.ts"
 
 /** Todos' Better Auth, as far as sign-in and sign-out go. */
 async function fakeHt() {
@@ -59,7 +59,7 @@ describe("humane tools sign-in", () => {
     ht = await fakeHt()
     h = await startHarness({ htUrl: ht.url })
     await h.server.accounts.createUser("dora", "dora's notable password")
-    h.server.accounts.linkHt("dora", "Dora@Example.org")
+    h.server.accounts.setHtLinks(parseHtLinks("dora=Dora@Example.org"))
   })
   after(async () => {
     await h.close()
@@ -139,27 +139,51 @@ describe("without humane tools", () => {
   })
 })
 
-describe("admin CLI links", () => {
-  test("link, list, relink elsewhere refused, unlink", async () => {
+describe("NOTABLE_HT_LINKS", () => {
+  const argon2 = { memory: 1024, passes: 1, parallelism: 1 }
+  const linked = (acc: Accounts) =>
+    Object.fromEntries(acc.listUsers().filter(u => u.htEmail).map(u => [u.username, u.htEmail]))
+
+  test("parses name=email pairs and refuses anything ambiguous", () => {
+    assert.deepEqual([...parseHtLinks(" Dora = Dora@Example.org , emil=e@x.org ")], [["dora", "dora@example.org"], ["emil", "e@x.org"]])
+    assert.equal(parseHtLinks(undefined).size, 0)
+    for (const bad of ["dora", "dora=not-an-email", "dora=a@x.org,dora=b@x.org", "dora=a@x.org,emil=a@x.org", "dora=a@x.org=b"]) {
+      assert.throws(() => parseHtLinks(bad), /NOTABLE_HT_LINKS/, bad)
+    }
+  })
+
+  test("is the whole set: listed accounts are linked, all others unlinked, unknown names reported", async () => {
+    const acc = Accounts.open(":memory:", argon2)
+    for (const name of ["dora", "emil", "fritz"]) await acc.createUser(name, "a long enough password")
+    assert.deepEqual(acc.setHtLinks(parseHtLinks("dora=d@x.org,fritz=f@x.org")), [])
+    assert.deepEqual(linked(acc), { dora: "d@x.org", fritz: "f@x.org" })
+    assert.deepEqual(acc.setHtLinks(parseHtLinks("dora=f@x.org,emil=d@x.org,ghost=g@x.org")), ["ghost"], "emails can move between accounts")
+    assert.deepEqual(linked(acc), { dora: "f@x.org", emil: "d@x.org" })
+    acc.close()
+  })
+
+  test("an unchanged link keeps HT's user id across restarts; a changed one forgets it", async () => {
+    const acc = Accounts.open(":memory:", argon2)
+    await acc.createUser("dora", "a long enough password")
+    acc.setHtLinks(parseHtLinks("dora=d@x.org"))
+    assert.equal(acc.userForHt("ht-dora", "d@x.org")?.username, "dora")
+    acc.setHtLinks(parseHtLinks("dora=d@x.org"))
+    assert.equal(acc.userForHt("ht-dora", "renamed@x.org")?.username, "dora", "matched by id")
+    acc.setHtLinks(parseHtLinks("dora=other@x.org"))
+    assert.equal(acc.userForHt("ht-dora", "d@x.org"), null)
+    acc.close()
+  })
+
+  test("the server applies the links when it starts", async () => {
     const h = await startHarness()
-    const cli = (...args: string[]) =>
-      spawnSync(process.execPath, [join(import.meta.dirname, "../src/cli.ts"), ...args], {
-        encoding: "utf8",
-        env: { ...process.env, NOTABLE_STATE_DIR: h.stateDir, NOTABLE_ARGON2_MEMORY_KIB: "1024", NOTABLE_ARGON2_PASSES: "1" },
-      })
+    await h.server.accounts.createUser("dora", "a long enough password")
+    const stateDir = h.stateDir
+    await h.server.close()
+    const again = await startHarness({ stateDir, htLinks: parseHtLinks("dora=d@x.org") })
     try {
-      await h.server.accounts.createUser("dora", "a long enough password")
-      await h.server.accounts.createUser("emil", "a long enough password")
-      assert.equal(cli("user", "link", "dora", "Dora@Example.org").status, 0)
-      assert.match(cli("user", "list").stdout, /^dora\t.*\thumane tools dora@example\.org$/m)
-      const taken = cli("user", "link", "emil", "dora@example.org")
-      assert.equal(taken.status, 1)
-      assert.match(taken.stderr, /already linked to another account/)
-      assert.equal(cli("user", "link", "emil", "not-an-email").status, 1)
-      assert.equal(cli("user", "unlink", "dora").status, 0)
-      assert.doesNotMatch(cli("user", "list").stdout, /humane tools/)
+      assert.deepEqual(linked(again.server.accounts), { dora: "d@x.org" })
     } finally {
-      await h.close()
+      await again.close()
     }
   })
 })

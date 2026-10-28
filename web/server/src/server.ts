@@ -65,6 +65,7 @@ export async function startServer(config: Config, log: (msg: string) => void = (
   const loginByIp = new FailureLimiter(30, 15 * 60_000)
   const libraryLocks = new Map<number, Promise<string>>()
   const ht = config.htUrl ? openHt(config.htUrl) : null
+  for (const name of accounts.setHtLinks(config.htLinks)) log(`NOTABLE_HT_LINKS names ${name}, which has no account; create it with notable-admin user add`)
   const secureCookie = config.publicOrigin?.startsWith("https://") ?? false
 
   // --- helpers ---------------------------------------------------------------------------------
@@ -177,7 +178,7 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       throw new HttpError(r.status, r.error, r.retryAfter ? { "retry-after": r.retryAfter } : {})
     }
     const user = accounts.userForHt(r.account.id, r.account.email)
-    if (!user) throw new HttpError(403, `${r.account.email} has no Notable account here; ask the admin to link it`)
+    if (!user) throw new HttpError(403, `${r.account.email} has no Notable account here; ask the admin to link it in NOTABLE_HT_LINKS`)
     return user
   }
 
