@@ -45,6 +45,10 @@ const val GESTURE_REFRESH_SETTLE_MS = 500L
 private val TAP_MOVEMENT_TOLERANCE = 15.dp
 private val TWO_FINGER_TAP_MOVEMENT_TOLERANCE = 20.dp
 
+// How far apart the taps of a double/triple tap may land. A resting palm
+// lands somewhere else than the finger that tapped, so it can't complete one.
+private val MULTI_TAP_SLOP = 40.dp
+
 // Pointer deltas below this are contact noise (phantom palm touches,
 // re-landed fingers): they neither veto nor contribute to a swipe direction.
 private val SWIPE_NOISE_FLOOR = 10.dp
@@ -76,6 +80,9 @@ class GestureThresholds(density: Density) {
     /** Max total travel (both fingers combined) for a two-finger tap. */
     val twoFingerTapMovementTolerancePx: Float =
         with(density) { TWO_FINGER_TAP_MOVEMENT_TOLERANCE.toPx() }
+
+    /** Max distance between consecutive taps of a double/triple tap. */
+    val multiTapSlopPx: Float = with(density) { MULTI_TAP_SLOP.toPx() }
 
     /** Per-pointer delta below which a contact is noise for swipe direction. */
     val swipeNoiseFloorPx: Float = with(density) { SWIPE_NOISE_FLOOR.toPx() }

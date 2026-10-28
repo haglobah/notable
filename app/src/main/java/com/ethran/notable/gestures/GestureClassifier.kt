@@ -82,8 +82,26 @@ fun classifyGesture(
 // --- Classification predicates: thresholds applied to tracker geometry. ---
 
 fun isOneFingerTap(tracker: PointerTracker, thresholds: GestureThresholds): Boolean {
-    return tracker.totalTravel() < thresholds.tapMovementTolerancePx &&
+    return tracker.maxConcurrentPressed == 1 &&
+            tracker.totalTravel() < thresholds.tapMovementTolerancePx &&
             tracker.inputDuration() < ONE_FINGER_TOUCH_TAP_TIME
+}
+
+/**
+ * Whether [next] continues a tap sequence after [previous]: a one-finger tap
+ * of its own, landing near the previous one. Anything else — a palm, a
+ * second finger, a tap elsewhere on the page — breaks the sequence.
+ */
+fun isFollowUpTap(
+    previous: PointerTracker,
+    next: PointerTracker,
+    nextMode: GestureMode,
+    thresholds: GestureThresholds,
+): Boolean {
+    if (nextMode != GestureMode.Normal || !isOneFingerTap(next, thresholds)) return false
+    val previousPosition = previous.lastPosition() ?: return false
+    val nextPosition = next.lastPosition() ?: return false
+    return (nextPosition - previousPosition).getDistance() < thresholds.multiTapSlopPx
 }
 
 fun isTwoFingerTap(

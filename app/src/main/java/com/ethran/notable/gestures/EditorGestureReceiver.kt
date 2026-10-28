@@ -349,24 +349,24 @@ private fun classify(recognizer: Recognizer, ctx: GestureContext): List<GestureE
     )
 
 /**
- * A one-finger tap only seeds the double/triple-tap sequence. Without a
- * triple-tap action the second down alone fires the double tap; with one,
- * the second tap is tracked to its end and a third down is awaited, so the
- * double tap fires [DOUBLE_TAP_TIMEOUT_MS] later.
+ * A one-finger tap only seeds the double/triple-tap sequence. The second tap
+ * is tracked to its end and must itself be a one-finger tap near the first
+ * ([isFollowUpTap]); a finger merely landing — say, a resting palm — never
+ * completes a double tap. With a triple-tap action a third down is awaited,
+ * so the double tap fires [DOUBLE_TAP_TIMEOUT_MS] later.
  */
 private suspend fun AwaitPointerEventScope.handleOneFingerTap(
     first: PointerTracker,
     ctx: GestureContext,
 ) {
     val secondDown = awaitNextTapDown(first, ctx) ?: return
-    if (ctx.appSettings.tripleTapAction == AppSettings.GestureAction.None) {
-        dispatchEvent(GestureEvent.DoubleTap, ctx)
-        return
-    }
     withFollowUpGesture(secondDown, ctx) { second ->
         when {
-            second.mode != GestureMode.Normal || !isOneFingerTap(second.tracker, ctx.thresholds) ->
+            !isFollowUpTap(first, second.tracker, second.mode, ctx.thresholds) ->
                 finishStandaloneGesture(second, ctx)
+
+            ctx.appSettings.tripleTapAction == AppSettings.GestureAction.None ->
+                dispatchEvent(GestureEvent.DoubleTap, ctx)
 
             awaitNextTapDown(second.tracker, ctx) != null ->
                 dispatchEvent(GestureEvent.TripleTap, ctx)

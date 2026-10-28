@@ -69,6 +69,61 @@ class GestureClassifierTest {
         assertTrue(classify().isEmpty())
     }
 
+    // --- Double-tap follow-up (palm rejection) --------------------------------
+
+    // A tracker started at [at], as the receiver starts one on the next down.
+    private fun followUp(at: Long, build: PointerTracker.() -> Unit): PointerTracker {
+        clockTime = at
+        return PointerTracker(now = { clockTime }).apply(build)
+    }
+
+    @Test
+    fun `a nearby one-finger tap continues the tap sequence`() {
+        tracker.down(1, 50f, 50f, T0)
+        tracker.up(1, 50f, 50f, T0 + 50)
+        val next = followUp(at = T0 + 150) {
+            down(2, 70f, 60f, T0 + 150)
+            up(2, 70f, 60f, T0 + 200)
+        }
+        assertTrue(isFollowUpTap(tracker, next, GestureMode.Normal, thresholds))
+    }
+
+    @Test
+    fun `a tap far from the first does not continue the sequence`() {
+        tracker.down(1, 50f, 50f, T0)
+        tracker.up(1, 50f, 50f, T0 + 50)
+        val next = followUp(at = T0 + 150) {
+            down(2, 300f, 400f, T0 + 150)
+            up(2, 300f, 400f, T0 + 200)
+        }
+        assertFalse(isFollowUpTap(tracker, next, GestureMode.Normal, thresholds))
+    }
+
+    @Test
+    fun `a resting palm does not continue the sequence`() {
+        tracker.down(1, 50f, 50f, T0)
+        tracker.up(1, 50f, 50f, T0 + 50)
+        // Lands where the finger tapped, but stays down like a resting hand.
+        val next = followUp(at = T0 + 150) {
+            down(2, 55f, 50f, T0 + 150)
+            up(2, 55f, 50f, T0 + 600)
+        }
+        assertFalse(isFollowUpTap(tracker, next, GestureMode.Normal, thresholds))
+    }
+
+    @Test
+    fun `a second contact during the follow-up breaks the sequence`() {
+        tracker.down(1, 50f, 50f, T0)
+        tracker.up(1, 50f, 50f, T0 + 50)
+        val next = followUp(at = T0 + 150) {
+            down(2, 50f, 50f, T0 + 150)
+            down(3, 120f, 90f, T0 + 160)
+            up(2, 50f, 50f, T0 + 190)
+            up(3, 120f, 90f, T0 + 195)
+        }
+        assertFalse(isFollowUpTap(tracker, next, GestureMode.Normal, thresholds))
+    }
+
     // --- Hold (tap-vs-hold timing edges) --------------------------------------
 
     @Test
