@@ -27,6 +27,7 @@ printf 'a password\n' | NOTABLE_STATE_DIR=/var/lib/notable node src/cli.ts user 
 | `NOTABLE_OPEN_SIGNUP` | `0` | `1`: allow `POST /api/signup` |
 | `NOTABLE_MAX_BLOB_MIB` | `512` | Largest file upload |
 | `NOTABLE_STATIC_DIR` | unset | The built PWA (`web/app/dist`). Served from the same origin, so the session cookie reaches `/api` and `/sync`. Unset serves only the API. The NixOS module sets it to the packaged app. |
+| `NOTABLE_HT_URL` | unset | humane tools' auth server, e.g. `https://todos.humane.tools`. See [humane tools sign-in](#humane-tools-sign-in). |
 | `NOTABLE_SESSION_IDLE_DAYS` | `180` | A session unused this long expires |
 | `NOTABLE_ARGON2_MEMORY_KIB`, `NOTABLE_ARGON2_PASSES` | `19456`, `2` | argon2id cost (OWASP baseline). Existing hashes keep their own parameters. |
 
@@ -50,7 +51,7 @@ carry an allowed `Origin`.
 | Request | Result |
 |---|---|
 | `GET /api/health` | `{ok: true}`, no auth |
-| `POST /api/login {username, password}` | `200 {token, username}` and sets the cookie. Returns `401` for a wrong password or an unknown user (same body, same argon2 cost). Returns `429` with `Retry-After` after 5 failures per username or 30 per IP in 15 minutes. |
+| `POST /api/login {username, password}` | `200 {token, username}` and sets the cookie. With `NOTABLE_HT_URL`, an email as `username` signs in with humane tools instead; `username` in the answer is still the Notable account's. `403` for an HT account that isn't linked or whose email is unverified, `503` when HT can't be reached. Returns `401` for a wrong password or an unknown user (same body, same argon2 cost). Returns `429` with `Retry-After` after 5 failures per username or 30 per IP in 15 minutes. |
 | `POST /api/signup {username, password}` | `201` like login. `404` unless open signup is enabled; `409` if the name is taken; `400` for a bad name or a password under 10 characters. |
 | `POST /api/logout` | `204`. Revokes this session and closes its sync sockets. |
 | `GET /api/me` | `{username, libraryDocUrl, maxBlobBytes}`. The library doc is created on first use. Clients check `maxBlobBytes` before uploading; the server's `413` still decides. |
@@ -62,6 +63,28 @@ carry an allowed `Origin`.
 
 The file store keeps one copy per content. Uploading content that already exists only adds you as
 an owner.
+
+## humane tools sign-in
+
+With `NOTABLE_HT_URL` set, an account can also sign in with a humane tools (HT) account: the
+email and password of Todos' auth server (Better Auth). Usernames can't contain `@`, so an email
+in the login form always means HT. The clients need nothing new.
+
+- The server posts the credentials to HT's `sign-in/email` and, if HT accepts them, issues an
+  ordinary Notable session for the linked account. Android and the PWA then work exactly as after
+  a password login.
+- HT is asked only at login. An HT outage blocks new email logins, never existing sessions or
+  password logins.
+- HT's own session from that sign-in is signed out at once. Ending HT sessions or changing the HT
+  password therefore doesn't end Notable sessions; use `notable-admin sessions revoke`.
+- No HT account gets in on its own, even with open signup. The admin links one with
+  `notable-admin user link <name> <email>`. Its first sign-in records HT's user id, and later
+  sign-ins match on that id, so an email change at HT keeps working. Relinking or unlinking
+  clears it.
+- The request carries no cookies and no Fetch Metadata, so Better Auth skips its origin check.
+  HT needn't list this server in its `trustedOrigins`.
+- Failed email logins count toward the same rate limits as password logins. HT also limits
+  sign-ins to 5 a minute, shared by every caller from this server.
 
 ## Isolation design
 
@@ -102,6 +125,8 @@ notable-admin user add <name>         # password on stdin (no echo on a TTY)
 notable-admin user passwd <name>      # also logs the user out everywhere
 notable-admin user del <name>         # type the name to confirm
 notable-admin user list
+notable-admin user link <name> <email>  # humane tools sign-in, see above
+notable-admin user unlink <name>
 notable-admin sessions revoke <name>
 ```
 
@@ -151,6 +176,7 @@ The closure is about 290 MiB, almost all of it Node. The package itself is 56 Mi
 | `stateDir` | `/var/lib/notable` | Everything to back up |
 | `publicOrigin` | `null` | Set it in production; see `NOTABLE_PUBLIC_ORIGIN` |
 | `openSignup` | `false` | Allow `POST /api/signup` |
+| `humaneToolsUrl` | `null` | See `NOTABLE_HT_URL` |
 | `trustProxy` | `false` | Use `X-Forwarded-For` for rate limiting |
 | `maxBlobSizeMiB` | `512` | Upload limit |
 | `environment` | `{}` | Other `NOTABLE_*` variables |

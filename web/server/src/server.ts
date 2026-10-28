@@ -12,6 +12,7 @@ import { Accounts, AccountError, type SessionUser, type User } from "./accounts.
 import { AuthenticatedServerAdapter } from "./syncAdapter.ts"
 import { BlobStore, HASH, HashMismatch, TooLarge } from "./blobs.ts"
 import { FailureLimiter } from "./rateLimit.ts"
+import { openHt } from "./ht.ts"
 
 export const COOKIE = "notable_session"
 const SERVER_PEER_ID = "notable-server" as PeerId
@@ -63,6 +64,7 @@ export async function startServer(config: Config, log: (msg: string) => void = (
   const loginByUser = new FailureLimiter(5, 15 * 60_000)
   const loginByIp = new FailureLimiter(30, 15 * 60_000)
   const libraryLocks = new Map<number, Promise<string>>()
+  const ht = config.htUrl ? openHt(config.htUrl) : null
   const secureCookie = config.publicOrigin?.startsWith("https://") ?? false
 
   // --- helpers ---------------------------------------------------------------------------------
@@ -167,6 +169,18 @@ export async function startServer(config: Config, log: (msg: string) => void = (
     return p
   }
 
+  /** The account linked to these humane tools credentials, or null when HT refuses them. */
+  const htUser = async (email: string, password: string): Promise<User | null> => {
+    const r = await ht!.signIn(email.trim(), password)
+    if (!r.ok) {
+      if (r.status === 401) return null
+      throw new HttpError(r.status, r.error, r.retryAfter ? { "retry-after": r.retryAfter } : {})
+    }
+    const user = accounts.userForHt(r.account.id, r.account.email)
+    if (!user) throw new HttpError(403, `${r.account.email} has no Notable account here; ask the admin to link it`)
+    return user
+  }
+
   const startSession = (res: ServerResponse, req: IncomingMessage, user: User, status: number) => {
     const token = accounts.createSession(user.id, req.headers["user-agent"] ?? null)
     json(res, status, { token, username: user.username }, { "set-cookie": sessionCookie(token) })
@@ -192,7 +206,8 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       const userKey = username.trim().toLowerCase()
       const wait = Math.max(loginByUser.retryAfter(userKey), loginByIp.retryAfter(ip))
       if (wait > 0) throw new HttpError(429, "too many failed logins, try again later", { "retry-after": String(wait) })
-      const user = await accounts.authenticate(username, password)
+      // Usernames can't contain "@", so an email always means a humane tools account.
+      const user = ht && username.includes("@") ? await htUser(username, password) : await accounts.authenticate(username, password)
       if (!user) {
         loginByUser.fail(userKey)
         loginByIp.fail(ip)

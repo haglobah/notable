@@ -118,6 +118,23 @@ and the metrics stack. Server work must stay small.
   account database.
 - The server is packaged as a NixOS module and a container image, so others can self-host it.
 
+### humane tools sign-in (2026-10-28)
+
+- Beat wanted Notable on his humane tools account, like Notes, Mail and Flow. Notable keeps its
+  own accounts and sessions; HT is an optional second way to log in (`NOTABLE_HT_URL`), so
+  self-hosters still need nothing external.
+- An email in the login form goes to HT's `sign-in/email`, called by the server. If HT accepts it,
+  the server issues an ordinary Notable session for the account linked to that HT account. HT's
+  session is signed out at once.
+- Why not the shared `.humane.tools` cookie that Notes and Flow check on every request: Notable
+  lives at `notable.hagenlocher.me`, outside that cookie domain, and Android holds a bearer token,
+  not a browser cookie. Asking HT only at login also keeps sync working through an HT outage.
+  Once HT's OIDC provider (ht ADR-005) is live, a redirect sign-in for the PWA can build on the
+  same account link.
+- An HT account gets in only after the admin links it (`notable-admin user link`), even with open
+  signup: anyone can create an HT account.
+- Trade-off: ending HT sessions or changing the HT password doesn't end Notable sessions.
+
 ### Sync runs in the foreground only (2026-10-11)
 
 - Onyx freezes Notable about 3 s after it leaves the foreground, even when Android reports it as

@@ -16,6 +16,8 @@ const USAGE = `usage: notable-admin <command>
   user passwd <name>      set a new password (logs the user out everywhere)
   user del <name>         delete an account; asks you to type the name to confirm
   user list               list accounts
+  user link <name> <email>  let this humane tools account sign in as <name>
+  user unlink <name>      remove the link to humane tools
   sessions revoke <name>  log a user out everywhere
 
 environment: NOTABLE_STATE_DIR (required)`
@@ -59,7 +61,7 @@ async function newPassword(): Promise<string> {
 async function main(args: string[]) {
   const stateDir = process.env.NOTABLE_STATE_DIR
   if (!stateDir) fail(`NOTABLE_STATE_DIR is not set\n\n${USAGE}`)
-  const [cmd, sub, name] = args
+  const [cmd, sub, name, email] = args
   const needName = () => name ?? fail(USAGE)
 
   mkdirSync(stateDir, { recursive: true })
@@ -90,8 +92,21 @@ async function main(args: string[]) {
       }
       case "user list": {
         for (const u of acc.listUsers()) {
-          console.log(`${u.username}\tcreated ${new Date(u.createdAt).toISOString()}\t${u.sessions} sessions\t${u.docs} docs\t${u.blobs} files`)
+          console.log(`${u.username}\tcreated ${new Date(u.createdAt).toISOString()}\t${u.sessions} sessions\t${u.docs} docs\t${u.blobs} files` +
+            `${u.htEmail ? `\thumane tools ${u.htEmail}` : ""}`)
         }
+        break
+      }
+      case "user link": {
+        needName()
+        acc.linkHt(name, email ?? fail(USAGE))
+        console.log(`${email} can now sign in as ${name}; its password stays valid`)
+        break
+      }
+      case "user unlink": {
+        needName()
+        acc.linkHt(name, null)
+        console.log(`${name} no longer signs in with humane tools; existing sessions stay until revoked`)
         break
       }
       case "sessions revoke": {

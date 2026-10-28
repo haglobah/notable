@@ -14,6 +14,8 @@ export type Config = {
   /** The built PWA (web/app/dist), served from the same origin. Null serves only the API. */
   staticDir: string | null
   sessionIdleDays: number
+  /** humane tools' auth server, e.g. "https://todos.humane.tools". Logins with an email go there (ht.ts). */
+  htUrl: string | null
   argon2: Argon2Params
 }
 
@@ -57,6 +59,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     maxBlobBytes: int(env, "NOTABLE_MAX_BLOB_MIB", 512) * 1024 * 1024,
     staticDir: env.NOTABLE_STATIC_DIR || null,
     sessionIdleDays: int(env, "NOTABLE_SESSION_IDLE_DAYS", 180),
+    htUrl: env.NOTABLE_HT_URL ? new URL(env.NOTABLE_HT_URL).origin : null,
     argon2: argon2FromEnv(env),
   }
 }

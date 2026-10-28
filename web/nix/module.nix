@@ -20,6 +20,7 @@ let
     NOTABLE_STATIC_DIR = "${cfg.package}/share/notable/app";
   }
   // lib.optionalAttrs (cfg.publicOrigin != null) { NOTABLE_PUBLIC_ORIGIN = cfg.publicOrigin; }
+  // lib.optionalAttrs (cfg.humaneToolsUrl != null) { NOTABLE_HT_URL = cfg.humaneToolsUrl; }
   // cfg.environment;
 
   # Runs the admin CLI as the service user against the service's state, so files it creates
@@ -77,6 +78,16 @@ in
       type = types.bool;
       default = false;
       description = "Allow anyone to create an account. Otherwise accounts come from `notable-admin`.";
+    };
+
+    humaneToolsUrl = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "https://todos.humane.tools";
+      description = ''
+        humane tools' auth server. A login with an email instead of a username is checked there,
+        and signs in as the account linked with `notable-admin user link <name> <email>`.
+      '';
     };
 
     trustProxy = mkOption {

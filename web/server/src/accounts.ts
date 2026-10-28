@@ -11,7 +11,7 @@ export type User = { id: number; username: string; libraryDocId: string | null }
 export type SessionUser = User & { sessionHash: string }
 
 export class AccountError extends Error {
-  code: "invalid-username" | "weak-password" | "exists" | "no-such-user"
+  code: "invalid-username" | "weak-password" | "invalid-email" | "exists" | "no-such-user"
   constructor(code: AccountError["code"], message: string) {
     super(message)
     this.code = code
@@ -54,6 +54,14 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (hash, user_id)
   );
   CREATE INDEX blob_owners_user ON blob_owners(user_id);
+  `,
+  // humane tools sign-in (ht.ts): the admin links an account to an HT email; the first sign-in
+  // with it records HT's user id, which later sign-ins match even after an email change.
+  `
+  ALTER TABLE users ADD COLUMN ht_email TEXT;
+  ALTER TABLE users ADD COLUMN ht_user_id TEXT;
+  CREATE UNIQUE INDEX users_ht_email ON users(ht_email);
+  CREATE UNIQUE INDEX users_ht_user_id ON users(ht_user_id);
   `,
 ]
 
@@ -139,9 +147,9 @@ export class Accounts {
     return u
   }
 
-  listUsers(): { username: string; createdAt: number; sessions: number; docs: number; blobs: number }[] {
+  listUsers(): { username: string; createdAt: number; htEmail: string | null; sessions: number; docs: number; blobs: number }[] {
     return this.db.prepare(`
-      SELECT u.username, u.created_at AS createdAt,
+      SELECT u.username, u.created_at AS createdAt, u.ht_email AS htEmail,
         (SELECT count(*) FROM sessions s WHERE s.user_id = u.id) AS sessions,
         (SELECT count(*) FROM doc_owners d WHERE d.user_id = u.id) AS docs,
         (SELECT count(*) FROM blob_owners b WHERE b.user_id = u.id) AS blobs
@@ -185,6 +193,31 @@ export class Accounts {
       this.db.exec("ROLLBACK")
       throw e
     }
+  }
+
+  /** Lets the humane tools account with this email sign in as `rawUsername`; null unlinks. */
+  linkHt(rawUsername: string, email: string | null) {
+    const u = this.#mustUser(rawUsername)
+    const normalized = email?.trim().toLowerCase() || null
+    if (normalized !== null && !/^[^@\s]+@[^@\s]+$/.test(normalized)) throw new AccountError("invalid-email", `not an email address: ${email}`)
+    try {
+      this.db.prepare("UPDATE users SET ht_email = ?, ht_user_id = NULL WHERE id = ?").run(normalized, u.id)
+    } catch (e) {
+      if (String(e).includes("UNIQUE")) throw new AccountError("exists", `${normalized} is already linked to another account`)
+      throw e
+    }
+  }
+
+  /** The account linked to this humane tools account, recording HT's user id on first sign-in. */
+  userForHt(htUserId: string, email: string): User | null {
+    const select = "SELECT id, username, library_doc_id FROM users WHERE"
+    type Row = { id: number; username: string; library_doc_id: string | null }
+    let row = this.db.prepare(`${select} ht_user_id = ?`).get(htUserId) as Row | undefined
+    if (!row) {
+      row = this.db.prepare(`${select} ht_email = ? AND ht_user_id IS NULL`).get(email.toLowerCase()) as Row | undefined
+      if (row) this.db.prepare("UPDATE users SET ht_user_id = ? WHERE id = ?").run(htUserId, row.id)
+    }
+    return row ? { id: row.id, username: row.username, libraryDocId: row.library_doc_id } : null
   }
 
   setLibraryDoc(userId: number, docId: string) {
