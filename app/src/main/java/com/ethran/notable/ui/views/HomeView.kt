@@ -63,6 +63,7 @@ import com.ethran.notable.ui.components.PaperAction
 import com.ethran.notable.ui.components.PaperIconAction
 import com.ethran.notable.ui.components.BreadCrumb
 import com.ethran.notable.ui.components.NotebookCard
+import com.ethran.notable.ui.components.LibraryFilterBar
 import com.ethran.notable.ui.components.ShowPagesRow
 import com.ethran.notable.ui.dialogs.EmptyBookWarningHandler
 import com.ethran.notable.ui.dialogs.FolderConfigDialog
@@ -70,7 +71,20 @@ import com.ethran.notable.ui.dialogs.NotebookConfigDialog
 import com.ethran.notable.ui.theme.Ink
 import com.ethran.notable.ui.theme.Paper
 import com.ethran.notable.ui.theme.PaperInset
+import com.ethran.notable.ui.viewmodels.LibraryBrowse
+import com.ethran.notable.sync.automerge.LibrarySearch
 import com.ethran.notable.ui.viewmodels.LibraryUiState
+import com.ethran.notable.ui.theme.PaperLine
+import com.ethran.notable.ui.theme.SecondaryInk
+import com.ethran.notable.data.model.BackgroundType
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import compose.icons.feathericons.Search
+import compose.icons.feathericons.X
 import com.ethran.notable.ui.viewmodels.LibraryViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Plus
@@ -102,6 +116,8 @@ fun Library(
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val browse by viewModel.browse.collectAsStateWithLifecycle()
     val newlyCreatedBookId by viewModel.newlyCreatedBookId.collectAsStateWithLifecycle()
 
     LaunchedEffect(folderId) {
@@ -126,6 +142,12 @@ fun Library(
         appRepository = viewModel.appRepository,
         exportEngine = viewModel.exportEngine,
         uiState = uiState,
+        query = query,
+        browse = browse,
+        onToggleFilter = viewModel::toggleFilter,
+        onSort = viewModel::setSort,
+        onEverywhere = viewModel::setEverywhere,
+        onQueryChange = viewModel::setQuery,
         onNavigateToFolder = { id -> navController.navigate(LibraryDestination.createRoute(id)) },
         onNavigateToSettings = { navController.navigate("settings") },
         onNavigateToEditor = { pageId, bookId ->
@@ -150,6 +172,12 @@ fun LibraryContent(
     appRepository: AppRepository,
     exportEngine: ExportEngine,
     uiState: LibraryUiState,
+    query: String = "",
+    browse: LibraryBrowse = LibraryBrowse(),
+    onToggleFilter: (field: String, value: String) -> Unit = { _, _ -> },
+    onSort: (LibrarySearch.SortKey?, Boolean?) -> Unit = { _, _ -> },
+    onEverywhere: (Boolean) -> Unit = {},
+    onQueryChange: (String) -> Unit = {},
     onNavigateToFolder: (String?) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToEditor: (String, String) -> Unit,
@@ -185,17 +213,40 @@ fun LibraryContent(
                 }
             }
         }
+        val results = browse.results?.takeIf { query.isNotBlank() }
         NotebookGrid(
             appRepository = appRepository,
             exportEngine = exportEngine,
-            books = uiState.books,
+            books = results?.notebooks ?: browse.sortedBooks ?: uiState.books,
             isImporting = uiState.isImporting,
             onNavigateToEditor = onNavigateToEditor,
             onDeleteEmptyBook = onDeleteEmptyBook,
             onPreviewMissing = onPreviewMissing,
             modifier = Modifier.weight(1f),
+            // Search results come best first and from every folder; a folder lists oldest last.
+            newestFirst = results == null && browse.sortedBooks == null,
+            folderPaths = results?.folderPaths.orEmpty(),
+            heading = if (results != null) stringResource(R.string.library_search_results) else stringResource(R.string.home_notebooks),
+            emptyText = if (results != null && results.notebooks.isEmpty() && results.quickPages.isEmpty())
+                stringResource(R.string.library_search_none) else null,
             header = {
                 Column {
+                    LibrarySearchField(query = query, onQueryChange = onQueryChange)
+                    Spacer(Modifier.height(12.dp))
+                    LibraryFilterBar(query = query, browse = browse, onToggleFilter = onToggleFilter,
+                        onSort = onSort, onEverywhere = onEverywhere)
+                    Spacer(Modifier.height(20.dp))
+                    if (results != null) {
+                        if (results.quickPages.isNotEmpty()) ShowPagesRow(
+                            appRepository = appRepository,
+                            pages = results.quickPages,
+                            currentPageId = null,
+                            title = stringResource(R.string.home_quick_pages),
+                            onSelectPage = goToPage,
+                            onPreviewMissing = onPreviewMissing
+                        )
+                        return@Column
+                    }
                     BreadCrumb(
                         folders = uiState.breadcrumbFolders,
                         fontSize = 28,
@@ -230,6 +281,32 @@ fun LibraryContent(
                 }
             }
         )
+    }
+}
+
+/** One field over the whole library (docs/plans/ebook-features.md); `author:`, `is:` etc. work. */
+@Composable
+fun LibrarySearchField(query: String, onQueryChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    val hint = stringResource(R.string.library_search_hint)
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.weight(1f).heightIn(min = 48.dp).background(PaperInset).border(1.dp, PaperLine)
+            .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(FeatherIcons.Search, contentDescription = null, tint = Ink, modifier = Modifier.height(18.dp))
+            Spacer(Modifier.width(10.dp))
+            BasicTextField(
+                value = query, onValueChange = onQueryChange, singleLine = true,
+                textStyle = MaterialTheme.typography.body1.copy(color = Ink),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                decorationBox = { inner ->
+                    if (query.isEmpty()) Text(hint, style = MaterialTheme.typography.body1, color = SecondaryInk)
+                    inner()
+                },
+                modifier = Modifier.weight(1f).padding(vertical = 12.dp).semantics { contentDescription = hint },
+            )
+        }
+        if (query.isNotEmpty()) PaperIconAction(stringResource(R.string.library_search_clear), FeatherIcons.X,
+            onClick = { onQueryChange("") })
     }
 }
 
@@ -289,6 +366,10 @@ fun NotebookGrid(
     onDeleteEmptyBook: (String) -> Unit,
     onPreviewMissing: (String) -> Unit,
     modifier: Modifier = Modifier,
+    newestFirst: Boolean = true,
+    folderPaths: Map<String, String> = emptyMap(),
+    heading: String? = null,
+    emptyText: String? = null,
     header: @Composable () -> Unit = {}
 ) {
     LazyVerticalGrid(
@@ -301,14 +382,17 @@ fun NotebookGrid(
         item(key = "library-header", span = { GridItemSpan(maxLineSpan) }) { header() }
         item(key = "notebooks-heading", span = { GridItemSpan(maxLineSpan) }) {
             Text(
-                text = stringResource(R.string.home_notebooks),
+                text = heading ?: stringResource(R.string.home_notebooks),
                 style = MaterialTheme.typography.h6,
                 color = Ink
             )
         }
+        if (emptyText != null) item(key = "notebooks-empty", span = { GridItemSpan(maxLineSpan) }) {
+            Text(emptyText, style = MaterialTheme.typography.body2, color = SecondaryInk)
+        }
 
         if (books.isNotEmpty()) {
-            items(books.reversed(), key = { "notebook-${it.id}" }) { book ->
+            items(if (newestFirst) books.reversed() else books, key = { "notebook-${it.id}" }) { book ->
                 if (book.pageIds.isEmpty()) {
                     if (!isImporting) {
                         EmptyBookWarningHandler(
@@ -326,7 +410,12 @@ fun NotebookGrid(
                     openPageId = book.openPageId,
                     onOpen = { bookId, pageId -> onNavigateToEditor(pageId, bookId) },
                     onOpenSettings = { isSettingsOpen = true },
-                    onPreviewMissing = onPreviewMissing
+                    onPreviewMissing = onPreviewMissing,
+                    authors = book.bookMeta?.authors.orEmpty(),
+                    isBook = book.isBook,
+                    finished = book.finishedAt != null,
+                    folderPath = folderPaths[book.id],
+                    rating = book.rating,
                 )
 
                 if (isSettingsOpen) {
@@ -482,3 +571,10 @@ fun LibraryContentUpdatePreview() {
 //        onImportPdf = { _ -> },
 //        onImportXopp = {})
 }
+
+/** Made from a PDF or EPUB: imports give the notebook its book as the default background. */
+private val Notebook.isBook: Boolean
+    get() = when (BackgroundType.fromKey(defaultBackgroundType)) {
+        BackgroundType.AutoPdf, is BackgroundType.Pdf -> true
+        else -> false
+    }

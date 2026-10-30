@@ -102,6 +102,10 @@ internal class FakeRoom(val sink: FakeSink = FakeSink()) : ProjectionSink by sin
             }
             is LocalChange.FolderRenamed -> sink.folders[change.id]?.let { sink.folders[it.id] = it.copy(title = change.title, updatedAt = Date(change.at)) }
             is LocalChange.FolderMoved -> sink.folders[change.id]?.let { sink.folders[it.id] = it.copy(parentFolderId = change.parentId, updatedAt = Date(change.at)) }
+            is LocalChange.NotebookRead -> notebook(change.id) { it.copy(readAt = Date(change.at)) }
+            is LocalChange.NotebookFinished -> notebook(change.id) { it.copy(finishedAt = change.at?.let(::Date)) }
+            is LocalChange.NotebookRated -> notebook(change.id) { it.copy(rating = change.rating) }
+            is LocalChange.ReadingSynced -> notebook(change.id) { it.copy(pageCount = it.pageIds.size) }
         }
     }
 
@@ -841,5 +845,198 @@ class LocalDocWriterTest {
         val edits = b.project()
         assertEquals(setOf("p1", "p2"), edits.filter { it.pageDeleted }.map { it.pageId }.toSet())
         assertNull(b.room.sink.notebooks["nb1"])
+    }
+
+    /* ------------------------------ books (docs/plans/ebook-features.md) ------------------------------ */
+
+    private val sampleMeta = AmBookMeta(authors = listOf("Ursula K. Le Guin"), series = "Earthsea", seriesIndex = 1.0, language = "en")
+
+    /** Sets entry [id]'s book fields as another client (the PWA) would. */
+    private fun Device.bookFieldsFromElsewhere(id: String, readAt: Date, finishedAt: Date) {
+        val lib = docs.docs.getValue(MemoryLocalDocs.LIBRARY)
+        lib.startTransaction().apply {
+            val e = AutomergeSchema.entryObjOrNull(lib, id)!!
+            AutomergeSchema.putBookMeta(this, e, sampleMeta)
+            AutomergeSchema.setReadAt(this, e, readAt)
+            AutomergeSchema.setFinishedAt(this, e, finishedAt)
+            commit()
+        }
+    }
+
+    @Test
+    fun `an imported book's metadata reaches its library entry`() {
+        val d = migratedDevice()
+        d.blobs.files["/pdf/book.pdf"] = byteArrayOf(7, 7)
+        d.room.sink.notebooks["imp"] = notebook("imp", "i1", title = "A Wizard of Earthsea")
+            .copy(defaultBackgroundType = "autoPdf", defaultBackground = "/pdf/book.pdf", bookMeta = sampleMeta)
+        d.room.sink.pages["i1"] = page("i1", "imp").copy(backgroundType = "autoPdf", background = "/pdf/book.pdf")
+        d.room.sink.writes = 0
+        d.create(LocalChange.NotebookCreated("imp"))
+
+        val entry = d.docs.library().notebooks.getValue("imp")
+        assertEquals(sampleMeta, entry.meta)
+        assertNull(entry.readAt)
+        assertFalse(entry.hasFinishedAt)
+        d.project()
+        assertEquals("no echo", 0, d.room.sink.writes)
+    }
+
+    @Test
+    fun `reading and finishing set single fields without moving the edited date, and reach the other device`() {
+        val a = bookDevice(pages = 2)
+        val b = peer(a)
+        val updated = a.docs.library().notebooks.getValue("nb1").updatedAt
+        a.clock += 10 * 60_000
+        a.edit(LocalChange.NotebookRead("nb1", a.clock))
+        a.edit(LocalChange.NotebookFinished("nb1", a.clock + 1))
+        b.edit(LocalChange.NotebookRenamed("nb1", "Renamed"))
+        b.room.sink.notebooks["nb1"] = b.room.sink.notebooks.getValue("nb1").copy(title = "Renamed")
+        a.docs.syncWith(b.docs)
+
+        val e = a.docs.library().notebooks.getValue("nb1")
+        assertEquals("Renamed", e.title)
+        assertEquals(Date(a.clock), e.readAt)
+        assertEquals(Date(a.clock + 1), e.finishedAt)
+        assertTrue("only the rename moved it", e.updatedAt >= updated)
+        b.project()
+        val row = b.room.sink.notebooks.getValue("nb1")
+        assertEquals(Date(a.clock), row.readAt)
+        assertEquals(Date(a.clock + 1), row.finishedAt)
+
+        a.edit(LocalChange.NotebookFinished("nb1", null))
+        val unread = a.docs.library().notebooks.getValue("nb1")
+        assertNull(unread.finishedAt)
+        assertTrue(unread.hasFinishedAt)
+    }
+
+    @Test
+    fun `an older readAt does not replace a newer one, and an unchanged state makes no commit`() {
+        val d = bookDevice(pages = 1)
+        d.edit(LocalChange.NotebookRead("nb1", 2_000_000_000_000))
+        assertTrue(d.edit(LocalChange.NotebookRead("nb1", 1_900_000_000_000)).commits.isEmpty())
+        assertEquals(Date(2_000_000_000_000), d.docs.library().notebooks.getValue("nb1").readAt)
+        d.edit(LocalChange.NotebookFinished("nb1", 2_000_000_000_000))
+        assertTrue(d.edit(LocalChange.NotebookFinished("nb1", 2_000_000_000_000)).commits.isEmpty())
+    }
+
+    @Test
+    fun `book fields written elsewhere survive local edits, replays and projection into Room`() {
+        val d = bookDevice(pages = 2)
+        val readAt = Date(1_790_000_000_000)
+        val finishedAt = Date(1_790_000_100_000)
+        d.bookFieldsFromElsewhere("nb1", readAt, finishedAt)
+        d.project()
+        val row = d.room.sink.notebooks.getValue("nb1")
+        assertEquals(sampleMeta, row.bookMeta)
+        assertEquals(readAt, row.readAt)
+        assertEquals(finishedAt, row.finishedAt)
+
+        // A stale Room row (before the projection) must not drop what the doc has.
+        val stale = notebook("nb1", "p2", "p1", title = "Moved", folder = null)
+        d.edit(LocalChange.NotebookUpserted(stale))
+        d.edit(LocalChange.NotebookRenamed("nb1", "Renamed"))
+        d.edit(LocalChange.StrokesUpserted("p1", listOf(stroke("s9", "p1"))))
+        d.writer.replay(DocDebt.NotebookRow("nb1"))
+        d.writer.replay(DocDebt.PageRow("p1", "nb1"))
+        val e = d.docs.library().notebooks.getValue("nb1")
+        assertEquals(sampleMeta, e.meta)
+        assertEquals(readAt, e.readAt)
+        assertEquals(finishedAt, e.finishedAt)
+
+        // A full projection (rebuild) and the notebook doc's own projection keep them in Room.
+        d.state.forgetAll()
+        d.project()
+        val after = d.room.sink.notebooks.getValue("nb1")
+        assertEquals(sampleMeta, after.bookMeta)
+        assertEquals(readAt, after.readAt)
+        assertEquals(finishedAt, after.finishedAt)
+    }
+
+    @Test
+    fun `a reading state that failed to reach the doc is replayed from Room`() {
+        val d = bookDevice(pages = 1)
+        d.room.sink.notebooks["nb1"] = d.room.sink.notebooks.getValue("nb1").copy(readAt = Date(1_790_000_000_000), finishedAt = Date(1_790_000_100_000))
+        d.writer.replay(DocDebt.ReadingState("nb1"))
+        val e = d.docs.library().notebooks.getValue("nb1")
+        assertEquals(Date(1_790_000_000_000), e.readAt)
+        assertEquals(Date(1_790_000_100_000), e.finishedAt)
+    }
+
+    /* ------------------------------ length, progress, rating (round 3) ------------------------------ */
+
+    private fun Device.entry(id: String = "nb1") = docs.library().notebooks.getValue(id)
+
+    @Test
+    fun `an upload writes the page count and open page index`() {
+        val d = bookDevice(pages = 3)
+        assertEquals(3, d.entry().pageCount)
+        assertEquals(0, d.entry().readPage)
+    }
+
+    @Test
+    fun `page order changes keep the page count and turning pages the read page`() {
+        val d = bookDevice(pages = 3)
+        d.room.sink.pages["p9"] = page("p9", "nb1")
+        d.create(LocalChange.PageAdded("nb1", "p9", "p3"))
+        assertEquals(4, d.entry().pageCount)
+        d.edit(LocalChange.OpenPageChanged("nb1", "p9"))
+        assertEquals(3, d.entry().readPage)
+        d.edit(LocalChange.PageMoved("nb1", "p9", null))
+        assertEquals("the open page moved to the front", 0, d.entry().readPage)
+        d.edit(LocalChange.PageDeleted(page("p2", "nb1")))
+        assertEquals(3, d.entry().pageCount)
+        d.project()
+        assertEquals(3, d.room.sink.notebooks.getValue("nb1").pageCount)
+    }
+
+    @Test
+    fun `an unchanged page count or open page writes nothing to the library`() {
+        val d = bookDevice(pages = 3)
+        d.edit(LocalChange.OpenPageChanged("nb1", "p2"))
+        val heads = d.docs.docs.getValue(MemoryLocalDocs.LIBRARY).heads.map { it.bytes.toList() }
+        assertTrue(d.edit(LocalChange.ReadingSynced("nb1")).commits.isEmpty())
+        assertTrue("the same open page again", d.edit(LocalChange.OpenPageChanged("nb1", "p2")).commits.isEmpty())
+        assertEquals(heads, d.docs.docs.getValue(MemoryLocalDocs.LIBRARY).heads.map { it.bytes.toList() })
+    }
+
+    @Test
+    fun `an entry written before page counts existed is backfilled`() {
+        val d = bookDevice(pages = 2)
+        val lib = d.docs.docs.getValue(MemoryLocalDocs.LIBRARY)
+        val e = AutomergeSchema.entryObjOrNull(lib, "nb1")!!
+        lib.startTransaction().apply { delete(e, "pageCount"); delete(e, "readPage"); commit() }
+        assertNull(d.entry().pageCount)
+        d.edit(LocalChange.ReadingSynced("nb1"))
+        assertEquals(2, d.entry().pageCount)
+        assertEquals(0, d.entry().readPage)
+    }
+
+    @Test
+    fun `a rating is set and cleared as one field, and a clear of a never rated entry is kept`() {
+        val d = bookDevice(pages = 1)
+        val other = peer(d)
+        d.edit(LocalChange.NotebookRated("nb1", 8))
+        other.edit(LocalChange.NotebookRenamed("nb1", "Renamed"))
+        d.docs.syncWith(other.docs)
+        assertEquals(8, d.entry().rating)
+        assertEquals("Renamed", d.entry().title)
+        other.project()
+        assertEquals(8, other.room.sink.notebooks.getValue("nb1").rating)
+        d.edit(LocalChange.NotebookRated("nb1", null))
+        assertNull(d.entry().rating)
+        assertTrue(d.entry().hasRating)
+        assertTrue(d.edit(LocalChange.NotebookRated("nb1", null)).commits.isEmpty())
+
+        val fresh = bookDevice(pages = 1)
+        fresh.edit(LocalChange.NotebookRated("nb1", null))
+        assertTrue("Clear writes null", fresh.entry().hasRating)
+    }
+
+    @Test
+    fun `a rating that failed to reach the doc is replayed from Room`() {
+        val d = bookDevice(pages = 1)
+        d.room.sink.notebooks["nb1"] = d.room.sink.notebooks.getValue("nb1").copy(rating = 6)
+        d.writer.replay(DocDebt.ReadingState("nb1"))
+        assertEquals(6, d.entry().rating)
     }
 }

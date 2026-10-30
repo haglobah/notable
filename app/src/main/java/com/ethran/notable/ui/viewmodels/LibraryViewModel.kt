@@ -13,6 +13,7 @@ import com.ethran.notable.data.db.Notebook
 import com.ethran.notable.data.db.Page
 import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.io.ExportEngine
+import com.ethran.notable.sync.automerge.LibrarySearch
 import com.ethran.notable.io.ImportEngine
 import com.ethran.notable.io.ImportOptions
 import com.ethran.notable.io.ThumbnailBackfillQueue
@@ -30,10 +31,32 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** The chosen sort; [isDescending] resolves the key's default. */
+data class LibrarySort(val key: LibrarySearch.SortKey? = null, val descending: Boolean? = null) {
+    val isDescending: Boolean get() = descending ?: key?.defaultDescending ?: false
+}
+
+/**
+ * The library view's search side: [results] when there is a query, else [sortedBooks] when a sort
+ * is chosen (null: the folder's usual order). [facets] fill the filter bar's menus.
+ */
+data class LibraryBrowse(
+    val results: LibrarySearchResults? = null,
+    val sortedBooks: List<Notebook>? = null,
+    val facets: LibrarySearch.Facets? = null,
+    val sort: LibrarySort = LibrarySort(),
+    val everywhere: Boolean = false,
+    val inFolder: Boolean = false,
+)
 
 data class LibraryUiState(
     val folderId: String? = null,
@@ -91,6 +114,76 @@ class LibraryViewModel @Inject constructor(
         LibraryDatabaseState(folders, books, pages)
     }
 
+    // Library search, filters and sort (docs/plans/ebook-features.md, "Filters and sort").
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query
+    /** In a folder, a query searches it and its subfolders; this widens it to the whole library. */
+    private val _everywhere = MutableStateFlow(false)
+    /** Remembered per device (AppSettings), not in the docs. Null key: the folder's usual order. */
+    private val _sort = MutableStateFlow(
+        LibrarySort(
+            GlobalAppSettings.current.librarySort?.let { LibrarySearch.SortKey.fromKey(it) },
+            GlobalAppSettings.current.librarySortDescending,
+        )
+    )
+
+    @OptIn(FlowPreview::class)
+    val browse: StateFlow<LibraryBrowse> = combine(
+        _query.debounce(300), _folderId, _sort, _everywhere, _dbDataFlow,
+    ) { q, folderId, sort, everywhere, _ -> BrowseInput(q, folderId, sort, everywhere) }
+        .mapLatest { input -> withContext(Dispatchers.IO) { browseOf(input) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LibraryBrowse())
+
+    private data class BrowseInput(val query: String, val folderId: String?, val sort: LibrarySort, val everywhere: Boolean)
+
+    private suspend fun browseOf(input: BrowseInput): LibraryBrowse {
+        val folders = folderRepository.getAll()
+        val books = bookRepository.getAll()
+        val quick = pageRepository.getAllQuickPages()
+        // At the root a query covers the library; in a folder, the folder and its subfolders.
+        val searchScope = if (input.folderId == null || input.everywhere) LibrarySearch.Scope.All
+        else LibrarySearch.Scope.In(input.folderId, subfolders = true)
+        val key = input.sort.key
+        val results = if (input.query.isBlank()) null else LibrarySearchIndex.query(
+            LibrarySearch.Query(input.query, key ?: LibrarySearch.SortKey.RELEVANCE, input.sort.descending, searchScope),
+            folders, books, quick,
+        )
+        // No query: the folder's own notebooks, in the chosen order (none chosen: as before).
+        val sorted = if (results != null || key == null) null else LibrarySearchIndex.query(
+            LibrarySearch.Query("", key, input.sort.descending, LibrarySearch.Scope.In(input.folderId)),
+            folders, books, quick,
+        ).notebooks
+        return LibraryBrowse(
+            results = results, sortedBooks = sorted,
+            facets = LibrarySearchIndex.facets(searchScope, folders, books, quick),
+            sort = input.sort, everywhere = input.everywhere, inFolder = input.folderId != null,
+        )
+    }
+
+    fun setQuery(q: String) {
+        _query.value = q
+    }
+
+    /** A filter bar value: adds it to, or removes it from, field [field] of the query text. */
+    fun toggleFilter(field: String, value: String) {
+        _query.value = QueryFilters.toggle(_query.value, field, value)
+    }
+
+    fun setEverywhere(on: Boolean) {
+        _everywhere.value = on
+    }
+
+    /** [key] null: the usual order. [descending] null: the key's default direction. */
+    fun setSort(key: LibrarySearch.SortKey?, descending: Boolean?) {
+        val next = LibrarySort(key, descending)
+        _sort.value = next
+        viewModelScope.launch(Dispatchers.IO) {
+            appRepository.kvProxy.setAppSettings(
+                GlobalAppSettings.current.copy(librarySort = key?.key, librarySortDescending = descending)
+            )
+        }
+    }
+
     // 3. Expose the final UI State
     val uiState: StateFlow<LibraryUiState> = combine(
         _folderId, _isLatestVersion, _isImporting, _breadcrumbFolders, _dbDataFlow
@@ -115,6 +208,17 @@ class LibraryViewModel @Inject constructor(
         // Run network/heavy checks in the background
         viewModelScope.launch(Dispatchers.IO) {
             _isLatestVersion.value = isLatestVersion(context, appEventBus, true)
+        }
+        // Entries written before pageCount existed, or behind the notebook (docs/plans/ebook-features.md).
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val n = appRepository.edits.backfillPageCounts()
+                if (n > 0) io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").i("synced the page count of $n notebooks")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").e("page count backfill failed: ${e.message}", e)
+            }
         }
     }
 

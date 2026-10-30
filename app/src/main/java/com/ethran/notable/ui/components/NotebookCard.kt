@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
@@ -24,6 +26,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ethran.notable.R
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.CheckCircle
 import com.ethran.notable.ui.theme.InkaTheme
 import com.ethran.notable.ui.theme.Ink
 import com.ethran.notable.ui.theme.PaperLine
@@ -40,6 +44,15 @@ fun NotebookCard(
     onOpen: (bookId: String, pageId: String) -> Unit,
     onOpenSettings: (bookId: String) -> Unit,
     onPreviewMissing: (String) -> Unit = {},
+    /** The book's authors, from its metadata; shown under the title. */
+    authors: List<String> = emptyList(),
+    /** A book shows where the reader is ("Page 3 of 120") instead of its page count. */
+    isBook: Boolean = false,
+    finished: Boolean = false,
+    /** The folder it is in, for search results that come from every folder. */
+    folderPath: String? = null,
+    /** 1 to 10, shown as "★ 8". */
+    rating: Int? = null,
 ) {
 
     Column(modifier = modifier.fillMaxWidth().combinedClickable(
@@ -72,11 +85,40 @@ fun NotebookCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (authors.isNotEmpty()) Text(
+                    text = authors.joinToString(", "),
+                    style = MaterialTheme.typography.caption,
+                    color = Ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+                val openIndex = openPageId?.let { pageIds.indexOf(it) } ?: -1
                 Text(
-                    text = pluralStringResource(R.plurals.notebook_page_count, pageIds.size, pageIds.size),
+                    text = if (isBook && openIndex >= 0) stringResource(R.string.library_progress, openIndex + 1, pageIds.size)
+                    else pluralStringResource(R.plurals.notebook_page_count, pageIds.size, pageIds.size),
                     style = MaterialTheme.typography.caption,
                     color = SecondaryInk,
                     modifier = Modifier.padding(top = 4.dp)
+                )
+                if (rating != null) Text(
+                    text = stringResource(R.string.rating_value, rating),
+                    style = MaterialTheme.typography.caption,
+                    color = Ink,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                if (finished) Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(FeatherIcons.CheckCircle, contentDescription = null, tint = Ink, modifier = Modifier.size(14.dp))
+                    Text(stringResource(R.string.library_finished), style = MaterialTheme.typography.caption,
+                        color = Ink, modifier = Modifier.padding(start = 4.dp))
+                }
+                if (!folderPath.isNullOrEmpty()) Text(
+                    text = folderPath,
+                    style = MaterialTheme.typography.caption,
+                    color = SecondaryInk,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
             PaperIconAction(

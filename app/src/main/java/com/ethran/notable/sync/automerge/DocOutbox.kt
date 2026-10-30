@@ -48,6 +48,11 @@ sealed interface DocDebt {
         override val key get() = "folder/$id"
     }
 
+    /** A notebook's readAt, finishedAt, rating, and its entry's pageCount and readPage. */
+    data class ReadingState(val id: String) : DocDebt {
+        override val key get() = "reading/$id"
+    }
+
     companion object {
         fun of(change: LocalChange): DocDebt = when (change) {
             is LocalChange.StrokesUpserted -> Strokes(change.pageId, change.strokes.map { it.id }.toSet())
@@ -72,6 +77,10 @@ sealed interface DocDebt {
             is LocalChange.PageBackgroundChanged -> PageRow(change.pageId, change.notebookId)
             is LocalChange.FolderRenamed -> FolderRow(change.id)
             is LocalChange.FolderMoved -> FolderRow(change.id)
+            is LocalChange.NotebookRead -> ReadingState(change.id)
+            is LocalChange.NotebookFinished -> ReadingState(change.id)
+            is LocalChange.NotebookRated -> ReadingState(change.id)
+            is LocalChange.ReadingSynced -> ReadingState(change.id)
         }
     }
 }
@@ -179,6 +188,7 @@ class DocOutbox(
                 "notebook" -> DocDebt.NotebookRow(str("id"))
                 "open" -> DocDebt.OpenPage(str("id"))
                 "folder" -> DocDebt.FolderRow(str("id"))
+                "reading" -> DocDebt.ReadingState(str("id"))
                 else -> throw IOException("${file.path}: unknown entry type '$t'")
             }
         }
@@ -200,6 +210,7 @@ class DocOutbox(
                 is DocDebt.NotebookRow -> obj("t" to "notebook", "id" to d.id)
                 is DocDebt.OpenPage -> obj("t" to "open", "id" to d.notebookId)
                 is DocDebt.FolderRow -> obj("t" to "folder", "id" to d.id)
+                is DocDebt.ReadingState -> obj("t" to "reading", "id" to d.id)
             }
         })
         writeDurably(file, json.toString().toByteArray())

@@ -45,6 +45,20 @@ sealed interface LocalChange {
     data class PageBackgroundChanged(val pageId: String, val notebookId: String?, val type: String, val value: String, val at: Long) : LocalChange
     data class FolderRenamed(val id: String, val title: String, val at: Long) : LocalChange
     data class FolderMoved(val id: String, val parentId: String?, val at: Long) : LocalChange
+
+    /* Reading state (docs/plans/ebook-features.md). Not edits: the entry's updatedAt stays. */
+
+    /** The editor opened notebook [id] at [at]. */
+    data class NotebookRead(val id: String, val at: Long) : LocalChange
+    /** "Mark as finished" at [at]; null is "Mark as unread". */
+    data class NotebookFinished(val id: String, val at: Long?) : LocalChange
+    /** Rated 1 to 10; null clears it. */
+    data class NotebookRated(val id: String, val rating: Int?) : LocalChange
+    /**
+     * The entry's `pageCount` and `readPage` may be behind the notebook doc (written before they
+     * existed, or by an older device): write them where they differ.
+     */
+    data class ReadingSynced(val id: String) : LocalChange
 }
 
 /**

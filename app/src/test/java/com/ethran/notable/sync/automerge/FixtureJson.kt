@@ -53,8 +53,28 @@ object FixtureJson {
                 source = source(n.obj("source")),
                 createdAt = n.date("createdAt"),
                 updatedAt = n.date("updatedAt"),
+                meta = n["meta"]?.jsonObject?.let(::bookMeta),
+                readAt = n["readAt"]?.let { n.date("readAt") },
+                finishedAt = n.strOrNull("finishedAt")?.let { n.date("finishedAt") },
+                hasFinishedAt = "finishedAt" in n,
+                pageCount = n["pageCount"]?.jsonPrimitive?.int,
+                readPage = n["readPage"]?.jsonPrimitive?.int,
+                rating = n["rating"]?.let { if (it is JsonNull) null else it.jsonPrimitive.int },
+                hasRating = "rating" in n,
             )
         },
+    )
+
+    fun bookMeta(o: JsonObject) = AmBookMeta(
+        authors = o.getValue("authors").jsonArray.map { it.jsonPrimitive.content },
+        series = o.strOrNull("series"),
+        seriesIndex = o.getValue("seriesIndex").let { if (it is JsonNull) null else it.jsonPrimitive.double },
+        description = o.strOrNull("description"),
+        publisher = o.strOrNull("publisher"),
+        language = o.strOrNull("language"),
+        isbn = o.strOrNull("isbn"),
+        published = o.strOrNull("published"),
+        subjects = o.getValue("subjects").jsonArray.map { it.jsonPrimitive.content },
     )
 
     private fun source(o: JsonObject): AmSource = when (o.str("kind")) {

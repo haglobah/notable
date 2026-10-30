@@ -31,6 +31,11 @@ import com.ethran.notable.editor.ui.toolbar.model.ToolbarPen
 import com.ethran.notable.editor.utils.Pen
 import com.ethran.notable.io.ExportFormat
 import com.ethran.notable.ui.components.ScaledPopup
+import com.ethran.notable.ui.components.RatingPicker
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.ethran.notable.ui.noRippleClickable
 
 /**
@@ -82,6 +87,24 @@ private fun ToolbarMenuContent(
             onAction(ToolbarAction.ToggleMenu)
         }
         DividerCentered()
+
+        // Reading a notebook made from a PDF or EPUB (docs/plans/ebook-features.md)
+        if (uiState.isBook) {
+            MenuItem(stringResource(R.string.book_contents)) { onAction(ToolbarAction.OpenContents) }
+            MenuItem(stringResource(R.string.book_search)) { onAction(ToolbarAction.OpenBookSearch) }
+            MenuItem(stringResource(if (uiState.isFinished) R.string.book_mark_unread else R.string.book_mark_finished)) {
+                onAction(ToolbarAction.SetFinished(!uiState.isFinished))
+                onAction(ToolbarAction.ToggleMenu)
+            }
+            // The picker opens in place, inside the menu: no hand travel to a dialog.
+            var rating by remember { mutableStateOf(false) }
+            MenuItem(stringResource(R.string.rating_menu) + (uiState.rating?.let { "  " + stringResource(R.string.rating_value, it) } ?: "")) {
+                rating = !rating
+            }
+            if (rating) RatingPicker(uiState.rating, onRate = { onAction(ToolbarAction.SetRating(it)) },
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+            DividerCentered()
+        }
 
         // Page exports
         MenuItem(stringResource(R.string.share_page_pdf)) {

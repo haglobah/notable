@@ -9,6 +9,7 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.ethran.notable.data.dbDirPath
 import com.ethran.notable.data.getDbDirOrNull
+import com.ethran.notable.data.model.BookMeta
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -39,6 +40,12 @@ class Converters {
     }
 
     @TypeConverter
+    fun fromBookMeta(value: BookMeta?): String? = value?.let { Json.encodeToString(it) }
+
+    @TypeConverter
+    fun toBookMeta(value: String?): BookMeta? = value?.let { Json.decodeFromString<BookMeta>(it) }
+
+    @TypeConverter
     fun fromStrokePoints(points: List<StrokePoint>?): ByteArray? {
         if (points == null) return null
         val mask = computeStrokeMask(points)
@@ -55,7 +62,7 @@ class Converters {
 
 @Database(
     entities = [Folder::class, Notebook::class, Page::class, Stroke::class, Image::class, Kv::class],
-    version = 38,
+    version = 40,
     autoMigrations = [
         AutoMigration(19, 20),
         AutoMigration(20, 21),
@@ -75,8 +82,12 @@ class Converters {
         // Adds the `page_sync_state` table and renames the notebook sync anchor column.
         AutoMigration(35, 36, spec = AutoMigration35to36::class),
         // Adds the nullable `remoteDirEtag` / `remoteDirServerKey` bulk-detection baseline columns.
-        AutoMigration(36, 37)
+        AutoMigration(36, 37),
         // 37 -> 38 removes WebDAV sync: MIGRATION_37_38 (manual, it also deletes Kv rows).
+        // Adds the nullable book columns `bookMeta`, `readAt`, `finishedAt` to `Notebook`.
+        AutoMigration(38, 39),
+        // Adds the nullable `rating` and `pageCount` to `Notebook` (round 3 of the ebook features).
+        AutoMigration(39, 40),
     ], exportSchema = true
 )
 @TypeConverters(Converters::class)

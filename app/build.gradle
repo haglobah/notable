@@ -119,6 +119,8 @@ android {
     namespace = 'com.ethran.notable'
     sourceSets {
         androidTest.assets.srcDirs += files("${project.projectDir}/schemas")
+        // Sample books and their expected metadata, TOC and search (docs/plans/ebook-features.md).
+        androidTest.assets.srcDirs += files("${project.projectDir}/../web/schema/fixtures/book-meta")
         // The live code image's prelude, shared with the PWA (docs/adr/ADR-002).
         main.assets.srcDirs += files("${project.projectDir}/../web/schema/runtime")
     }

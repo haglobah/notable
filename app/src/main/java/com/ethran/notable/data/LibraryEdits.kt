@@ -96,6 +96,41 @@ class LibraryEdits @Inject constructor(
     /** The file this device exports the notebook to. Device-local: Room only, not in the docs. */
     suspend fun setNotebookLinkedUri(id: String, uri: String?) = books.setLinkedExternalUri(id, uri)
 
+    /** The editor opened notebook [id] (docs/plans/ebook-features.md: once per opening). */
+    suspend fun markNotebookRead(id: String) {
+        val at = now()
+        mirror.write(LocalChange.NotebookRead(id, at)) { books.setReadAt(id, Date(at)) }
+    }
+
+    /** "Mark as finished" ([finished]) or "Mark as unread". */
+    suspend fun setNotebookFinished(id: String, finished: Boolean) {
+        val at = if (finished) now() else null
+        mirror.write(LocalChange.NotebookFinished(id, at)) { books.setFinishedAt(id, at?.let(::Date)) }
+    }
+
+    /** 1 to 10, or null for "Clear". */
+    suspend fun rateNotebook(id: String, rating: Int?) {
+        require(rating == null || rating in 1..10) { "rating must be 1 to 10, got $rating" }
+        mirror.write(LocalChange.NotebookRated(id, rating)) { books.setRating(id, rating) }
+    }
+
+    /** Brings the entry's page count and open page index up to the notebook doc's. */
+    suspend fun syncReading(id: String) {
+        mirror.write(LocalChange.ReadingSynced(id)) {
+            books.getById(id)?.let { books.setPageCount(id, it.pageIds.size) }
+        }
+    }
+
+    /**
+     * Backfill (docs/plans/ebook-features.md, round 3): every notebook whose entry's page count, as
+     * Room last saw it, is missing or differs from its pages. Returns how many were synced.
+     */
+    suspend fun backfillPageCounts(): Int {
+        val due = books.getAll().filter { it.pageCount != it.pageIds.size }
+        due.forEach { syncReading(it.id) }
+        return due.size
+    }
+
     suspend fun deleteNotebook(id: String) {
         val pageIds = books.getById(id)?.pageIds.orEmpty()
         mirror.write(LocalChange.NotebookDeleted(id)) { books.delete(id) }

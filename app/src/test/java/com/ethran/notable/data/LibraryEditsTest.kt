@@ -76,6 +76,10 @@ private class Store {
         }
         override suspend fun setLinkedExternalUri(id: String, uri: String?): Int =
             change(id) { it.copy(linkedExternalUri = uri) }
+        override suspend fun setReadAt(id: String, at: Date): Int { write("readAt"); return change(id) { it.copy(readAt = at) } }
+        override suspend fun setFinishedAt(id: String, at: Date?): Int { write("finishedAt"); return change(id) { it.copy(finishedAt = at) } }
+        override suspend fun setRating(id: String, rating: Int?): Int { write("rating"); return change(id) { it.copy(rating = rating) } }
+        override suspend fun setPageCount(id: String, count: Int): Int { write("pageCount"); return change(id) { it.copy(pageCount = count) } }
         override suspend fun create(notebook: Notebook): Long { write("notebook+"); notebooks[notebook.id] = notebook; return 1 }
         override suspend fun update(notebook: Notebook) { write("notebook"); notebooks[notebook.id] = notebook }
         override suspend fun upsert(notebook: Notebook) { write("notebook"); notebooks[notebook.id] = notebook }
@@ -220,6 +224,8 @@ class LibraryEditsTest {
             { edits.duplicatePage("p1") },
             { edits.setPageBackground("p2", "native", "dotted") },
             { edits.setOpenPage("nb1", "p2") },
+            { edits.markNotebookRead("nb1") },
+            { edits.setNotebookFinished("nb1", true) },
             { edits.createQuickPage("f1", "blank") },
             { edits.deletePage("p2") },
             { edits.importNotebook(Notebook(id = "imp", title = "Book")) { page(Page(notebookId = "imp")) } },
@@ -238,6 +244,8 @@ class LibraryEditsTest {
             { edits.moveNotebook("gone", null) },
             { edits.setNotebookBackground("gone", "native", "lined") },
             { edits.setNotebookLinkedUri("gone", null) },
+            { edits.markNotebookRead("gone") },
+            { edits.setNotebookFinished("gone", true) },
         )
         for (op in ops) {
             val error = runCatching { op() }.exceptionOrNull()
@@ -253,6 +261,39 @@ class LibraryEditsTest {
         store.log.clear()
         edits.addPage("nb1", 3)
         assertEquals(listOf("room page+", "room pageIds", "doc PageAdded"), store.log)
+    }
+
+    @Test
+    fun `reading state goes to the doc first and leaves the edited date`() = runBlocking {
+        book()
+        edits.markNotebookRead("nb1")
+        assertEquals("write" to LocalChange.NotebookRead("nb1", 1_780_000_500_000), lastChange())
+        edits.setNotebookFinished("nb1", true)
+        assertEquals("write" to LocalChange.NotebookFinished("nb1", 1_780_000_500_000), lastChange())
+        assertEquals(listOf("doc NotebookRead", "room readAt", "doc NotebookFinished", "room finishedAt"), store.log)
+        val nb = store.notebooks.getValue("nb1")
+        assertEquals(Date(1_780_000_500_000), nb.readAt)
+        assertEquals(Date(1_780_000_500_000), nb.finishedAt)
+        assertEquals(t0, nb.updatedAt)
+        edits.setNotebookFinished("nb1", false)
+        assertEquals("write" to LocalChange.NotebookFinished("nb1", null), lastChange())
+        assertNull(store.notebooks.getValue("nb1").finishedAt)
+    }
+
+    @Test
+    fun `ratings and page count backfills go to the doc first`() = runBlocking {
+        book()
+        edits.rateNotebook("nb1", 9)
+        assertEquals("write" to LocalChange.NotebookRated("nb1", 9), lastChange())
+        assertEquals(9, store.notebooks.getValue("nb1").rating)
+        edits.rateNotebook("nb1", null)
+        assertNull(store.notebooks.getValue("nb1").rating)
+        assertEquals(1, edits.backfillPageCounts())
+        assertEquals("write" to LocalChange.ReadingSynced("nb1"), lastChange())
+        assertEquals(3, store.notebooks.getValue("nb1").pageCount)
+        assertEquals("nothing due any more", 0, edits.backfillPageCounts())
+        assertEquals(t0, store.notebooks.getValue("nb1").updatedAt)
+        assertTrue(runCatching { edits.rateNotebook("nb1", 11) }.isFailure)
     }
 
     @Test

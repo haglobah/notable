@@ -47,7 +47,29 @@ data class AmNotebookEntry(
     val source: AmSource,
     val createdAt: Date,
     val updatedAt: Date,
+    /** Read from the file at import; null when it had none (docs/plans/ebook-features.md). */
+    val meta: AmBookMeta? = null,
+    /** The last time a reader opened it; null when never opened. */
+    val readAt: Date? = null,
+    /** Set when marked finished; null when not. */
+    val finishedAt: Date? = null,
+    /**
+     * Whether the doc has the `finishedAt` key at all. "Mark as unread" writes null, which reads
+     * the same as absent but is kept apart so a doc round-trips exactly (the TS reader does too).
+     */
+    val hasFinishedAt: Boolean = finishedAt != null,
+    /** Pages in the notebook doc's pageOrder, as last written; null when never written. */
+    val pageCount: Int? = null,
+    /** Index of the open page in pageOrder; null when never written. */
+    val readPage: Int? = null,
+    /** 1 to 10; null when not rated. */
+    val rating: Int? = null,
+    /** Whether the doc has the `rating` key: "Clear" writes null, kept apart from never rated. */
+    val hasRating: Boolean = rating != null,
 )
+
+/** Every key is present in the doc; lists hold scalar strings. Same type as Room's copy. */
+typealias AmBookMeta = com.ethran.notable.data.model.BookMeta
 
 /** The file a notebook was created from. Blobs are sha256 hex digests in the server's blob store. */
 sealed interface AmSource {

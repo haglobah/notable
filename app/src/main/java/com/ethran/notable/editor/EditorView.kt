@@ -18,6 +18,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.editor.state.ClipboardStore
+import com.ethran.notable.editor.ui.BookPanelDialog
 import com.ethran.notable.editor.ui.EditorSurface
 import com.ethran.notable.editor.ui.HorizontalScrollIndicator
 import com.ethran.notable.editor.ui.ScrollIndicator
@@ -258,6 +259,16 @@ fun EditorView(
             PositionedToolbar(
                 viewModel = viewModel, onDrawingStateCheck = { viewModel.updateDrawingState() })
             HorizontalScrollIndicator(viewModel = viewModel, page = page)
+            // Contents and search of the book this notebook was made from.
+            val bookPanel by viewModel.bookReading.panel.collectAsStateWithLifecycle()
+            bookPanel?.let { panel ->
+                BookPanelDialog(
+                    panel = panel,
+                    onSearch = { viewModel.bookReading.search(it) },
+                    onJump = { viewModel.onToolbarAction(ToolbarAction.JumpToPage(it)) },
+                    onClose = { viewModel.onToolbarAction(ToolbarAction.CloseBookPanel) },
+                )
+            }
         }
     }
 }

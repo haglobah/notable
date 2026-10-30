@@ -103,6 +103,15 @@ data class ToolbarUiState(
 
     /** Menu commands: built-ins and the live code image's (ADR-002). */
     val commands: List<ImageCommand> = emptyList(),
+
+    // Reading (docs/plans/ebook-features.md)
+    /** The notebook was made from a PDF or EPUB: the menu offers contents and search. */
+    val isBook: Boolean = false,
+    val isFinished: Boolean = false,
+    /** 1 to 10, or null. */
+    val rating: Int? = null,
+    /** A contents or search dialog is open over the page. */
+    val isBookPanelOpen: Boolean = false,
 ) {
     /** The active preset's setting — what the drawing pipeline draws with. The fallback
      * only triggers if the active preset was deleted mid-session. */
@@ -111,7 +120,7 @@ data class ToolbarUiState(
 
     val isDrawingAllowed: Boolean
         get() = !isSelectionActive &&
-                !(isMenuOpen || isStrokeSelectionOpen || isBackgroundSelectorModalOpen)
+                !(isMenuOpen || isStrokeSelectionOpen || isBackgroundSelectorModalOpen || isBookPanelOpen)
                 && !isQuickNavOpen
 }
 
@@ -150,6 +159,16 @@ sealed class ToolbarAction {
     object NavigateToBugReport : ToolbarAction()
     object NavigateToPages : ToolbarAction()
     object NavigateToHome : ToolbarAction()
+
+    object OpenContents : ToolbarAction()
+    object OpenBookSearch : ToolbarAction()
+    /** Mark as finished ([finished]) or as unread. */
+    data class SetFinished(val finished: Boolean) : ToolbarAction()
+    /** 1 to 10, or null for Clear. */
+    data class SetRating(val rating: Int?) : ToolbarAction()
+    object CloseBookPanel : ToolbarAction()
+    /** A contents entry or search result was tapped: show notebook page [pageId]. */
+    data class JumpToPage(val pageId: String) : ToolbarAction()
 
     object CloseAllMenus : ToolbarAction()
     data class UpdateQuickNavOpen(val isOpen: Boolean) : ToolbarAction()
@@ -228,6 +247,9 @@ class EditorViewModel @Inject constructor(
                 }
         }
     }
+
+    /** Contents, search and reading state for a notebook made from a book. */
+    val bookReading = BookReading(appRepository, viewModelScope) { showHint(it, 3000) }
 
     // ---- One-Time Events (Channels) ----
     private val uiEventChannel = Channel<EditorUiEvent>(Channel.BUFFERED)
@@ -360,6 +382,19 @@ class EditorViewModel @Inject constructor(
             ToolbarAction.NavigateToPages -> handleNavigateToPages()
             ToolbarAction.NavigateToHome -> sendUiEvent(EditorUiEvent.NavigateToLibrary(null))
 
+            ToolbarAction.OpenContents -> openBookPanel { bookReading.openContents() }
+            ToolbarAction.OpenBookSearch -> openBookPanel { bookReading.openSearch() }
+            ToolbarAction.CloseBookPanel -> closeBookPanel()
+            is ToolbarAction.JumpToPage -> {
+                closeBookPanel()
+                if (action.pageId != currentPageId) changePage(action.pageId)
+            }
+            is ToolbarAction.SetFinished -> viewModelScope.launch(Dispatchers.IO) {
+                bookReading.setFinished(action.finished)?.let { f -> _toolbarState.update { it.copy(isFinished = f) } }
+            }
+            is ToolbarAction.SetRating -> viewModelScope.launch(Dispatchers.IO) {
+                if (bookReading.setRating(action.rating)) _toolbarState.update { it.copy(rating = action.rating) }
+            }
             ToolbarAction.CloseAllMenus -> handleCloseAllMenus()
             is ToolbarAction.UpdateQuickNavOpen -> {
                 _toolbarState.update { it.copy(isQuickNavOpen = action.isOpen) }
@@ -417,6 +452,18 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             appRepository.kvProxy.setAppSettings(updated)
         }
+    }
+
+    private fun openBookPanel(open: () -> Unit) {
+        _toolbarState.update { it.copy(isMenuOpen = false, isBookPanelOpen = true) }
+        updateDrawingState()
+        open()
+    }
+
+    private fun closeBookPanel() {
+        bookReading.close()
+        _toolbarState.update { it.copy(isBookPanelOpen = false) }
+        updateDrawingState()
     }
 
     private fun handleCloseAllMenus() {
@@ -576,6 +623,11 @@ class EditorViewModel @Inject constructor(
         }
 
         editorImage.openPage = OpenPage(pageId, bookId, pageIndex, totalPages)
+        if (book != null) viewModelScope.launch(Dispatchers.IO) {
+            val isBook = bookReading.sourceOf(book) != null
+            _toolbarState.update { it.copy(isBook = isBook, isFinished = book.finishedAt != null, rating = book.rating) }
+            bookReading.opened(book.id)
+        }
         _toolbarState.update {
             it.copy(
                 notebookId = bookId,

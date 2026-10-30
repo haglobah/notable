@@ -199,6 +199,11 @@ fun NotebookConfigDialog(
                     PaperAction(stringResource(typeName), onClick = { perform { showBackground = true } },
                         modifier = Modifier.fillMaxWidth(), enabled = !busy)
                 }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.rating_menu), style = MaterialTheme.typography.subtitle2)
+                    RatingPicker(book.rating, onRate = { r -> perform { io { edits.rateNotebook(bookId, r) } } })
+                }
+                Divider(color = PaperLine)
                 NotebookLinkRow(isLinkedInit = book.linkedExternalUri != null,
                     linkedUriInit = book.linkedExternalUri, defaultPath = "",
                     enabled = !busy, onLinkChanged = { uri ->

@@ -204,6 +204,12 @@ class RoomToAutomergeMigration(
         val entry = AmNotebookEntry(
             id = nb.id, docUrl = docUrl, title = nb.title, folderId = nb.parentFolderId,
             kind = AmEntryKind.NOTEBOOK, source = source, createdAt = nb.createdAt, updatedAt = nb.updatedAt,
+            // The book's metadata is read at import into Room, and reaches the doc here, whole.
+            meta = nb.bookMeta?.takeUnless { it.isEmpty }, readAt = nb.readAt, finishedAt = nb.finishedAt,
+            rating = nb.rating,
+            // Page count and open page as the new doc has them (docs/plans/ebook-features.md, round 3).
+            pageCount = mapped.size,
+            readPage = mapped.indexOfFirst { it.id == nb.openPageId }.takeIf { it >= 0 },
         )
         return entry to missing
     }
@@ -226,6 +232,7 @@ class RoomToAutomergeMigration(
         return AmNotebookEntry(
             id = page.id, docUrl = docUrl, title = QUICK_PAGE_TITLE, folderId = page.parentFolderId,
             kind = AmEntryKind.QUICK_PAGE, source = source, createdAt = page.createdAt, updatedAt = page.updatedAt,
+            pageCount = 1, readPage = 0,
         )
     }
 

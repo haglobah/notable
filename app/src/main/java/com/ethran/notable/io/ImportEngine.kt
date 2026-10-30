@@ -116,11 +116,13 @@ class ImportEngine @Inject constructor(
         val optionsWithTitle = options.copy(
             bookTitle = finalTitle,
         )
+        // A title the caller chose wins over the book's own; a file name does not.
+        val titleFromFile = options.bookTitle == null
 
         return when {
             XoppFile.isXoppFile(mimeType, bookTitle) -> handleImportXopp(uri, optionsWithTitle)
-            isPdfFile(mimeType, bookTitle) -> handleImportPDF(uri, optionsWithTitle)
-            isEpubFile(mimeType, bookTitle) -> handleImportEpub(uri, optionsWithTitle)
+            isPdfFile(mimeType, bookTitle) -> handleImportPDF(uri, optionsWithTitle, titleFromFile)
+            isEpubFile(mimeType, bookTitle) -> handleImportEpub(uri, optionsWithTitle, titleFromFile)
             else -> {
                 val errorMessage = "Unsupported file type: $mimeType"
                 log.w(errorMessage)
@@ -186,9 +188,23 @@ class ImportEngine @Inject constructor(
         return persistentError?.let { AppResult.Error(it) } ?: AppResult.Success(importedPageIds)
     }
 
+    /**
+     * The book's own title and metadata (docs/plans/ebook-features.md). Reading them never fails
+     * the import: a failure is logged and shown, and the book is imported with its file name.
+     */
+    private suspend fun readBookMeta(fileName: String, read: () -> BookMetaReader.Extracted): BookMetaReader.Extracted =
+        try {
+            read()
+        } catch (e: Exception) {
+            log.e("Could not read the metadata of $fileName: ${e.message}", e)
+            appEventBus.emit(AppEvent.LogMessage("importBook", "Imported without its metadata: ${e.message ?: e.javaClass.simpleName}"))
+            BookMetaReader.Extracted(null, null)
+        }
+
     private suspend fun handleImportPDF(
         uri: Uri,
-        options: ImportOptions
+        options: ImportOptions,
+        titleFromFile: Boolean = false,
     ): AppResult<List<String>, DomainError> {
         log.d("Importing Pdf file...")
         require(options.bookTitle != null) { "bookTitle cannot be null when importing Pdf file" }
@@ -197,12 +213,14 @@ class ImportEngine @Inject constructor(
             ?: return AppResult.Error(DomainError.UnexpectedState("Couldn't determine file path. Does the app have permission to read external storage?"))
 
         val filePath = fileToSave.toString()
+        val extracted = readBookMeta(fileToSave.name) { BookText.pdfMeta(filePath) }
 
         val book = Notebook(
-            title = options.bookTitle,
+            title = extracted.title?.takeIf { titleFromFile } ?: options.bookTitle,
             parentFolderId = options.folderId,
             defaultBackground = filePath,
-            defaultBackgroundType = BackgroundType.AutoPdf.key
+            defaultBackgroundType = BackgroundType.AutoPdf.key,
+            bookMeta = extracted.meta,
         )
         val importedPageIds = mutableListOf<String>()
         var persistentError: DomainError? = null
@@ -234,7 +252,8 @@ class ImportEngine @Inject constructor(
      */
     private suspend fun handleImportEpub(
         uri: Uri,
-        options: ImportOptions
+        options: ImportOptions,
+        titleFromFile: Boolean = false,
     ): AppResult<List<String>, DomainError> {
         log.d("Importing EPUB file...")
         val title = requireNotNull(options.bookTitle) { "bookTitle cannot be null when importing an EPUB" }
@@ -262,11 +281,13 @@ class ImportEngine @Inject constructor(
             return AppResult.Error(DomainError.UnexpectedState("This EPUB has no pages after layout"))
         }
 
+        val extracted = readBookMeta(file.name) { BookMetaReader.epubMeta(file) }
         val book = Notebook(
-            title = title,
+            title = extracted.title?.takeIf { titleFromFile } ?: title,
             parentFolderId = options.folderId,
             defaultBackground = file.path,
-            defaultBackgroundType = BackgroundType.AutoPdf.key
+            defaultBackgroundType = BackgroundType.AutoPdf.key,
+            bookMeta = extracted.meta,
         )
         val importedPageIds = mutableListOf<String>()
         edits.importNotebook(book) {
