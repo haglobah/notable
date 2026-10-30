@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
 import type { AutomergeUrl } from "@automerge/automerge-repo"
 import { readLibrary, readNotebook } from "@notable/schema"
 import { startHarness, userWithToken, clientRepo, waitFor, tryFind, shutdown, type Harness } from "@notable/server/test/helpers.ts"
@@ -112,6 +113,32 @@ test("adding an EPUB records its fixed layout and one page per laid-out page", a
   assert.deepEqual(entry.source.kind === "epub" && entry.source.layout, EPUB_LAYOUT)
   const notebook = readNotebook((await a.repo.find(docUrl as AutomergeUrl)).doc())
   assert.equal(notebook.pageOrder.length, expectedPages)
+  await shutdown(a.repo)
+})
+
+test("an added book takes its title and metadata from the file", async () => {
+  const a = await session("bookmeta")
+  const dir = new URL("../../schema/fixtures/book-meta/", import.meta.url)
+  const expected = JSON.parse(readFileSync(new URL("expected.json", dir), "utf8")).files
+  const add = (name: string) => addDocument({
+    file: new File([readFileSync(new URL(name, dir))], name),
+    folderId: null, repo: a.repo, library: a.library,
+    transport: fetchTransport(h.base, { authorization: `Bearer ${a.token}` }), maxBlobBytes: a.maxBlobBytes,
+  })
+  for (const name of ["epub2-calibre.epub", "pdf-info.pdf"]) {
+    const { notebookId, metaError } = await add(name)
+    assert.equal(metaError, null)
+    const entry = readLibrary(a.library.doc()).notebooks[notebookId]
+    assert.equal(entry.title, expected[name].title)
+    assert.deepEqual(entry.meta, expected[name].meta)
+    assert.equal(entry.pageCount, expected[name].pages)
+    assert.ok(!("readPage" in entry) && !("rating" in entry))
+  }
+  // No metadata: no meta key, the file name as title.
+  const bareId = (await add("pdf-bare.pdf")).notebookId
+  const bare = readLibrary(a.library.doc()).notebooks[bareId]
+  assert.equal(bare.title, "pdf-bare")
+  assert.ok(!("meta" in bare))
   await shutdown(a.repo)
 })
 

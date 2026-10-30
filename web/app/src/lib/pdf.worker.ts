@@ -1,10 +1,11 @@
 /// <reference lib="webworker" />
 /*
- * MuPDF off the main thread: page sizes and page bitmaps for the reader, and the whole
+ * MuPDF off the main thread: page sizes, page bitmaps, the outline and search for the reader, and the whole
  * Download-as-PDF projection. Blobs come from /api/blobs, through the service worker's cache, so
  * documents read before stay readable and downloadable offline.
  */
 import { docKeyId, entryFromWire, type DocKey, type WorkerRequest, type WorkerResponse } from "./pdfProtocol.ts"
+import { outlineOf, searchDoc } from "./bookText.ts"
 
 declare const self: DedicatedWorkerGlobalScope
 
@@ -94,6 +95,11 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     else if (req.type === "render") {
       const bitmap = await render(req.key, req.index, req.width)
       post({ id: req.id, type: "render", bitmap }, [bitmap])
+    } else if (req.type === "outline") {
+      post({ id: req.id, type: "outline", outline: outlineOf(await document(req.key)) })
+    } else if (req.type === "search") {
+      const hits = searchDoc(await document(req.key), req.query, (done, total) => post({ id: req.id, type: "progress", done, total }))
+      post({ id: req.id, type: "search", hits })
     } else if (req.type === "project") {
       // Automerge's WASM is only needed for downloads; reading pages shouldn't wait for it.
       const [A, { project }] = await Promise.all([import("@automerge/automerge"), import("./project.ts")])

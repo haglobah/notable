@@ -1,6 +1,8 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import type { Folder, Library, NotebookEntry } from "@notable/schema"
+import { readFileSync } from "node:fs"
+import { libraryFromJson, type Folder, type Library, type NotebookEntry } from "@notable/schema"
+import { bylineOf, continueReading } from "../src/lib/books.ts"
 import { childFolders, countIn, edited, entriesIn, folderPath, kindOf } from "../src/lib/library.ts"
 
 const d = (iso: string) => new Date(iso)
@@ -48,4 +50,18 @@ test("edit dates read as today, yesterday, a date, or a date with year", () => {
   assert.equal(edited(d("2026-10-10T22:00:00"), now), "yesterday")
   assert.doesNotMatch(edited(d("2026-03-04T12:00:00"), now), /2026/)
   assert.match(edited(d("2025-03-04T12:00:00"), now), /2025/)
+})
+
+const books = libraryFromJson(JSON.parse(readFileSync(new URL("../../schema/fixtures/library-books-v1.json", import.meta.url), "utf8")))
+
+test("bylines name the authors and the series with its number", () => {
+  assert.equal(bylineOf(books.notebooks["b-lhod"]), "Ursula K. Le Guin · Hainish Cycle 4")
+  assert.equal(bylineOf(books.notebooks["p-crdt"]), "Martin Kleppmann and Annette Bieniusa")
+  assert.equal(bylineOf({ ...books.notebooks["p-crdt"], meta: { ...books.notebooks["p-crdt"].meta!, authors: ["A", "B", "C"] } }), "A and others")
+  assert.equal(bylineOf(books.notebooks["p-anal"]), null)
+})
+
+test("continue reading: opened, not finished, last read first", () => {
+  assert.deepEqual(continueReading(books).map(e => e.id), ["n-journal", "b-earth", "p-crdt"])
+  assert.deepEqual(continueReading(books, 1).map(e => e.id), ["n-journal"])
 })

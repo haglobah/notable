@@ -2,6 +2,7 @@ import { Show, createSignal, onCleanup, onMount } from "solid-js"
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo"
 import { readNotebook, type NotebookEntry } from "@notable/schema"
 import { coverSignature } from "../lib/cover.ts"
+import { progressOf, type Progress } from "../lib/reading.ts"
 import { kindOf } from "../lib/library.ts"
 import { paintCover } from "../lib/paint.ts"
 import { Glyph } from "./Marks.tsx"
@@ -31,6 +32,7 @@ export function Cover(p: { entry: NotebookEntry }) {
   let box!: HTMLDivElement
   let canvas!: HTMLCanvasElement
   const [shown, setShown] = createSignal(false)
+  const [progress, setProgress] = createSignal<Progress | null>(null)
 
   const show = (src: HTMLCanvasElement) => {
     canvas.width = src.width
@@ -53,6 +55,7 @@ export function Cover(p: { entry: NotebookEntry }) {
           const h = handle!
           const entry = p.entry
           const nb = readNotebook(h.doc())
+          setProgress(progressOf(nb))
           const sig = coverSignature(nb, entry)
           const width = box.clientWidth
           const have = painted.get(entry.id)
@@ -103,6 +106,13 @@ export function Cover(p: { entry: NotebookEntry }) {
     <div class="cover" ref={box} aria-hidden="true">
       <Show when={!shown()}><Glyph kind={kindOf(p.entry)} /></Show>
       <canvas ref={canvas} class="cover-page" classList={{ shown: shown() }} />
+      <Show when={p.entry.finishedAt} fallback={
+        <Show when={p.entry.readAt && progress()?.index ? progress() : null}>
+          {pr => <span class="cover-progress"><span style={{ width: `${Math.round(pr().fraction * 100)}%` }} /></span>}
+        </Show>
+      }>
+        <span class="cover-finished">Finished</span>
+      </Show>
     </div>
   )
 }

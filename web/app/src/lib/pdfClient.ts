@@ -1,6 +1,7 @@
 /* The app's side of the MuPDF worker: one worker, promise per request. */
 import type { NotebookEntry } from "@notable/schema"
 import { entryToWire, type DocKey, type WorkerRequest, type WorkerResponse } from "./pdfProtocol.ts"
+import type { OutlineEntry, SearchHit } from "./bookText.ts"
 
 /** Omit over each member of a union (plain Omit would merge the members). */
 type Request = WorkerRequest extends infer R ? (R extends WorkerRequest ? Omit<R, "id"> : never) : never
@@ -56,4 +57,18 @@ export async function projectPdf(doc: Uint8Array, entry: NotebookEntry, progress
   const r = await call({ type: "project", doc, entry: entryToWire(entry) }, [doc.buffer], progress)
   if (r.type !== "project") throw new Error("unexpected worker reply")
   return r.pdf
+}
+
+/** The document's table of contents, flattened (bookText.ts outlineOf). */
+export async function documentOutline(key: DocKey): Promise<OutlineEntry[]> {
+  const r = await call({ type: "outline", key })
+  if (r.type !== "outline") throw new Error("unexpected worker reply")
+  return r.outline
+}
+
+/** Every document page with a hit; [progress] counts pages searched. */
+export async function searchDocument(key: DocKey, query: string, progress?: (done: number, total: number) => void): Promise<SearchHit[]> {
+  const r = await call({ type: "search", key, query }, [], progress)
+  if (r.type !== "search") throw new Error("unexpected worker reply")
+  return r.hits
 }
