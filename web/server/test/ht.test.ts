@@ -14,11 +14,17 @@ async function fakeHt() {
   ])
   const signOuts: { cookie?: string; origin?: string }[] = []
   let down = false
+  let port = 0
   const server: Server = createServer((req, res) => {
     let body = ""
     req.on("data", c => (body += c))
     req.on("end", () => {
       if (down) return void res.writeHead(502).end()
+      // Better Auth refuses calls with Fetch Metadata (Node's fetch sends Sec-Fetch-Mode) or cookies
+      // unless their Origin is trusted; HT trusts only its own here.
+      if ((req.headers["sec-fetch-mode"] || req.headers.cookie) && req.headers.origin !== `http://127.0.0.1:${port}`) {
+        return void res.writeHead(403, { "content-type": "application/json" }).end('{"code":"MISSING_OR_NULL_ORIGIN"}')
+      }
       if (req.method === "POST" && req.url === "/api/auth/sign-in/email") {
         const { email, password } = JSON.parse(body) as { email: string; password: string }
         const key = email.toLowerCase()
@@ -39,7 +45,7 @@ async function fakeHt() {
     })
   })
   await new Promise<void>(r => server.listen(0, "127.0.0.1", r))
-  const { port } = server.address() as { port: number }
+  port = (server.address() as { port: number }).port
   return {
     url: `http://127.0.0.1:${port}`,
     users,
