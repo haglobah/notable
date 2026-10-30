@@ -43,6 +43,32 @@ export type NotebookEntry = {
   source: Source
   createdAt: Date
   updatedAt: Date
+  /** Read from the file at import; absent when it had none (docs/plans/ebook-features.md). */
+  meta?: BookMeta
+  /** The last time a reader opened it; absent when never opened. */
+  readAt?: Date
+  /** Set when marked finished; null or absent when not. */
+  finishedAt?: Date | null
+  /** Pages in the notebook doc's pageOrder, kept current by every writer; absent when unknown. */
+  pageCount?: number
+  /** Index of the open page in pageOrder, written with openPageId; absent before the first read. */
+  readPage?: number
+  /** 1 to 10; null when cleared; absent when never rated. */
+  rating?: number | null
+}
+
+/** A book's metadata, written whole once at import. Every key is present. */
+export type BookMeta = {
+  authors: string[]
+  series: string | null
+  seriesIndex: number | null
+  description: string | null
+  publisher: string | null
+  language: string | null
+  isbn: string | null
+  /** As the file gives it: "2019", "2019-05-02", … */
+  published: string | null
+  subjects: string[]
 }
 
 /** Blobs are sha256 hex digests in the server's blob store. */
