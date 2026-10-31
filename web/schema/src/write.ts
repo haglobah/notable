@@ -114,6 +114,7 @@ export const libraryValue = (x: Library) => ({
   schema: s(LIBRARY_SCHEMA),
   version: BASE_VERSION,
   ...(x.codeDocUrl === undefined ? {} : { codeDocUrl: s(x.codeDocUrl) }),
+  ...(x.quickNotebookId === undefined ? {} : { quickNotebookId: s(x.quickNotebookId) }),
   folders: Object.fromEntries(Object.values(x.folders).map(v => [v.id, folderValue(v)])),
   notebooks: Object.fromEntries(Object.values(x.notebooks).map(v => [v.id, notebookEntryValue(v)])),
 })

@@ -26,6 +26,11 @@ export type Library = {
    * definition is written, and libraries written before it existed lack it.
    */
   codeDocUrl?: string
+  /**
+   * The library's quick-pages notebook (docs/plans/ebook-features.md, round 5): "+ Quick page"
+   * appends a page to it. Absent until the first quick page; it may name a deleted entry.
+   */
+  quickNotebookId?: string
 }
 
 export type Folder = { id: string; title: string; parentId: string | null; createdAt: Date; updatedAt: Date }

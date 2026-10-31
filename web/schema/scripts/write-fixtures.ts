@@ -177,6 +177,8 @@ const book = (id: string, title: string, folderId: string | null, source: Librar
 })
 const EPUB_SOURCE = { kind: "epub" as const, blob: EPUB, layout: { w: 446, h: 595, em: 12 } }
 const books: Library = {
+  // The journal doubles as the quick-pages notebook (round 5).
+  quickNotebookId: "n-journal",
   folders: {
     "f-uni": library.folders["f-uni"],
     "f-math": library.folders["f-math"],

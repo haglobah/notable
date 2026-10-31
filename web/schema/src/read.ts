@@ -87,8 +87,10 @@ export function readLibrary(doc: unknown): Library {
   const notebooks = map(d, "notebooks", "")
   // Optional (ADR-002): absent until the first definition is written.
   const codeDocUrl = "codeDocUrl" in d && d.codeDocUrl !== undefined ? scalar(d.codeDocUrl, "codeDocUrl") : undefined
+  const quickNotebookId = "quickNotebookId" in d && d.quickNotebookId !== undefined ? scalar(d.quickNotebookId, "quickNotebookId") : undefined
   return {
     ...(codeDocUrl === undefined ? {} : { codeDocUrl }),
+    ...(quickNotebookId === undefined ? {} : { quickNotebookId }),
     folders: Object.fromEntries(Object.keys(folders).map(id => {
       const p = `folders.${id}`
       const o = map(folders, id, "folders")

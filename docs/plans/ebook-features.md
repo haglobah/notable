@@ -186,6 +186,62 @@ rating?:    int 1..10 | null   // null: cleared; absent: never rated
   descending), `rating` (default descending). Unknown values last, as for other keys.
 - **Rating UI:** 1 to 10 plus Clear; in the reader (PWA) and the editor menu and card menu (Boox).
 
+## Library bar design (round 4)
+
+The controls above the notebooks, on both platforms. Goal: half the height, calmer, still one
+tap to "Reading" and two taps to any sort.
+
+```
+┌───────────────────────────────────────────────┬──────────────────┐
+│ ⌕  Search titles, authors, tags…          ✕  ? │  Progress  ↓     │   line 1
+├───────────────────────────────────────────────┴──────────────────┤
+│ ( All | Reading | Unread | Finished )   Author ▾  Series ▾  [Tag 2 ▾]  Language ▾  Type ▾   Clear │  line 2
+└──────────────────────────────────────────────────────────────────┘
+  3 matches in Uni · Search everywhere                                    results line (only when searching)
+```
+
+- **Line 1:** the search field is a 1 px underline, no filled box; a leading search glyph; ✕ when
+  there's text; `?` opens the query syntax (the hint lines are gone). The sort control sits on
+  the same line as two hit zones: the key name opens the sort menu anchored under it (keys as a
+  list, the current one checked, each naming its default direction: "Furthest first"); the arrow
+  flips the direction (↓ descending, ↑ ascending). No sort chosen: "Sort" with no arrow.
+- **Line 2:** a segmented control All · Reading · Unread · Finished, single choice: it replaces
+  the `is:` token (All removes it). A typed `is:` with several values marks each of them. Then the
+  facet menus as text buttons with ▾, no borders: Author, Series, Tag, Language, Type (kind moves
+  into a menu; only kinds the library has). A facet with selections becomes an inverted pill with
+  its count ("Tag 2 ▾"). A menu without values isn't shown. "Clear" at the end only when a filter
+  is set. If line 2 doesn't fit, it scrolls sideways; it never wraps to a third line.
+- **Scope:** the This folder / Everywhere switch moves into the results line, as a text link
+  ("Search everywhere" / "Search only Uni").
+- **Look:** black on white, 1 px rules, selected = inverted; no grey fills, no shadows, no
+  animation (e-ink). Labels 15–16 sp/px; tap targets at least 44 px (PWA) / 48 dp (Boox) tall
+  even where the drawn element is smaller. Menus open anchored to their button, as now.
+
+## Quick pages and headings (round 5)
+
+Beat: quick pages should work like reMarkable's: one big notebook; "+ Quick page" adds a page
+to its end and opens it. And no headings over the library (Library, Folders, Notebooks, Quick
+pages).
+
+- **Schema:** the library gets `quickNotebookId?` (scalar string, optional, version stays 1): the
+  notebook entry "+ Quick page" appends to. It may name a deleted entry; then it counts as unset.
+- **"+ Quick page"** (Boox): if `quickNotebookId` names a live entry, append a page with the
+  default background at the end of its `pageOrder` and open the editor on it. Otherwise create a
+  notebook titled "Quick pages" in the root, set `quickNotebookId` to it (one library write), and
+  open its first page. Two devices doing this at once while it is unset make two notebooks; the
+  library keeps one id (Automerge picks a value) and the other notebook stays an ordinary one.
+- **Old quick pages** (`kind: "quickPage"` entries) move into the quick notebook, oldest
+  (`createdAt`) first, appended at the end: page content (strokes, images, background) is copied
+  under the same page id, then the old entry and its doc are deleted. Copy before delete, and
+  skip a page id the notebook already has, so a repeat or a second device doing the same never
+  duplicates or loses ink. Runs on the Boox when the library loads and finds a quickPage entry.
+- **Showing it:** the quick notebook is an ordinary notebook card, first in its folder (before
+  any sort), with "Quick pages" as its title unless renamed. The PWA does the same.
+- **Headings:** none over the library. Inside a folder the breadcrumb stays (it's navigation, not
+  a heading); at the root nothing is shown. The Boox app title, "Folders", "Notebooks" and the
+  quick-pages row go; folders stay as a row above the cards. The PWA's "Library"/folder title and
+  the "Continue reading" shelf go (Reading is one tap; "Last read" is a sort).
+
 ## PWA
 
 - Worker requests `outline` and `search` (`pdf.worker.ts`).
@@ -299,3 +355,45 @@ rating?:    int 1..10 | null   // null: cleared; absent: never rated
   from the projector: it never writes docs. Room 40: `rating`, `pageCount` (AutoMigration, test).
   Rating 1–10 plus Clear in the editor menu (opens in place) and the notebook details dialog;
   cards show "★ n". Checked on the Note Air 5C.
+- 2026-10-30, round 4 (library bar), PWA: done, not committed. `LibraryBar`, `SortControl`,
+  `QueryHelp`, `FacetMenu` in `LibraryView.tsx`; `setOnly` in `lib/filters.ts` (segments).
+  Popups are `position: fixed`, placed from their button (the facet line scrolls sideways and
+  would clip them), and close on an outside tap, scroll or resize. Clear is an ✕. Bar height 94 px
+  for both lines at desktop width (before: search, hint and three chip/menu rows). App tests 92
+  pass (2 skips). Checked in Chrome: segments, Type menu, sort menu, outside tap.
+- 2026-10-30, Android, round 4 (not committed): the library bar (`ui/components/LibraryBar.kt`,
+  replacing `LibraryFilterBar.kt` and the boxed search field) follows "Library bar design": line 1
+  an underline search field with ✕ and `?` (an anchored popup with the query syntax) and the sort
+  as two hit zones (key ▾ opens the anchored menu: check in a left gutter, the key's default
+  direction on the right; the arrow shows the actual direction, ↓ descending, ↑ ascending, and
+  flips it); line 2 All · Reading · Unread · Finished (single choice, `QueryFilters.setState`),
+  Author/Series/Tag/Language/Type as text buttons (an inverted pill with the count when set; Type
+  is `kind:`, only kinds the library has), and a ✕ Clear (`clearFilters`, typed words stay); line 2
+  scrolls sideways. The folder scope is a link in the results line ("3 matches in Uni · Search
+  everywhere"). Pills and segments are drawn 34 dp tall inside 48 dp hit areas; black on white,
+  1 dp rules, no animation. Measured on the Note Air 5C (300 dpi, 48 dp = 90 px): the bar was
+  307 px tall (search box top to the end of the second control row), now 180 px (two 48 dp lines;
+  136 px from the search glyphs to the bottom of the segments). Reading is one tap, a sort two.
+- 2026-10-30, round 5 (quick pages, headings), schema and PWA: done, not committed. Schema:
+  `quickNotebookId` (read, write, JSON, test); the books fixture sets it to `n-journal`. PWA: no
+  "Library"/folder heading (the breadcrumb, ending in the current folder, shows only inside a
+  folder), no Continue reading shelf (`continueReading` removed), `quickFirst` puts the quick
+  notebook first in its folder. The PWA can't add pages, so "+ Quick page" is Boox-only. Schema
+  tests: 143 pass, 1 fails until Kotlin regenerates `library-books-from-kotlin.automerge`; app 92.
+- 2026-10-30, Android, round 5 (not committed): `AmLibrary.quickNotebookId` (optional scalar,
+  `setQuickNotebookId`); `library-books-from-kotlin` regenerated (TS `books.test.ts` 93 pass).
+  "+ Quick page" (`LibraryEdits.openQuickPage`): a page with the notebook's default background
+  appended to the quick notebook and opened, or "Quick pages" created in the root and
+  `quickNotebookId` set (`LocalChange.QuickNotebookSet`, outbox `quick`). The library reads the id
+  through `ContentMirror.quickNotebookId()` (the docs; a deleted entry counts as unset). Old quick
+  pages (`LibraryEdits.migrateQuickPages`, on library load): Room's quick-page rows, oldest first,
+  each `LocalChange.QuickPageMoved` (outbox `qmove/<page>`): the writer copies the page from the
+  old entry's doc (Room as fallback) into the quick notebook under the same id, appended, in one
+  commit, and only then deletes the old entry in another; a page id the notebook already has isn't
+  copied again (tests: interrupted run keeps ink drawn after the first copy, two devices merge to
+  one page; both fail without the check). Room's step re-parents the page row, so its strokes stay.
+  The old doc stays unreferenced (the repo has no delete). Library: no app title, no "Folders",
+  "Notebooks" or quick-pages row; settings sits at the end of the creation actions; the breadcrumb
+  only inside folders; the quick notebook is the first card (before any sort, not in search
+  results). Checked on the Note Air 5C: two quick pages made with the old build moved in (ink kept),
+  "+ Quick page" twice gave pages 3/3 and 4/4.

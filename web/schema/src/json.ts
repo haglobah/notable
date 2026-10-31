@@ -12,6 +12,7 @@ const b64 = (v: string) => Uint8Array.from(Buffer.from(v, "base64"))
 export function libraryFromJson(j: J): Library {
   return {
     ...(j.codeDocUrl === undefined ? {} : { codeDocUrl: j.codeDocUrl }),
+    ...(j.quickNotebookId === undefined ? {} : { quickNotebookId: j.quickNotebookId }),
     folders: Object.fromEntries(Object.entries<J>(j.folders).map(([id, f]) =>
       [id, { id, title: f.title, parentId: f.parentId, createdAt: d(f.createdAt), updatedAt: d(f.updatedAt) }])),
     notebooks: Object.fromEntries(Object.entries<J>(j.notebooks).map(([id, n]) =>
@@ -65,6 +66,7 @@ export function notebookFromJson(j: J): Notebook {
 export function libraryToJson(l: Library): J {
   return {
     ...(l.codeDocUrl === undefined ? {} : { codeDocUrl: l.codeDocUrl }),
+    ...(l.quickNotebookId === undefined ? {} : { quickNotebookId: l.quickNotebookId }),
     folders: Object.fromEntries(Object.values(l.folders).map(f =>
       [f.id, { title: f.title, parentId: f.parentId, createdAt: f.createdAt.toISOString(), updatedAt: f.updatedAt.toISOString() }])),
     notebooks: Object.fromEntries(Object.values(l.notebooks).map(n =>

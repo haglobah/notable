@@ -37,6 +37,13 @@ test("books library written by Kotlin reads back exactly", t => {
   assert.deepEqual(readLibrary(A.load(readFileSync(fixture("library-books-from-kotlin.automerge")))), books)
 })
 
+test("the quick-pages notebook id is a scalar and optional", () => {
+  assert.equal(readLibrary(doc()).quickNotebookId, "n-journal")
+  const without = A.change(doc(), x => { delete x.quickNotebookId })
+  assert.ok(!("quickNotebookId" in readLibrary(without)))
+  assert.throws(() => readLibrary(A.change(doc(), x => { x.quickNotebookId = "text" })), /quickNotebookId: expected a scalar string, got collaborative Text/)
+})
+
 test("entries without book fields read without them", () => {
   const e = readLibrary(doc()).notebooks["p-anal"]
   assert.ok(!("meta" in e) && !("readAt" in e) && !("finishedAt" in e))

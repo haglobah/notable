@@ -1,5 +1,6 @@
 {
   "library": {
+    "quickNotebookId": "n-journal",
     "folders": {
       "f-uni": {
         "title": "Uni",
