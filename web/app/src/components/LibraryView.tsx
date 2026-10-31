@@ -2,8 +2,8 @@ import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { A, useParams, useSearchParams } from "@solidjs/router"
 import { facetsOf, normalize, parseQuery, queryLibrary, type Facet, type Facets, type Library, type NotebookEntry, type SortKey } from "@notable/schema"
 import { childFolders, countIn, edited, entriesIn, folderPath, kindOf } from "../lib/library.ts"
-import { bylineOf, continueReading } from "../lib/books.ts"
-import { directionLabel, parseSort, selected, toggle, withoutFields, type SortChoice } from "../lib/filters.ts"
+import { bylineOf, quickFirst } from "../lib/books.ts"
+import { directionLabel, parseSort, selected, setOnly, toggle, withoutFields, type SortChoice } from "../lib/filters.ts"
 import { useSession } from "./session.tsx"
 import { Glyph } from "./Marks.tsx"
 import { Cover } from "./Cover.tsx"
@@ -32,7 +32,8 @@ export function LibraryView() {
         // No query: this folder's own entries, in the chosen order or the most recently edited first.
         const entries = createMemo(() => {
           const c = choice()
-          return c ? queryLibrary(lib(), { query: "", sort: c.sort, descending: c.descending, folderId: folderId() }) : entriesIn(lib(), folderId())
+          const ordered = c ? queryLibrary(lib(), { query: "", sort: c.sort, descending: c.descending, folderId: folderId() }) : entriesIn(lib(), folderId())
+          return quickFirst(lib(), ordered)
         })
         const here = () => (path().length ? path()[path().length - 1].title : "Library")
         // In a folder a query covers it and its subfolders, unless "Everywhere" is on; at the root, everything.
@@ -44,38 +45,39 @@ export function LibraryView() {
           return queryLibrary(lib(), { query: query(), ...scope(), ...(c ? { sort: c.sort, descending: c.descending } : {}) })
         })
         const facets = createMemo(() => facetsOf(queryLibrary(lib(), { query: "", ...scope() })))
-        const reading = createMemo(() => (folderId() === null ? continueReading(lib()) : []))
         const where = () => (everywhere() ? "in your library" : `in ${here()} and its folders`)
 
         return (
           <Show when={!missing()} fallback={<FolderGone />}>
-            <section aria-labelledby="place">
-              <Show when={path().length > 0}>
-                <nav aria-label="Folders">
-                  <ol class="crumbs">
-                    <li><A href="/">Library</A></li>
-                    <For each={path().slice(0, -1)}>{f => <li><A href={`/f/${f.id}`}>{f.title}</A></li>}</For>
-                  </ol>
-                </nav>
-              </Show>
+            <section aria-label={here()}>
+              {/* No headings (round 5): inside a folder the breadcrumb says where you are. */}
               <div class="library-head">
-                <h1 class="place" id="place">{here()}</h1>
+                <Show when={path().length > 0} fallback={<span />}>
+                  <nav aria-label="Folders">
+                    <ol class="crumbs">
+                      <li><A href="/">Library</A></li>
+                      <For each={path().slice(0, -1)}>{f => <li><A href={`/f/${f.id}`}>{f.title}</A></li>}</For>
+                      <li aria-current="page">{here()}</li>
+                    </ol>
+                  </nav>
+                </Show>
                 <AddButton folderId={folderId()} />
               </div>
               <DropZone label={`Drop to add to ${here()}`} onFiles={files => s.uploads.add(files, folderId())} />
               <UploadList uploads={s.uploads} />
-              <SearchField query={query()} onQuery={setQuery} />
-              <FilterBar
-                query={query()} onQuery={setQuery} facets={facets()}
-                choice={choice()} onChoice={setChoice} searching={!!results()}
-                scope={folderId() === null ? null : { everywhere: search.in === "all", set: all => setSearch({ in: all ? "all" : undefined }, { replace: true }) }}
-              />
+              <LibraryBar query={query()} onQuery={setQuery} facets={facets()} choice={choice()} onChoice={setChoice} searching={!!results()} />
 
               <Show when={results()}>
                 {r => (
                   <section aria-label="Search results">
                     <p class="search-count" aria-live="polite">
                       {r().length === 0 ? `Nothing ${where()} matches.` : `${r().length} match${r().length === 1 ? "" : "es"} ${where()}`}
+                      <Show when={folderId() !== null}>
+                        {" · "}
+                        <button type="button" class="link" onClick={() => setSearch({ in: everywhere() ? undefined : "all" }, { replace: true })}>
+                          {everywhere() ? `Search only ${here()}` : "Search everywhere"}
+                        </button>
+                      </Show>
                     </p>
                     <Show when={r().length > 0}>
                       <ul class="shelf cards" aria-label="Matches">
@@ -84,14 +86,6 @@ export function LibraryView() {
                     </Show>
                   </section>
                 )}
-              </Show>
-
-              <Show when={!results() && reading().length > 0}>
-                <h2 class="shelf-head">Continue reading</h2>
-                <ul class="shelf cards" aria-label="Continue reading">
-                  <For each={reading()}>{e => <li><EntryCard lib={lib()} entry={e} withFolder /></li>}</For>
-                </ul>
-                <h2 class="shelf-head">Everything</h2>
               </Show>
 
               <Show when={!results()}>
@@ -150,96 +144,173 @@ function EntryCard(p: { lib: Library; entry: NotebookEntry; withFolder?: boolean
   )
 }
 
-const STATES: [string, string][] = [["unread", "Unread"], ["reading", "Reading"], ["finished", "Finished"]]
-const KINDS: [string, string][] = [["pdf", "PDF"], ["epub", "EPUB"], ["notebook", "Notebook"], ["quickpage", "Quick page"]]
+const STATES: [string | null, string][] = [[null, "All"], ["reading", "Reading"], ["unread", "Unread"], ["finished", "Finished"]]
+const KIND_LABELS: Record<string, string> = { pdf: "PDF", epub: "EPUB", notebook: "Notebook", quickpage: "Quick page" }
 const SORTS: [SortKey, string][] = [
   ["relevance", "Best match"], ["title", "Title"], ["author", "Author"], ["series", "Series"],
   ["length", "Length"], ["progress", "Progress"], ["rating", "Rating"],
   ["published", "Published"], ["added", "Added"], ["edited", "Edited"], ["read", "Last read"], ["finished", "Finished"],
 ]
 
-/** Chips and menus that write filter tokens into the query, the sort, and where a query looks. */
-function FilterBar(p: {
+/** Closes a popover on a tap outside it; menus open anchored to their own button. */
+function usePopover() {
+  let el: HTMLDetailsElement | undefined
+  const close = () => { if (el) el.open = false }
+  const outside = (e: PointerEvent) => { if (el?.open && !el.contains(e.target as Node)) close() }
+  // Fixed, placed from the button: the facet line scrolls sideways and would clip it otherwise.
+  const place = () => {
+    if (!el?.open) return
+    const pop = el.querySelector<HTMLElement>(".facet-pop"), button = el.querySelector("summary")
+    if (!pop || !button) return
+    const r = button.getBoundingClientRect(), gutter = 16, w = pop.offsetWidth
+    const left = pop.classList.contains("facet-pop-end") ? r.right - w : r.left
+    pop.style.left = `${Math.max(gutter, Math.min(left, window.innerWidth - w - gutter))}px`
+    pop.style.top = `${r.bottom + 2}px`
+    pop.style.maxHeight = `${Math.max(160, window.innerHeight - r.bottom - gutter)}px`
+  }
+  document.addEventListener("pointerdown", outside)
+  window.addEventListener("scroll", close, { passive: true })
+  window.addEventListener("resize", close)
+  onCleanup(() => {
+    document.removeEventListener("pointerdown", outside)
+    window.removeEventListener("scroll", close)
+    window.removeEventListener("resize", close)
+  })
+  return {
+    ref: (x: HTMLDetailsElement) => { el = x; x.addEventListener("toggle", place) },
+    close,
+  }
+}
+
+/**
+ * The two lines above the notebooks (docs/plans/ebook-features.md, "Library bar design"):
+ * search and sort; then reading state and the facet menus. Every control writes the query text.
+ */
+function LibraryBar(p: {
   query: string; onQuery: (q: string) => void; facets: Facets
   choice: SortChoice | null; onChoice: (c: SortChoice | null) => void; searching: boolean
-  scope: { everywhere: boolean; set: (all: boolean) => void } | null
 }) {
-  const count = (fs: Facet[], v: string) => fs.find(f => normalize(f.value) === v)?.count ?? 0
-  const chips = (field: string, options: [string, string][], counts: Facet[]) => (
-    <For each={options}>
-      {([value, label]) => {
-        const on = () => selected(p.query, field).some(v => normalize(v) === value)
-        return (
-          <Show when={on() || count(counts, value) > 0}>
-          <button type="button" class="chip" aria-pressed={on()} onClick={() => p.onQuery(toggle(p.query, field, value))}>
-            {label}<span class="chip-count">{count(counts, value)}</span>
-          </button>
-          </Show>
-        )
-      }}
-    </For>
-  )
+  const states = () => selected(p.query, "is").map(normalize)
   const anyFilter = () => FILTER_FIELDS.some(f => selected(p.query, f).length > 0)
-  const sortValue = () => p.choice?.sort ?? ""
+  const kinds = () => p.facets.kinds.map(k => ({ ...k, label: KIND_LABELS[k.value] ?? k.value }))
   return (
-    <div class="filters">
-      <div class="chips" role="group" aria-label="Reading">{chips("is", STATES, p.facets.states)}</div>
-      <div class="chips" role="group" aria-label="Kind">{chips("kind", KINDS, p.facets.kinds)}</div>
-      <div class="filter-row">
+    <div class="lib-bar">
+      <div class="lib-line">
+        <form class="lib-search" role="search" onSubmit={e => e.preventDefault()}>
+          <svg class="lib-search-glyph" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" /><path d="M10.4 10.4 14 14" /></svg>
+          <input type="search" aria-label="Search the library" placeholder="Search titles, authors, tags…"
+            value={p.query} onInput={e => p.onQuery(e.currentTarget.value)} />
+          <QueryHelp />
+        </form>
+        <SortControl choice={p.choice} onChoice={p.onChoice} searching={p.searching} />
+      </div>
+      <div class="lib-line lib-filters">
+        <div class="segments" role="radiogroup" aria-label="Reading">
+          <For each={STATES}>
+            {([value, label]) => {
+              const on = () => (value === null ? states().length === 0 : states().includes(value))
+              return (
+                <button type="button" role="radio" class="segment" aria-checked={on()}
+                  onClick={() => p.onQuery(setOnly(p.query, "is", value))}>{label}</button>
+              )
+            }}
+          </For>
+        </div>
         <FacetMenu label="Author" field="author" options={p.facets.authors} query={p.query} onQuery={p.onQuery} />
         <FacetMenu label="Series" field="series" options={p.facets.series} query={p.query} onQuery={p.onQuery} />
         <FacetMenu label="Tag" field="tag" options={p.facets.tags} query={p.query} onQuery={p.onQuery} />
         <FacetMenu label="Language" field="lang" options={p.facets.languages} query={p.query} onQuery={p.onQuery} />
-        <label class="sort">
-          <span>Sort</span>
-          <select value={sortValue()} onChange={e => {
-            const v = e.currentTarget.value
-            p.onChoice(v ? parseSort(v, undefined) : null)
-          }}>
-            <option value="">{p.searching ? "Best match" : "Recently edited"}</option>
-            <For each={SORTS.filter(([k]) => k !== "relevance" || p.searching)}>{([k, label]) => <option value={k}>{label}</option>}</For>
-          </select>
-        </label>
-        <Show when={p.choice && p.choice.sort !== "relevance" ? p.choice : null}>
-          {c => (
-            <button type="button" class="button quiet small" onClick={() => p.onChoice({ ...c(), descending: !c().descending })}>
-              {directionLabel(c())}
-            </button>
-          )}
-        </Show>
+        <FacetMenu label="Type" field="kind" options={kinds()} query={p.query} onQuery={p.onQuery} />
         <Show when={anyFilter()}>
-          <button type="button" class="button text" onClick={() => p.onQuery(withoutFields(p.query, FILTER_FIELDS))}>Clear filters</button>
+          <button type="button" class="lib-text lib-clear" aria-label="Clear filters" title="Clear filters" onClick={() => p.onQuery(withoutFields(p.query, FILTER_FIELDS))}>
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+          </button>
         </Show>
       </div>
-      <Show when={p.scope && p.searching ? p.scope : null}>
-        {sc => (
-          <div class="chips" role="group" aria-label="Look in">
-            <button type="button" class="chip" aria-pressed={!sc().everywhere} onClick={() => sc().set(false)}>This folder</button>
-            <button type="button" class="chip" aria-pressed={sc().everywhere} onClick={() => sc().set(true)}>Everywhere</button>
-          </div>
+    </div>
+  )
+}
+
+/** Two hit zones: the key opens the menu, the arrow flips the direction. */
+function SortControl(p: { choice: SortChoice | null; onChoice: (c: SortChoice | null) => void; searching: boolean }) {
+  const pop = usePopover()
+  const label = () => (p.choice ? SORTS.find(([k]) => k === p.choice!.sort)?.[1] ?? "Sort" : "Sort")
+  const keys = () => SORTS.filter(([k]) => k !== "relevance" || p.searching)
+  const pick = (c: SortChoice | null) => { p.onChoice(c); pop.close() }
+  return (
+    <div class="lib-sort">
+      <details class="facet" ref={pop.ref}>
+        <summary class="lib-text" aria-label={`Sort: ${label()}`}>{label()}</summary>
+        <div class="facet-pop facet-pop-end" role="menu">
+          <ul>
+            <li>
+              <button type="button" role="menuitemradio" class="menu-row" aria-checked={!p.choice} onClick={() => pick(null)}>
+                {p.searching ? "Best match" : "Recently edited"}
+              </button>
+            </li>
+            <For each={keys().filter(([k]) => k !== "relevance")}>
+              {([k, l]) => (
+                <li>
+                  <button type="button" role="menuitemradio" class="menu-row" aria-checked={p.choice?.sort === k}
+                    onClick={() => pick(parseSort(k, undefined))}>
+                    {l}<span class="menu-hint">{directionLabel(parseSort(k, undefined)!)}</span>
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </details>
+      <Show when={p.choice && p.choice.sort !== "relevance" ? p.choice : null}>
+        {c => (
+          <button type="button" class="lib-arrow" aria-label={`${directionLabel(c())}; tap to reverse`} title={directionLabel(c())}
+            onClick={() => p.onChoice({ ...c(), descending: !c().descending })}>
+            <svg viewBox="0 0 16 16" aria-hidden="true" classList={{ up: !c().descending }}><path d="M8 2.5v11M3.5 9 8 13.5 12.5 9" /></svg>
+          </button>
         )}
       </Show>
     </div>
   )
 }
 
-/** A menu of a facet's values with counts; checked values are in the query. */
-function FacetMenu(p: { label: string; field: string; options: Facet[]; query: string; onQuery: (q: string) => void }) {
+/** The query syntax, behind a "?" instead of three lines of hints. */
+function QueryHelp() {
+  const pop = usePopover()
+  const rows: [string, string][] = [
+    ["author:le guin", "by field: author, series, tag, folder, lang, published"],
+    ["kind:pdf,epub", "any of several"],
+    ["is:reading", "unread, reading, finished"],
+    ["rating:>=8", "also pages:<200, progress:>50, 7-9"],
+    ["has:series", "also author, tag, rating, pages…"],
+    ["read:2026-10", "also added, edited, finished"],
+    ["-word", "leave out"],
+  ]
+  return (
+    <details class="facet lib-help" ref={pop.ref}>
+      <summary class="lib-text" aria-label="Search syntax">?</summary>
+      <div class="facet-pop facet-pop-end">
+        <dl class="syntax">
+          <For each={rows}>{([code, what]) => <><dt><code>{code}</code></dt><dd>{what}</dd></>}</For>
+        </dl>
+      </div>
+    </details>
+  )
+}
+
+/** A facet's values with counts; checked values are in the query. With selections, the button inverts. */
+function FacetMenu(p: { label: string; field: string; options: (Facet & { label?: string })[]; query: string; onQuery: (q: string) => void }) {
   const [filter, setFilter] = createSignal("")
   const chosen = () => selected(p.query, p.field).map(normalize)
   const shown = () => {
     const f = normalize(filter().trim())
-    return f ? p.options.filter(o => normalize(o.value).includes(f)) : p.options
+    return f ? p.options.filter(o => normalize(o.label ?? o.value).includes(f)) : p.options
   }
-  let menu: HTMLDetailsElement | undefined
-  const closeOutside = (e: PointerEvent) => { if (menu?.open && !menu.contains(e.target as Node)) menu.open = false }
-  document.addEventListener("pointerdown", closeOutside)
-  onCleanup(() => document.removeEventListener("pointerdown", closeOutside))
+  const pop = usePopover()
   return (
     <Show when={p.options.length > 0}>
-      <details class="facet" ref={menu}>
-        <summary class="button quiet small">
-          {p.label}<Show when={chosen().length}>{n => <span class="chip-count">{n()}</span>}</Show>
+      <details class="facet" ref={pop.ref}>
+        <summary class="lib-text" classList={{ active: chosen().length > 0 }}>
+          {p.label}<Show when={chosen().length}>{n => <span class="lib-count">{n()}</span>}</Show>
         </summary>
         <div class="facet-pop">
           <Show when={p.options.length > 8}>
@@ -252,7 +323,7 @@ function FacetMenu(p: { label: string; field: string; options: Facet[]; query: s
                 <li>
                   <label class="choice">
                     <input type="checkbox" checked={chosen().includes(normalize(o.value))} onChange={() => p.onQuery(toggle(p.query, p.field, o.value))} />
-                    <span class="facet-value">{o.value}</span>
+                    <span class="facet-value">{o.label ?? o.value}</span>
                     <span class="chip-count">{o.count}</span>
                   </label>
                 </li>
@@ -262,28 +333,6 @@ function FacetMenu(p: { label: string; field: string; options: Facet[]; query: s
         </div>
       </details>
     </Show>
-  )
-}
-
-/** Searches the whole library (or this folder and below); the query lives in the URL (?q=). */
-function SearchField(p: { query: string; onQuery: (q: string) => void }) {
-  return (
-    <form class="library-search" role="search" onSubmit={e => e.preventDefault()}>
-      <input
-        type="search"
-        aria-label="Search the library"
-        aria-describedby="search-hint"
-        placeholder="Search titles, authors, series, tags…"
-        value={p.query}
-        onInput={e => p.onQuery(e.currentTarget.value)}
-      />
-      <p class="search-hint" id="search-hint">
-        Or type filters: <code>author:</code>, <code>series:</code>, <code>tag:</code>, <code>folder:</code>, <code>published:</code>,
-        {" "}<code>kind:pdf,epub</code>, <code>is:reading</code>, <code>rating:&gt;=8</code>, <code>pages:&lt;200</code>,
-        {" "}<code>progress:&gt;50</code>, <code>has:series</code>, <code>read:2026-10</code>;
-        {" "}<code>-</code> leaves something out.
-      </p>
-    </form>
   )
 }
 

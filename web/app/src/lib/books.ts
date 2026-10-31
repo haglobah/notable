@@ -1,5 +1,5 @@
 /* How a book's metadata reads in the library and the reader. */
-import { searchLibrary, type Library, type NotebookEntry } from "@notable/schema"
+import type { Library, NotebookEntry } from "@notable/schema"
 
 /** "Ursula K. Le Guin · Hainish Cycle 4"; null when the entry has neither. */
 export function bylineOf(e: NotebookEntry): string | null {
@@ -10,5 +10,8 @@ export function bylineOf(e: NotebookEntry): string | null {
   return [authors, series].filter(Boolean).join(" · ") || null
 }
 
-/** Opened and not finished, most recently read first. */
-export const continueReading = (lib: Library, max = 6): NotebookEntry[] => searchLibrary(lib, "is:reading").slice(0, max)
+/** The quick-pages notebook first, the rest in the order given (docs/plans/ebook-features.md, round 5). */
+export function quickFirst(lib: Library, entries: NotebookEntry[]): NotebookEntry[] {
+  const at = entries.findIndex(e => e.id === lib.quickNotebookId)
+  return at <= 0 ? entries : [entries[at], ...entries.slice(0, at), ...entries.slice(at + 1)]
+}

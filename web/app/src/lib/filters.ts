@@ -64,6 +64,18 @@ export function toggle(query: string, field: string, value: string): string {
   return tokens.join(" ")
 }
 
+/** [field] set to exactly [value], or removed for null: a single-choice control (the segments). */
+export function setOnly(query: string, field: string, value: string | null): string {
+  const tokens = rawTokens(query)
+  const at = tokens.findIndex(t => valuesOf(t, field) !== null)
+  const rest = tokens.filter(t => valuesOf(t, field) === null)
+  if (value === null) return rest.join(" ")
+  const token = `${field}:${quote(value)}`
+  if (at < 0) return [...rest, token].join(" ")
+  rest.splice(at, 0, token)
+  return rest.join(" ")
+}
+
 /** The query without any token of [fields]: "Clear filters". */
 export function withoutFields(query: string, fields: string[]): string {
   return rawTokens(query).filter(t => !fields.some(f => valuesOf(t, f) !== null)).join(" ")

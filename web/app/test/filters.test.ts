@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { directionLabel, hasTerms, parseSort, rawTokens, selected, toggle, withoutFields } from "../src/lib/filters.ts"
+import { directionLabel, hasTerms, parseSort, rawTokens, selected, setOnly, toggle, withoutFields } from "../src/lib/filters.ts"
 
 test("raw tokens keep quotes and spelling", () => {
   assert.deepEqual(rawTokens(` Le  author:"K. Le Guin",camus  -is:finished `), ["Le", `author:"K. Le Guin",camus`, "-is:finished"])
@@ -57,4 +57,11 @@ test("sort from the URL, with each key's default direction", () => {
   assert.equal(directionLabel({ sort: "rating", descending: true }), "Highest first")
   assert.equal(directionLabel({ sort: "progress", descending: false }), "Least read first")
   assert.deepEqual(parseSort("length", undefined), { sort: "length", descending: false })
+})
+
+test("a single choice replaces its field's token in place, or removes it", () => {
+  assert.equal(setOnly("dune is:unread,finished kind:pdf", "is", "reading"), "dune is:reading kind:pdf")
+  assert.equal(setOnly("dune", "is", "reading"), "dune is:reading")
+  assert.equal(setOnly("dune is:reading kind:pdf", "is", null), "dune kind:pdf")
+  assert.equal(setOnly("-is:finished", "is", "reading"), "-is:finished is:reading")
 })

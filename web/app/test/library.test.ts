@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { libraryFromJson, type Folder, type Library, type NotebookEntry } from "@notable/schema"
-import { bylineOf, continueReading } from "../src/lib/books.ts"
+import { bylineOf, quickFirst } from "../src/lib/books.ts"
 import { childFolders, countIn, edited, entriesIn, folderPath, kindOf } from "../src/lib/library.ts"
 
 const d = (iso: string) => new Date(iso)
@@ -61,7 +61,9 @@ test("bylines name the authors and the series with its number", () => {
   assert.equal(bylineOf(books.notebooks["p-anal"]), null)
 })
 
-test("continue reading: opened, not finished, last read first", () => {
-  assert.deepEqual(continueReading(books).map(e => e.id), ["n-journal", "b-earth", "p-crdt"])
-  assert.deepEqual(continueReading(books, 1).map(e => e.id), ["n-journal"])
+test("the quick-pages notebook comes first, the rest keep their order", () => {
+  const es = [books.notebooks["b-dune"], books.notebooks["b-fr"], books.notebooks["n-journal"], books.notebooks["q-1"]]
+  assert.deepEqual(quickFirst(books, es).map(e => e.id), ["n-journal", "b-dune", "b-fr", "q-1"])
+  assert.deepEqual(quickFirst({ ...books, quickNotebookId: undefined }, es).map(e => e.id), ["b-dune", "b-fr", "n-journal", "q-1"])
+  assert.deepEqual(quickFirst(books, es.slice(0, 2)).map(e => e.id), ["b-dune", "b-fr"])
 })
