@@ -38,6 +38,7 @@ object FixtureJson {
 
     fun library(o: JsonObject) = AmLibrary(
         codeDocUrl = o.strOrNull("codeDocUrl"),
+        quickNotebookId = o.strOrNull("quickNotebookId"),
         folders = o.obj("folders").mapValues { (id, v) ->
             val f = v.jsonObject
             AmFolder(id, f.str("title"), f.strOrNull("parentId"), f.date("createdAt"), f.date("updatedAt"))

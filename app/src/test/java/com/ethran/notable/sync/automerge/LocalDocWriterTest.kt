@@ -106,6 +106,11 @@ internal class FakeRoom(val sink: FakeSink = FakeSink()) : ProjectionSink by sin
             is LocalChange.NotebookFinished -> notebook(change.id) { it.copy(finishedAt = change.at?.let(::Date)) }
             is LocalChange.NotebookRated -> notebook(change.id) { it.copy(rating = change.rating) }
             is LocalChange.ReadingSynced -> notebook(change.id) { it.copy(pageCount = it.pageIds.size) }
+            is LocalChange.QuickNotebookSet -> Unit
+            is LocalChange.QuickPageMoved -> {
+                sink.pages[change.pageId]?.let { sink.pages[it.id] = it.copy(notebookId = change.notebookId, parentFolderId = null) }
+                notebook(change.notebookId) { if (change.pageId in it.pageIds) it else it.copy(pageIds = it.pageIds + change.pageId) }
+            }
         }
     }
 
@@ -1038,5 +1043,87 @@ class LocalDocWriterTest {
         d.room.sink.notebooks["nb1"] = d.room.sink.notebooks.getValue("nb1").copy(rating = 6)
         d.writer.replay(DocDebt.ReadingState("nb1"))
         assertEquals(6, d.entry().rating)
+    }
+
+    /* ------------------------------ quick pages (round 5) ------------------------------ */
+
+    /** nb1 (pages p1, p2) and an old quick page q1 with strokes q-s1, q-s2, all uploaded and projected. */
+    private fun quickDevice(): Device = Device(tmp).apply {
+        room.sink.notebooks["nb1"] = notebook("nb1", "p1", "p2")
+        listOf("p1", "p2").forEach { room.sink.pages[it] = page(it, "nb1") }
+        room.sink.pages["q1"] = page("q1", null, folder = null)
+        room.sink.strokes["q-s1"] = stroke("q-s1", "q1")
+        room.sink.strokes["q-s2"] = stroke("q-s2", "q1")
+        assertEquals(setOf("nb1", "q1"), writer.migrateAll().migrated.toSet())
+        project()
+        edit(LocalChange.QuickNotebookSet("nb1"))
+        room.sink.writes = 0
+    }
+
+    @Test
+    fun `the quick notebook id is set once and reads as unset when its entry is gone`() {
+        val d = quickDevice()
+        assertEquals("nb1", d.docs.library().quickNotebookId)
+        assertEquals("nb1", d.writer.quickNotebookId())
+        assertTrue(d.edit(LocalChange.QuickNotebookSet("nb1")).commits.isEmpty())
+        d.edit(LocalChange.NotebookDeleted("nb1"))
+        assertNull(d.writer.quickNotebookId())
+    }
+
+    @Test
+    fun `an old quick page becomes the last page of the quick notebook, ink and all`() {
+        val d = quickDevice()
+        d.edit(LocalChange.QuickPageMoved("q1", "nb1"))
+        val nb = d.docs.notebook("nb1")
+        assertEquals(listOf("p1", "p2", "q1"), nb.pageOrder)
+        assertEquals(setOf("q-s1", "q-s2"), nb.pages.getValue("q1").strokes.keys)
+        assertFalse("the old entry is gone", "q1" in d.docs.library().notebooks)
+        assertEquals(3, d.docs.library().notebooks.getValue("nb1").pageCount)
+        assertEquals("nb1", d.room.sink.pages.getValue("q1").notebookId)
+        assertEquals(listOf("p1", "p2", "q1"), d.room.sink.notebooks.getValue("nb1").pageIds)
+        d.project()
+        assertEquals(setOf("q-s1", "q-s2"), d.room.sink.strokes.values.filter { it.pageId == "q1" }.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `a repeat after an interrupted move neither duplicates the page nor loses ink drawn since`() {
+        val d = quickDevice()
+        val beforeDelete = d.docs.docs.getValue(MemoryLocalDocs.LIBRARY).fork() // as it was before the move
+        d.edit(LocalChange.QuickPageMoved("q1", "nb1"))
+        d.edit(LocalChange.StrokesUpserted("q1", listOf(stroke("drawn-after", "q1"))))
+        // The crash: the copy is in the notebook doc, the old entry's delete never happened.
+        d.docs.docs[MemoryLocalDocs.LIBRARY] = beforeDelete
+        assertTrue("q1" in d.docs.library().notebooks)
+        d.writer.replay(DocDebt.QuickPageMove("q1", "nb1"))
+        val nb = d.docs.notebook("nb1")
+        assertEquals(listOf("p1", "p2", "q1"), nb.pageOrder)
+        assertEquals(setOf("q-s1", "q-s2", "drawn-after"), nb.pages.getValue("q1").strokes.keys)
+        assertFalse("q1" in d.docs.library().notebooks)
+    }
+
+    @Test
+    fun `two devices moving the same quick page merge into one page with all its ink`() {
+        val a = quickDevice()
+        val b = Device(tmp, a.docs.fork()).apply { project() }
+        a.edit(LocalChange.QuickPageMoved("q1", "nb1"))
+        b.edit(LocalChange.QuickPageMoved("q1", "nb1"))
+        b.edit(LocalChange.StrokesUpserted("q1", listOf(stroke("b-ink", "q1"))))
+        a.docs.syncWith(b.docs)
+        for (d in listOf(a, b)) {
+            val nb = d.docs.notebook("nb1")
+            assertEquals(listOf("p1", "p2", "q1"), nb.pageOrder)
+            assertTrue(nb.pages.getValue("q1").strokes.keys.containsAll(setOf("q-s1", "q-s2", "b-ink")))
+            assertFalse("q1" in d.docs.library().notebooks)
+        }
+    }
+
+    @Test
+    fun `a quick page whose doc is gone is copied from Room`() {
+        val d = quickDevice()
+        // The old entry was never written (or its doc never arrived): Room has the page alone.
+        d.edit(LocalChange.NotebookDeleted("q1"))
+        d.room.sink.pages["q1"] = page("q1", null)
+        d.edit(LocalChange.QuickPageMoved("q1", "nb1"))
+        assertEquals(setOf("q-s1", "q-s2"), d.docs.notebook("nb1").pages.getValue("q1").strokes.keys)
     }
 }

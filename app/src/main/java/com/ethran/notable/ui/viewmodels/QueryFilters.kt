@@ -56,6 +56,27 @@ object QueryFilters {
         return (kept + listOfNotNull(token)).joinToString(" ")
     }
 
+    /**
+     * [query] with the reading state set to [value] alone (`is:reading`), replacing every `is:`
+     * token; null ("All") removes them. Single choice, unlike [toggle].
+     */
+    fun setState(query: String, value: String?): String {
+        val field = fieldOf("is")
+        val kept = rawTokens(query).filter { valuesIf(it, field) == null }
+        return (kept + listOfNotNull(value?.let { "is:${quote(LibrarySearch.normalize(it))}" })).joinToString(" ")
+    }
+
+    /** The fields the filter bar sets; [clearFilters] removes them, typed words stay. */
+    val BAR_FIELDS = listOf("is", "kind", "author", "series", "tag", "lang")
+
+    fun hasFilters(query: String) = BAR_FIELDS.any { selected(query, it).isNotEmpty() }
+
+    /** [query] without the filter bar's tokens. */
+    fun clearFilters(query: String): String {
+        val fields = BAR_FIELDS.map(::fieldOf).toSet()
+        return rawTokens(query).filter { raw -> fields.none { valuesIf(raw, it) != null } }.joinToString(" ")
+    }
+
     /** Quoted when the value holds a space, comma or colon; `"` can't be written and is dropped. */
     private fun quote(v: String): String {
         val s = v.replace("\"", "")

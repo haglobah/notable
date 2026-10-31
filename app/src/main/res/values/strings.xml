@@ -247,4 +247,33 @@
     <string name="rating_clear">Clear rating</string>
     <string name="rating_value">★ %1$d</string>
     <string name="rating_set">Rate %1$d of 10</string>
+    <string name="bar_search_hint">Search titles, authors, tags…</string>
+    <string name="bar_syntax">Query syntax</string>
+    <string name="bar_all">All</string>
+    <string name="bar_type">Type</string>
+    <string name="bar_clear">Clear</string>
+    <string name="bar_sort">Sort</string>
+    <string name="bar_flip">Reverse the order</string>
+    <string name="bar_search_everywhere">Search everywhere</string>
+    <string name="bar_search_only">Search only %1$s</string>
+    <string name="bar_syntax_lines">words  match title, author, series, tags, folder…\n\"exact phrase\"   -word  leaves it out\nauthor:le guin  series:  tag:  lang:  publisher:  desc:\nkind:pdf,epub  (comma: any of)\nis:reading  is:unread  is:finished\nhas:author  has:rating  has:pages\nrating:>7  pages:&lt;200  progress:25-75\nadded:2026  read:2026-10  edited:  finished:</string>
+    <string name="dir_az">A to Z</string>
+    <string name="dir_za">Z to A</string>
+    <string name="dir_newest">Newest first</string>
+    <string name="dir_oldest">Oldest first</string>
+    <string name="dir_shortest">Shortest first</string>
+    <string name="dir_longest">Longest first</string>
+    <string name="dir_furthest">Furthest first</string>
+    <string name="dir_least">Least read first</string>
+    <string name="dir_highest">Highest first</string>
+    <string name="dir_lowest">Lowest first</string>
+    <string name="dir_best">Best match first</string>
+    <plurals name="bar_matches_in">
+        <item quantity="one">%1$d match in %2$s</item>
+        <item quantity="other">%1$d matches in %2$s</item>
+    </plurals>
+    <plurals name="bar_matches">
+        <item quantity="one">%1$d match</item>
+        <item quantity="other">%1$d matches</item>
+    </plurals>
 </resources>

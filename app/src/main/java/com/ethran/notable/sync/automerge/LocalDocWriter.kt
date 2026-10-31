@@ -130,6 +130,10 @@ class LocalDocWriter(
         is LocalChange.NotebookFinished -> readingState(change.id, null, change.at?.let(::Date), setFinished = true)
         is LocalChange.NotebookRated -> rate(change.id, change.rating, cleared = change.rating == null)
         is LocalChange.ReadingSynced -> syncReading(change.id)
+        is LocalChange.QuickNotebookSet -> editLibrary { doc, tx ->
+            if (AutomergeSchema.readLibrary(doc).quickNotebookId != change.id) AutomergeSchema.setQuickNotebookId(tx, change.id)
+        }
+        is LocalChange.QuickPageMoved -> moveQuickPage(change.pageId, change.notebookId)
     }
 
     /**
@@ -156,10 +160,50 @@ class LocalDocWriter(
         is DocDebt.FolderRow -> local.folders().firstOrNull { it.id == debt.id }?.let { write(LocalChange.FolderUpserted(it)) }
             ?: write(LocalChange.FolderDeleted(debt.id))
         // Room has the last local reading state; a notebook gone from Room has nothing to write.
+        is DocDebt.QuickNotebook -> write(LocalChange.QuickNotebookSet(debt.id))
+        // Room moved the page already; the doc copy reads the old entry's doc, else Room.
+        is DocDebt.QuickPageMove -> moveQuickPage(debt.pageId, debt.notebookId)
         is DocDebt.ReadingState -> local.notebook(debt.id)?.let { nb ->
             readingState(nb.id, nb.readAt, nb.finishedAt, setFinished = true) +
                 rate(nb.id, nb.rating, cleared = false) + syncReading(nb.id)
         } ?: NONE
+    }
+
+    /** The library's quickNotebookId, when it names a live entry. */
+    fun quickNotebookId(): String? = docs.edit(docs.libraryUrl()) { doc ->
+        AutomergeSchema.readLibrary(doc).let { lib -> lib.quickNotebookId?.takeIf { it in lib.notebooks } }
+    }
+
+    /**
+     * Old quick page [pageId] (a `quickPage` entry with its own doc) becomes the last page of
+     * [notebookId] (docs/plans/ebook-features.md, round 5). Copy before delete: the page goes into
+     * the notebook's doc under the same id in one commit, and only then is the old entry deleted
+     * in another. A page id the notebook already has is not copied again, so a repeat (after a
+     * crash between the two, or a replay) or a second device doing the same neither duplicates
+     * nor loses ink. The old doc is left unreferenced; the repo has no delete.
+     */
+    private fun moveQuickPage(pageId: String, notebookId: String): WriteReceipt {
+        val (url, migrated) = ensureDoc(notebookId)
+        if (url == null) return migrated
+        val oldUrl = docs.edit(docs.libraryUrl()) { doc ->
+            AutomergeSchema.readLibrary(doc).notebooks[pageId]?.takeIf { it.kind == AmEntryKind.QUICK_PAGE }?.docUrl
+        }
+        // The page as its own doc has it, in that doc's stroke units; null: copy from Room.
+        val source = oldUrl?.let { u ->
+            docs.edit(u) { d -> AutomergeSchema.readPage(d, pageId)?.let { it to (AutomergeSchema.canvasWidthOf(d) ?: AutomergeProjector.DEFAULT_CANVAS_WIDTH) } }
+        }
+        val copy = commit(url) { doc, tx ->
+            if (AutomergeSchema.pageObjOrNull(doc, pageId) != null) return@commit false // already there
+            if (source != null) {
+                val k = (AutomergeSchema.canvasWidthOf(doc) ?: AutomergeProjector.DEFAULT_CANVAS_WIDTH) / source.second
+                AutomergeSchema.putPage(tx, AutomergeSchema.pagesOf(doc), source.first.scaled(k))
+            } else if (!putFullPage(doc, tx, pageId)) return@commit false
+            val last = AutomergeSchema.rawPageOrder(doc).second.lastOrNull { it != pageId }
+            AutomergeSchema.placeInPageOrder(doc, tx, pageId, last)
+            true
+        }
+        val gone = if (oldUrl != null) deleteEntry(pageId) else NONE
+        return migrated + copy + gone + bumpedIf(copy, notebookId) + syncReading(notebookId)
     }
 
     /** Copies everything in Room that has no doc yet; see [RoomToAutomergeMigration.run]. */

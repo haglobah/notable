@@ -212,6 +212,20 @@ class LibraryViewModel @Inject constructor(
         // Entries written before pageCount existed, or behind the notebook (docs/plans/ebook-features.md).
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Old quick pages become pages of the quick notebook (round 5), before anything else.
+                val moved = appRepository.edits.migrateQuickPages()
+                if (moved > 0) {
+                    io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").i("moved $moved quick pages into the quick notebook")
+                    snackDispatcher.showOrUpdateSnack(SnackConf(text = "Quick pages moved into the notebook \"Quick pages\"", duration = 3000))
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").e("quick page migration failed: ${e.message}", e)
+                snackDispatcher.showOrUpdateSnack(SnackConf(text = "Could not move the quick pages: ${e.message}", duration = 4000))
+            }
+            refreshQuickNotebook()
+            try {
                 val n = appRepository.edits.backfillPageCounts()
                 if (n > 0) io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").i("synced the page count of $n notebooks")
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -252,6 +266,30 @@ class LibraryViewModel @Inject constructor(
             }
         }
         return list.reversed()
+    }
+
+    /** The quick notebook's id, shown first in its folder (round 5). */
+    private val _quickNotebookId = MutableStateFlow<String?>(null)
+    val quickNotebookId: StateFlow<String?> = _quickNotebookId
+
+    private suspend fun refreshQuickNotebook() {
+        _quickNotebookId.value = runCatching { appRepository.edits.quickNotebook()?.id }.getOrNull()
+    }
+
+    /** "+ Quick page": a new last page of the quick notebook (made if needed), then [onOpen] on it. */
+    fun openQuickPage(onOpen: (notebookId: String, pageId: String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val at = appRepository.edits.openQuickPage(GlobalAppSettings.current.defaultNativeTemplate)
+                    ?: throw IllegalStateException("the quick notebook is gone")
+                _quickNotebookId.value = at.notebookId
+                withContext(Dispatchers.Main) { onOpen(at.notebookId, at.pageId) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                snackDispatcher.showOrUpdateSnack(SnackConf(text = "Could not add a quick page: ${e.message}", duration = 4000))
+            }
+        }
     }
 
     fun createNewFolder() {

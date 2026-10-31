@@ -264,4 +264,37 @@
     <string name="rating_clear">Usuń ocenę</string>
     <string name="rating_value">★ %1$d</string>
     <string name="rating_set">Oceń na %1$d z 10</string>
+    <string name="bar_search_hint">Szukaj tytułów, autorów, tagów…</string>
+    <string name="bar_syntax">Składnia zapytań</string>
+    <string name="bar_all">Wszystko</string>
+    <string name="bar_type">Typ</string>
+    <string name="bar_clear">Wyczyść</string>
+    <string name="bar_sort">Sortuj</string>
+    <string name="bar_flip">Odwróć kolejność</string>
+    <string name="bar_search_everywhere">Szukaj wszędzie</string>
+    <string name="bar_search_only">Szukaj tylko w %1$s</string>
+    <string name="bar_syntax_lines">słowa  w tytule, autorze, serii, tagach, folderze…\n\"dokładna fraza\"   -słowo  wyklucza\nauthor:le guin  series:  tag:  lang:  publisher:  desc:\nkind:pdf,epub  (przecinek: dowolne z)\nis:reading  is:unread  is:finished\nhas:author  has:rating  has:pages\nrating:>7  pages:&lt;200  progress:25-75\nadded:2026  read:2026-10  edited:  finished:</string>
+    <string name="dir_az">A do Z</string>
+    <string name="dir_za">Z do A</string>
+    <string name="dir_newest">Najnowsze najpierw</string>
+    <string name="dir_oldest">Najstarsze najpierw</string>
+    <string name="dir_shortest">Najkrótsze najpierw</string>
+    <string name="dir_longest">Najdłuższe najpierw</string>
+    <string name="dir_furthest">Najdalej przeczytane najpierw</string>
+    <string name="dir_least">Najmniej przeczytane najpierw</string>
+    <string name="dir_highest">Najwyżej ocenione najpierw</string>
+    <string name="dir_lowest">Najniżej ocenione najpierw</string>
+    <string name="dir_best">Najlepiej pasujące najpierw</string>
+    <plurals name="bar_matches_in">
+        <item quantity="one">%1$d wynik w %2$s</item>
+        <item quantity="few">%1$d wyniki w %2$s</item>
+        <item quantity="many">%1$d wyników w %2$s</item>
+        <item quantity="other">%1$d wyników w %2$s</item>
+    </plurals>
+    <plurals name="bar_matches">
+        <item quantity="one">%1$d wynik</item>
+        <item quantity="few">%1$d wyniki</item>
+        <item quantity="many">%1$d wyników</item>
+        <item quantity="other">%1$d wyników</item>
+    </plurals>
 </resources>

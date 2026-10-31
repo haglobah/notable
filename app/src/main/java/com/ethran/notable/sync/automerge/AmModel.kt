@@ -17,6 +17,11 @@ data class AmLibrary(
      * written, and in libraries written before it existed.
      */
     val codeDocUrl: String? = null,
+    /**
+     * The notebook "+ Quick page" appends to (docs/plans/ebook-features.md, round 5). Null when
+     * unset; it may name a deleted entry, which counts as unset.
+     */
+    val quickNotebookId: String? = null,
 )
 
 data class AmFolder(

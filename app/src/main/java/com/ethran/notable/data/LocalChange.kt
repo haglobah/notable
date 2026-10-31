@@ -59,6 +59,16 @@ sealed interface LocalChange {
      * existed, or by an older device): write them where they differ.
      */
     data class ReadingSynced(val id: String) : LocalChange
+
+    /* Quick pages (docs/plans/ebook-features.md, round 5). */
+
+    /** Notebook [id] is the one "+ Quick page" appends to. */
+    data class QuickNotebookSet(val id: String) : LocalChange
+    /**
+     * Old quick page [pageId] (its own library entry) becomes the last page of notebook
+     * [notebookId]: content copied under the same id first, then the old entry deleted.
+     */
+    data class QuickPageMoved(val pageId: String, val notebookId: String) : LocalChange
 }
 
 /**
@@ -79,6 +89,9 @@ interface ContentMirror {
     /** [queuedAtNanos]: when the edit was made (`System.nanoTime`), for the pen-up → commit latency. */
     suspend fun <T> write(change: LocalChange, queuedAtNanos: Long? = null, room: suspend () -> T): T
     suspend fun <T> create(change: LocalChange, room: suspend () -> T): T
+
+    /** The library's `quickNotebookId` as the docs have it now; null when unset or unknown. */
+    suspend fun quickNotebookId(): String? = null
 
     /** Room only. For tests and for code that must not touch the docs. */
     object None : ContentMirror {

@@ -201,6 +201,8 @@ class NotableSyncClient @Inject constructor(
 
     override suspend fun <T> create(change: LocalChange, room: suspend () -> T): T = mirror.create(change, room)
 
+    override suspend fun quickNotebookId(): String? = mirror.quickNotebookId()
+
     private var latencyLoggedAt = 0L
 
     private fun onWriteResult(error: String?) {

@@ -38,6 +38,7 @@ object AutomergeSchema {
             set(ObjectId.ROOT, "schema", NewValue.str(LIBRARY))
             set(ObjectId.ROOT, "version", VERSION.toInt())
             library.codeDocUrl?.let { set(ObjectId.ROOT, "codeDocUrl", NewValue.str(it)) }
+            library.quickNotebookId?.let { set(ObjectId.ROOT, "quickNotebookId", NewValue.str(it)) }
             val folders = set(ObjectId.ROOT, "folders", ObjectType.MAP)
             library.folders.values.forEach { putFolder(this, folders, it) }
             val notebooks = set(ObjectId.ROOT, "notebooks", ObjectType.MAP)
@@ -99,6 +100,9 @@ object AutomergeSchema {
         r.header(LIBRARY)
         return if (r.has(ObjectId.ROOT, "codeDocUrl")) r.str(ObjectId.ROOT, "codeDocUrl", "") else null
     }
+
+    /** The notebook "+ Quick page" appends to (round 5). */
+    fun setQuickNotebookId(tx: Transaction, id: String) = tx.set(ObjectId.ROOT, "quickNotebookId", NewValue.str(id))
 
     /** Points the library at its code doc (set once, on first use; see ADR-002). */
     fun setCodeDocUrl(tx: Transaction, url: String) = tx.set(ObjectId.ROOT, "codeDocUrl", NewValue.str(url))
@@ -253,6 +257,7 @@ object AutomergeSchema {
         return AmLibrary(
             // Optional (ADR-002): absent until the first definition is written.
             codeDocUrl = if (r.has(ObjectId.ROOT, "codeDocUrl")) r.str(ObjectId.ROOT, "codeDocUrl", "") else null,
+            quickNotebookId = if (r.has(ObjectId.ROOT, "quickNotebookId")) r.str(ObjectId.ROOT, "quickNotebookId", "") else null,
             folders = r.keys(folders).associateWith { id ->
                 val p = "folders.$id"
                 val o = r.map(folders, id, p)

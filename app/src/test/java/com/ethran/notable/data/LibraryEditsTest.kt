@@ -154,10 +154,15 @@ private class Store {
 private class RecordingMirror(private val store: Store) : ContentMirror {
     val changes = mutableListOf<Pair<String, LocalChange>>()
     var beforeRoom: () -> Unit = {}
+    /** What the docs' library names as the quick notebook; [LocalChange.QuickNotebookSet] sets it. */
+    var quick: String? = null
+
+    override suspend fun quickNotebookId(): String? = quick
 
     override suspend fun <T> write(change: LocalChange, queuedAtNanos: Long?, room: suspend () -> T): T {
         changes += "write" to change
         store.log += "doc ${change::class.simpleName}"
+        if (change is LocalChange.QuickNotebookSet) quick = change.id
         return roomStep(room)
     }
 
@@ -294,6 +299,49 @@ class LibraryEditsTest {
         assertEquals("nothing due any more", 0, edits.backfillPageCounts())
         assertEquals(t0, store.notebooks.getValue("nb1").updatedAt)
         assertTrue(runCatching { edits.rateNotebook("nb1", 11) }.isFailure)
+    }
+
+    @Test
+    fun `quick page makes the quick notebook once, then appends a page to its end and opens it`() = runBlocking {
+        val first = edits.openQuickPage("blank")!!
+        val nb = store.notebooks.getValue(first.notebookId)
+        assertEquals(LibraryEdits.QUICK_NOTEBOOK_TITLE, nb.title)
+        assertNull(nb.parentFolderId)
+        assertEquals(listOf(first.pageId), nb.pageIds)
+        assertEquals("write" to LocalChange.QuickNotebookSet(nb.id), lastChange())
+        val second = edits.openQuickPage("blank")!!
+        assertEquals(first.notebookId, second.notebookId)
+        assertEquals(listOf(first.pageId, second.pageId), store.notebooks.getValue(nb.id).pageIds)
+        val third = edits.openQuickPage("blank")!!
+        assertEquals(listOf(first.pageId, second.pageId, third.pageId), store.notebooks.getValue(nb.id).pageIds)
+        assertEquals(1, store.notebooks.size)
+    }
+
+    @Test
+    fun `old quick pages move into the quick notebook oldest first, keeping their strokes`() = runBlocking {
+        book()
+        mirror.quick = "nb1"
+        store.pages["qa"] = Page("qa", notebookId = null, parentFolderId = "f1", createdAt = Date(t0.time + 2), updatedAt = t0)
+        store.pages["qb"] = Page("qb", notebookId = null, createdAt = Date(t0.time + 1), updatedAt = t0)
+        store.strokes["qs"] = stroke("qs", "qa")
+        assertEquals(2, edits.migrateQuickPages())
+        assertEquals(listOf("p1", "p2", "p3", "qb", "qa"), store.notebooks.getValue("nb1").pageIds)
+        assertEquals("nb1", store.pages.getValue("qa").notebookId)
+        assertNull(store.pages.getValue("qa").parentFolderId)
+        assertEquals("qa", store.strokes.getValue("qs").pageId)
+        assertEquals(listOf("write" to LocalChange.QuickPageMoved("qb", "nb1"), "write" to LocalChange.QuickPageMoved("qa", "nb1")),
+            mirror.changes.takeLast(2))
+        assertEquals("nothing left to move", 0, edits.migrateQuickPages())
+    }
+
+    @Test
+    fun `without a quick notebook the migration makes one`() = runBlocking {
+        store.pages["qa"] = Page("qa", notebookId = null, createdAt = t0, updatedAt = t0)
+        assertEquals(1, edits.migrateQuickPages())
+        val nb = store.notebooks.values.single()
+        assertEquals(LibraryEdits.QUICK_NOTEBOOK_TITLE, nb.title)
+        assertEquals(listOf("qa"), nb.pageIds)
+        assertEquals(nb.id, mirror.quick)
     }
 
     @Test

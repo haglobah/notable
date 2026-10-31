@@ -34,4 +34,19 @@ class QueryFiltersTest {
         assertEquals("guin is:reading,finished", QueryFilters.toggle("is:reading guin", "is", "finished"))
         assertEquals(listOf("le guin", "camus"), QueryFilters.selected("author:\"le guin\",camus", "author"))
     }
+
+    @Test
+    fun the_state_is_single_choice_and_all_removes_it() {
+        assertEquals("guin is:reading", QueryFilters.setState("is:unread guin is:finished", "reading"))
+        assertEquals("guin", QueryFilters.setState("guin is:reading", null))
+        assertEquals(listOf("reading", "finished"), QueryFilters.selected("is:reading,finished", "is"))
+    }
+
+    @Test
+    fun clear_removes_the_bars_filters_and_keeps_typed_words() {
+        val q = "dune is:reading kind:pdf author:camus -tag:x rating:>7"
+        assertTrue(QueryFilters.hasFilters(q))
+        assertEquals("dune -tag:x rating:>7", QueryFilters.clearFilters(q))
+        assertFalse(QueryFilters.hasFilters("dune -tag:x"))
+    }
 }
