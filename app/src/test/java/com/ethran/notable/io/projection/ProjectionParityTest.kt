@@ -31,11 +31,11 @@ import kotlin.math.abs
  * Android's PDF projection matches the PWA's Download (ADR-001 "PDF as a projection").
  *
  * `web/schema/fixtures/projection-v1.json` holds notebooks and what the TS `project()` made of
- * them, summarized with MuPDF (`web/app/test/projectionParity.ts`). The plan Kotlin hands to fitz
+ * them, summarized with MuPDF (`web/reader/test/projectionParity.ts`). The plan Kotlin hands to fitz
  * must give the same pages (bounds, drawn content), the same annotations (count, order, ink
  * points, colors, opacity, widths, stamp rects; ink rects within tolerance), the same metadata and
  * the same embedded notebook doc. fitz itself can't run on the JVM; the device check compares a
- * real Android PDF with `web/app/scripts/compare-projection.ts`.
+ * real Android PDF with `web/reader/scripts/compare-projection.ts`.
  */
 class ProjectionParityTest {
     private val fixture = Json.parseToJsonElement(File(FixturePaths.dir, "projection-v1.json").readText()).jsonObject

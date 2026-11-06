@@ -46,13 +46,15 @@ also a PWA for reading, uploading and downloading annotated PDFs. Decisions are 
   `delete-notebook`, `rename-folder`).
 - PDF projection and EPUB: `io/projection/` (`ProjectionPlan.kt` pure planner, `FitzPdfWriter.kt`,
   `FitzEpub.kt`, `EpubFiles.kt`, `PdfProjection.kt`), `io/EpubBackground.kt`. TS twin:
-  `web/app/src/lib/project.ts`; parity fixture `web/schema/fixtures/projection-v1.json`
-  (`npm run projection-fixture` in `web/app`); device PDF check
-  `web/app/scripts/compare-projection.ts <android.pdf> [blob files]`.
+  `web/reader/src/project.ts`; parity fixture `web/schema/fixtures/projection-v1.json`
+  (`npm run projection-fixture` in `web/reader`); device PDF check
+  `web/reader/scripts/compare-projection.ts <android.pdf> [blob files]`.
 - Editor: `docs/editor-data-flow.md`, `docs/editor-state-and-view.md`. The stroke and image write
   functions are in `data/PageDataManager.kt`.
-- Web: `web/schema` (shared schema, TS), `web/server` (sync, blobs, accounts), `web/app` (PWA),
-  `web/flake.nix` (package, NixOS module, VM test).
+- Web: `web/schema` (shared schema, TS), `web/reader` (reading docs in a browser: geometry, drawing,
+  the MuPDF worker, Download PDF; no UI framework), `web/server` (sync, blobs, accounts), `web/app`
+  (PWA), `web/flake.nix` (package, NixOS module, VM test). The repo root's `package.json`
+  (`@notable/web`) exposes schema and reader to apps outside the repo (Flow installs it from git).
 
 ## Rules and decisions
 

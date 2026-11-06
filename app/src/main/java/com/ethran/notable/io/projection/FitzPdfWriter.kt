@@ -14,7 +14,7 @@ import java.io.File
 import java.util.Date
 
 /**
- * Carries out a [ProjectionPlan] with MuPDF (`fitz`), the way web/app/src/lib/project.ts does
+ * Carries out a [ProjectionPlan] with MuPDF (`fitz`), the way web/reader/src/project.ts does
  * with mupdf.js: PDF pages grafted, EPUBs laid out and written as PDF first, Notable's own pages
  * drawn from the plan's content stream, strokes as `/Ink` with appearance streams, images as
  * stamps, and the notebook doc plus `notable.json` embedded.

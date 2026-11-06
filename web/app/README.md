@@ -25,19 +25,19 @@ The service worker registers only in production builds.
   writes the notebook doc and library entry. A failed upload leaves no entry behind. EPUBs are laid
   out at the Note Air 5C's physical page size (`EPUB_LAYOUT`, 446 × 595 pt, 12 pt).
 - **MuPDF** (10 MB WASM) loads lazily, only for adding, reading and downloading. For reading and
-  downloading it runs in a worker (`src/lib/pdf.worker.ts`). The worker imports MuPDF on first use:
+  downloading it runs in a worker (`src/lib/pdf.worker.ts`, serving `@notable/reader`'s worker). The worker imports MuPDF on first use:
   mupdf.js initializes with top-level await, and a module worker that is still awaiting drops the
   messages sent to it.
-- **Reader** (`src/components/ReaderView.tsx`): pages in `pageOrder`, each with two canvases. The
+- **Reader** (`src/components/ReaderView.tsx`, painting with `@notable/reader`): pages in `pageOrder`, each with two canvases. The
   background is a MuPDF page bitmap, a native template or an image. The ink layer holds images and
   strokes (SB2, pressure pens vary width). Pages within about a screen of the viewport draw; the
   rest set their canvases to 0×0. The view re-reads the doc on every change, so ink from the Boox
   appears live.
-- **Where ink goes** (`src/lib/geometry.ts`): stroke coordinates are Android canvas px. A PDF or
+- **Where ink goes** (`web/reader/src/geometry.ts`): stroke coordinates are Android canvas px. A PDF or
   EPUB page is scaled to the canvas width (`canvasWidth` in the doc, default 1860 for the Note Air
   5C), so 1 px = page width / canvas width pt, from the page's top-left. Native pages are A4 wide
   (595 pt) and as tall as their content, at least one screen, as in Android's PDF export.
-- **Download PDF** (`src/lib/project.ts`), the only download: it grafts original PDF pages, lays out
+- **Download PDF** (`web/reader/src/project.ts`), the only download: it grafts original PDF pages, lays out
   EPUB pages with the stored layout, and draws native pages as vectors. Strokes become `/Ink`
   annotations with appearance streams; page images become image stamps. The notebook doc
   (`notable.automerge`) and `notable.json` are embedded. Pages whose background can't be resolved

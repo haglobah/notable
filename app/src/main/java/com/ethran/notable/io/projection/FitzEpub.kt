@@ -10,7 +10,7 @@ import java.io.File
 
 /**
  * An EPUB's pages exist only once laid out. Both the Boox background and the PDF projection lay it
- * out here, as the PWA does (web/app/src/lib/project.ts): `layout(w, h, em)`, then every page
+ * out here, as the PWA does (web/reader/src/project.ts): `layout(w, h, em)`, then every page
  * written through MuPDF's PDF writer. The same layout gives the same pages, so annotation
  * coordinates are stable across devices.
  */

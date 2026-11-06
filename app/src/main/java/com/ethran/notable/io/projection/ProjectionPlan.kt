@@ -27,7 +27,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /*
- * Share-as-PDF (ADR-001 "PDF as a projection"): the Kotlin twin of web/app/src/lib/project.ts and
+ * Share-as-PDF (ADR-001 "PDF as a projection"): the Kotlin twin of web/reader/src/project.ts and
  * geometry.ts. This file is pure: it decides every page, its drawn content and its annotations.
  * [FitzPdfWriter] carries the plan out with MuPDF. ProjectionParityTest holds both sides to the
  * fixture the TS project() writes (web/schema/fixtures/projection-v1.json).

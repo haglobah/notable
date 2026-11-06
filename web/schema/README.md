@@ -114,7 +114,7 @@ Map keys are ids. Ids are not repeated inside entries.
 | `page-deleted-from-kotlin.automerge`, `page-delete-vs-draw-from-kotlin.automerge` | Kotlin `GoldenFixtureTest` |
 | `code-v1.json`, `code-v1.automerge`, `library-code-v1.automerge` | `npm run fixtures` (the code doc, and library-v1 with `codeDocUrl`); the defs are also loaded by both runtimes' tests |
 | `code-from-kotlin.automerge`, `library-code-from-kotlin.automerge` | Kotlin `CodeDocSchemaTest` |
-| `projection-v1.json` | `npm run projection-fixture` in `web/app` (TS `project()`); read by Kotlin `ProjectionParityTest` |
+| `projection-v1.json` | `npm run projection-fixture` in `web/reader` (TS `project()`); read by Kotlin `ProjectionParityTest` |
 
 Regenerate only for an intentional change. Kotlin fixtures: `UPDATE_FIXTURES=1 ./gradlew
 :app:testDebugUnitTest --tests 'com.ethran.notable.sync.automerge.*'`. Then run `npm run fixtures`
