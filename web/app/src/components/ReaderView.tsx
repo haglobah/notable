@@ -5,10 +5,9 @@ import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo"
 import { readNotebook, type Notebook, type NotebookEntry, type Page } from "@notable/schema"
 import { edited, kindOf } from "../lib/library.ts"
 import {
-  canvasWidthOf, docKeyId, docKeyOf, inkSignature, pageHeight, pagePixels, paintBackground, paintInk, resolveBackground,
+  canvasWidthOf, docKeyId, docKeyOf, downloadPdf, inkSignature, pageHeight, pagePixels, paintBackground, paintInk, resolveBackground,
   type DocKey, type PageBackground,
 } from "@notable/reader"
-import { pdfFileName } from "@notable/reader/project"
 import { reader } from "../lib/reader.ts"
 import { MIN_ZOOM, attachPinchZoom, type PinchZoom } from "../lib/zoom.ts"
 import { useSession } from "./session.tsx"
@@ -106,15 +105,7 @@ function Download(p: { handle: DocHandle<unknown>; entry: NotebookEntry }) {
   const run = async () => {
     setState({ s: "working", done: 0, total: 0 })
     try {
-      const pdf = await reader.projectPdf(Am.save(p.handle.doc()), p.entry, (done, total) => setState({ s: "working", done, total }))
-      const url = URL.createObjectURL(new Blob([pdf as Uint8Array<ArrayBuffer>], { type: "application/pdf" }))
-      const a = document.createElement("a")
-      a.href = url
-      a.download = pdfFileName(p.entry.title)
-      document.body.append(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      await downloadPdf(reader, Am.save(p.handle.doc()), p.entry, (done, total) => setState({ s: "working", done, total }))
       setState({ s: "idle" })
     } catch (e) {
       setState({ s: "failed", message: (e as Error).message })

@@ -244,10 +244,3 @@ function coverBoxOps(w: number): string {
     `${x} ${y + r} l ${x} ${y + r - k} ${x + r - k} ${y} ${x + r} ${y} c h`
   return `1 g 0.267 G 4 w ${path} B\n`
 }
-
-/** Title → a file name every OS accepts. */
-export function pdfFileName(title: string): string {
-  let base = title.replace(/\.pdf$/i, "").replace(/[\u0000-\u001f\u007f/\\?%*:|"<>]+/g, " ").replace(/\s+/g, " ").trim()
-  if (!base) base = "Untitled"
-  return `${base.slice(0, 120).trim()}.pdf`
-}
