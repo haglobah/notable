@@ -2,7 +2,7 @@
  * Writes web/schema/fixtures/projection-v1.json: notebooks, the source facts Kotlin can't compute
  * without MuPDF, and what project() made of them. Kotlin's ProjectionParityTest must match it.
  *
- * Run: npm run projection-fixture (from web/app). Regenerate only for an intentional change.
+ * Run: npm run projection-fixture (from web/reader). Regenerate only for an intentional change.
  */
 import { writeFileSync } from "node:fs"
 import { cases, fixtureCase } from "../test/projectionParity.ts"

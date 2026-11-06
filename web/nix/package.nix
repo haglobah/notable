@@ -22,6 +22,8 @@ buildNpmPackage {
       ../schema/package.json
       ../schema/src
       ../schema/runtime
+      ../reader/package.json
+      ../reader/src
       ../server/package.json
       ../server/src
       ../repl/package.json
@@ -35,7 +37,7 @@ buildNpmPackage {
     ];
   };
 
-  npmDepsHash = "sha256-aNT6Vl7+1MqZEh4QDjdQFx9GPc6iAakUMPmfzo2J/Rc=";
+  npmDepsHash = "sha256-WhR/iSEypI/bhQzFpLzZpPqCdR5Y9Yd+Dox+HbAlYkw=";
 
   nodejs = nodejs_24;
   nativeBuildInputs = [ makeWrapper ];

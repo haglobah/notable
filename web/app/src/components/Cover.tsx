@@ -1,9 +1,9 @@
 import { Show, createSignal, onCleanup, onMount } from "solid-js"
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo"
 import { readNotebook, type NotebookEntry } from "@notable/schema"
-import { coverSignature } from "../lib/cover.ts"
+import { coverSignature, paintCover } from "@notable/reader"
 import { kindOf } from "../lib/library.ts"
-import { paintCover } from "../lib/paint.ts"
+import { reader } from "../lib/reader.ts"
 import { Glyph } from "./Marks.tsx"
 import { useSession } from "./session.tsx"
 
@@ -57,7 +57,7 @@ export function Cover(p: { entry: NotebookEntry }) {
           const width = box.clientWidth
           const have = painted.get(entry.id)
           if (have && have.sig === sig && have.width === width) { show(have.canvas); continue }
-          const c = await oneAtATime(() => paintCover(nb, entry, width, window.devicePixelRatio))
+          const c = await oneAtATime(() => paintCover(reader, nb, entry, width, window.devicePixelRatio))
           if (!alive) return
           painted.delete(entry.id)
           painted.set(entry.id, { sig, width, canvas: c })

@@ -6,7 +6,7 @@ import { readLibrary, readNotebook } from "@notable/schema"
 import { startHarness, userWithToken, clientRepo, waitFor, tryFind, shutdown, type Harness } from "@notable/server/test/helpers.ts"
 import { addDocument, detectKind, fetchTransport, sha256File, UploadFailure, EPUB_LAYOUT, type Stage } from "../src/lib/upload.ts"
 import { countPages } from "../src/lib/pages.ts"
-import { makeEpub, makePdf } from "./files.ts"
+import { makeEpub, makePdf } from "@notable/reader/test/files.ts"
 
 let h: Harness
 before(async () => { h = await startHarness() })

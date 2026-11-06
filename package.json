@@ -1,0 +1,18 @@
+{
+  "name": "@notable/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Notable's shared web code for apps outside this repo (Flow): the doc schema and the reader. Install it from git; inside the repo, web/ is the npm workspace.",
+  "type": "module",
+  "files": ["web/schema/src", "web/schema/runtime", "web/reader/src"],
+  "exports": {
+    "./schema": "./web/schema/src/index.ts",
+    "./reader": "./web/reader/src/index.ts",
+    "./reader/worker": "./web/reader/src/worker.ts",
+    "./reader/project": "./web/reader/src/project.ts"
+  },
+  "dependencies": {
+    "@automerge/automerge": "3.5.0",
+    "mupdf": "1.28.1"
+  }
+}

@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import * as A from "@automerge/automerge"
 import * as mupdf from "mupdf"
-import { project, EMBEDDED_DOC, EMBEDDED_META } from "../src/lib/project.ts"
+import { project, EMBEDDED_DOC, EMBEDDED_META } from "../src/project.ts"
 import { summarize, type Summary } from "../test/projectionParity.ts"
 
 const [pdfPath, ...blobPaths] = process.argv.slice(2)

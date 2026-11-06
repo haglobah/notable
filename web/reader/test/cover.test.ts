@@ -1,8 +1,8 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readNotebook } from "@notable/schema"
-import { COVER_RATIO, coverPageId, coverPixels, coverSignature, inkSignature } from "../src/lib/cover.ts"
-import { docKeyOf } from "../src/lib/pdfProtocol.ts"
+import { COVER_RATIO, coverPageId, coverPixels, coverSignature, inkSignature } from "../src/cover.ts"
+import { docKeyOf } from "../src/pdfProtocol.ts"
 import { entry, nativeBg, notebookDoc, page, pdfBg, stroke } from "./fixtures.ts"
 
 test("the cover is the first page, as on Android's library card", () => {

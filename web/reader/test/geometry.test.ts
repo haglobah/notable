@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { decodeStrokePoints, readNotebook } from "@notable/schema"
 import {
   canvasWidthOf, contentHeight, resolveBackground, strokeStyle, toPagePoint, DEFAULT_CANVAS_HEIGHT_RATIO,
-} from "../src/lib/geometry.ts"
+} from "../src/geometry.ts"
 import { encodeSb2 } from "./sb2.ts"
 import { BLACK, RED, entry, nativeBg, notebookDoc, page, pdfBg, stroke } from "./fixtures.ts"
 

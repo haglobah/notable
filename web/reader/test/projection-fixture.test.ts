@@ -7,7 +7,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import * as A from "@automerge/automerge"
-import { project } from "../src/lib/project.ts"
+import { project } from "../src/project.ts"
 import { blobSource, cases, sourceInfo, summarize } from "./projectionParity.ts"
 
 const committed = JSON.parse(readFileSync(new URL("../../schema/fixtures/projection-v1.json", import.meta.url), "utf8"))

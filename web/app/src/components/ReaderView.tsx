@@ -4,13 +4,12 @@ import * as Am from "@automerge/automerge"
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo"
 import { readNotebook, type Notebook, type NotebookEntry, type Page } from "@notable/schema"
 import { edited, kindOf } from "../lib/library.ts"
-import { canvasWidthOf, contentHeight, resolveBackground, type PageBackground } from "../lib/geometry.ts"
-import { drawImageBackground, drawImages, drawStrokes, drawTemplate } from "../lib/draw.ts"
-import { pageSizes, projectPdf, renderPage } from "../lib/pdfClient.ts"
-import { docKeyId, docKeyOf, type DocKey } from "../lib/pdfProtocol.ts"
-import { inkSignature } from "../lib/cover.ts"
-import { loadImage } from "../lib/paint.ts"
-import { pdfFileName } from "../lib/project.ts"
+import {
+  canvasWidthOf, docKeyId, docKeyOf, inkSignature, pageHeight, pagePixels, paintBackground, paintInk, resolveBackground,
+  type DocKey, type PageBackground,
+} from "@notable/reader"
+import { pdfFileName } from "@notable/reader/project"
+import { reader } from "../lib/reader.ts"
 import { MIN_ZOOM, attachPinchZoom, type PinchZoom } from "../lib/zoom.ts"
 import { useSession } from "./session.tsx"
 
@@ -107,7 +106,7 @@ function Download(p: { handle: DocHandle<unknown>; entry: NotebookEntry }) {
   const run = async () => {
     setState({ s: "working", done: 0, total: 0 })
     try {
-      const pdf = await projectPdf(Am.save(p.handle.doc()), p.entry, (done, total) => setState({ s: "working", done, total }))
+      const pdf = await reader.projectPdf(Am.save(p.handle.doc()), p.entry, (done, total) => setState({ s: "working", done, total }))
       const url = URL.createObjectURL(new Blob([pdf as Uint8Array<ArrayBuffer>], { type: "application/pdf" }))
       const a = document.createElement("a")
       a.href = url
@@ -151,20 +150,15 @@ function Pages(p: { nb: Notebook; entry: NotebookEntry; onCurrent: (index: numbe
       const k = docKeyId(key)
       if (k in sizes()) continue
       setSizes(m => ({ ...m, [k]: [] }))
-      pageSizes(key).then(v => setSizes(m => ({ ...m, [k]: v })), e => setSizes(m => ({ ...m, [k]: e as Error })))
+      reader.pageSizes(key).then(v => setSizes(m => ({ ...m, [k]: v })), e => setSizes(m => ({ ...m, [k]: e as Error })))
     }
   })
   const pages = createMemo(() => new Map(p.nb.pageOrder.map((id): [string, Sized] => {
     const page = p.nb.pages[id]
     const bg = resolveBackground(p.nb, p.entry, id)
     const key = docKeyOf(bg)
-    let height = contentHeight(page, cw())
-    if (key && bg.kind === "document") {
-      const sz = sizes()[docKeyId(key)]
-      const one = Array.isArray(sz) ? sz[bg.index] : undefined
-      // A4 until the real size is known.
-      height = one ? (cw() * one[1]) / one[0] : cw() * (842 / 595)
-    }
+    const sz = key && sizes()[docKeyId(key)]
+    const height = pageHeight(page, bg, cw(), Array.isArray(sz) && bg.kind === "document" ? sz[bg.index] : undefined)
     return [id, { id, page, bg, key, height }]
   })))
   const docError = (key: DocKey | null) => {
@@ -203,9 +197,6 @@ function Pages(p: { nb: Notebook; entry: NotebookEntry; onCurrent: (index: numbe
   )
 }
 
-/** Larger canvases hit iOS's per-canvas limit and a phone's memory. */
-const MAX_CANVAS_PIXELS = 12_000_000
-
 function PageView(p: { sized: Sized; cw: number; n: number; docError: Error | null; onCurrent: () => void }) {
   let box!: HTMLLIElement
   let bgCanvas!: HTMLCanvasElement
@@ -227,15 +218,8 @@ function PageView(p: { sized: Sized; cw: number; n: number; docError: Error | nu
     onCleanup(() => { io.disconnect(); middle.disconnect(); ro.disconnect() })
   })
 
-  const pixels = createMemo(() => {
-    const w = width()
-    if (!w) return null
-    const ratio = p.sized.height / p.cw
-    let dpr = Math.min(window.devicePixelRatio || 1, 2)
-    while (dpr > 0.5 && w * dpr * (w * dpr * ratio) > MAX_CANVAS_PIXELS) dpr *= 0.8
-    const pw = Math.round(w * dpr)
-    return { w: pw, h: Math.round(pw * ratio), scale: pw / p.cw }
-  }, undefined, { equals: (a, b) => a?.w === b?.w && a?.h === b?.h })
+  const pixels = createMemo(() => pagePixels(width(), p.sized.height, p.cw, window.devicePixelRatio),
+    undefined, { equals: (a, b) => a?.w === b?.w && a?.h === b?.h })
 
   // Background: document page bitmap, template or image.
   const bgSig = createMemo(() => JSON.stringify(p.sized.bg))
@@ -249,30 +233,15 @@ function PageView(p: { sized: Sized; cw: number; n: number; docError: Error | nu
     let alive = true
     onCleanup(() => { alive = false })
     bgCanvas.width = px.w; bgCanvas.height = px.h
-    const ctx = bgCanvas.getContext("2d")!
-    const bg = p.sized.bg
-    const cw = p.cw, h = p.sized.height
     setProblem(null)
-    ctx.setTransform(px.scale, 0, 0, px.scale, 0, 0)
-    if (bg.kind === "native") return drawTemplate(ctx, bg.template, cw, h, px.scale)
-    ctx.fillStyle = "#ffffff"
-    ctx.fillRect(0, 0, cw, h)
-    if (bg.kind === "missing") setProblem(`Background unavailable: ${bg.reason}.`)
-    else if (bg.kind === "image") {
-      loadImage(bg.blob).then(img => { if (alive) drawImageBackground(ctx, img, cw, h, bg.repeat, bg.cover) },
-        e => alive && setProblem((e as Error).message))
-    } else if (p.sized.key) {
+    const isDocument = p.sized.bg.kind === "document"
+    if (isDocument) {
       setLoading(true)
       onCleanup(() => setLoading(false))
-      renderPage(p.sized.key, bg.index, px.w).then(bmp => {
-        setLoading(false)
-        if (alive) {
-          ctx.setTransform(1, 0, 0, 1, 0, 0)
-          ctx.drawImage(bmp, 0, 0, px.w, Math.round((bmp.height * px.w) / bmp.width))
-        }
-        bmp.close()
-      }, e => { setLoading(false); if (alive) setProblem(`This page can't be shown: ${(e as Error).message}`) })
     }
+    paintBackground(reader, bgCanvas.getContext("2d")!, p.sized.bg, px, p.cw, p.sized.height, () => alive)
+      .catch(e => alive && setProblem((e as Error).message))
+      .finally(() => isDocument && setLoading(false))
   })
 
   // Ink: images and strokes.
@@ -286,19 +255,14 @@ function PageView(p: { sized: Sized; cw: number; n: number; docError: Error | nu
     }
     let alive = true
     onCleanup(() => { alive = false })
-    const pg = p.sized.page
-    const images = Object.values(pg.images)
-    const draw = (bitmaps: Map<string, ImageBitmap>) => {
+    // Cleared when the new ink is ready, so a redraw doesn't blink.
+    const ink = document.createElement("canvas")
+    ink.width = px.w; ink.height = px.h
+    void paintInk(reader, ink.getContext("2d")!, p.sized.page, px, () => alive).then(() => {
       if (!alive) return
       inkCanvas.width = px.w; inkCanvas.height = px.h
-      const ctx = inkCanvas.getContext("2d")!
-      ctx.setTransform(px.scale, 0, 0, px.scale, 0, 0)
-      drawImages(ctx, images, bitmaps)
-      drawStrokes(ctx, Object.values(pg.strokes).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()))
-    }
-    if (!images.length) return draw(new Map())
-    Promise.allSettled(images.map(i => loadImage(i.blob).then(b => [i.blob, b] as const))).then(rs =>
-      draw(new Map(rs.flatMap(r => (r.status === "fulfilled" ? [r.value] : [])))))
+      inkCanvas.getContext("2d")!.drawImage(ink, 0, 0)
+    })
   })
 
   const message = () => problem() ?? (p.docError ? `This document can't be opened: ${p.docError.message}` : null)

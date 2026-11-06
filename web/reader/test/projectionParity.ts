@@ -9,7 +9,7 @@ import { createHash } from "node:crypto"
 import * as A from "@automerge/automerge"
 import * as mupdf from "mupdf"
 import type { Background, Image, NotebookEntry, Page, Source } from "@notable/schema"
-import { EMBEDDED_DOC, EMBEDDED_META, project } from "../src/lib/project.ts"
+import { EMBEDDED_DOC, EMBEDDED_META, project } from "../src/project.ts"
 import { makeEpub, makePdf } from "./files.ts"
 import { BLACK, RED, nativeBg, notebookDoc, page, stroke } from "./fixtures.ts"
 
