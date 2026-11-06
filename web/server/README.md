@@ -29,6 +29,8 @@ printf 'a password\n' | NOTABLE_STATE_DIR=/var/lib/notable node src/cli.ts user 
 | `NOTABLE_STATIC_DIR` | unset | The built PWA (`web/app/dist`). Served from the same origin, so the session cookie reaches `/api` and `/sync`. Unset serves only the API. The NixOS module sets it to the packaged app. |
 | `NOTABLE_HT_URL` | unset | humane tools' auth server, e.g. `https://todos.humane.tools`. See [humane tools sign-in](#humane-tools-sign-in). |
 | `NOTABLE_HT_LINKS` | unset | `name=email,…`: which humane tools account may sign in as which account |
+| `NOTABLE_ACCOUNTS_URL`, `NOTABLE_OIDC_CLIENT_SECRET` | unset | The humane.tools accounts provider (OIDC) and this server's secret as its `notable` client: "Sign in with humane tools". Both or neither; needs `NOTABLE_PUBLIC_ORIGIN`. See [humane tools sign-in](#humane-tools-sign-in). |
+| `NOTABLE_CONNECT_CLIENTS` | unset | `name=url,…`: apps that may connect to an account through the provider (`GET /api/connect`), with the exact redirect URLs each may get a code at. Needs `NOTABLE_ACCOUNTS_URL`. |
 | `NOTABLE_SESSION_IDLE_DAYS` | `180` | A session unused this long expires |
 | `NOTABLE_ARGON2_MEMORY_KIB`, `NOTABLE_ARGON2_PASSES` | `19456`, `2` | argon2id cost (OWASP baseline). Existing hashes keep their own parameters. |
 
@@ -55,6 +57,11 @@ carry an allowed `Origin`.
 | `POST /api/login {username, password}` | `200 {token, username}` and sets the cookie. With `NOTABLE_HT_URL`, an email as `username` signs in with humane tools instead; `username` in the answer is still the Notable account's. `403` for an HT account that isn't linked or whose email is unverified, `503` when HT can't be reached. Returns `401` for a wrong password or an unknown user (same body, same argon2 cost). Returns `429` with `Retry-After` after 5 failures per username or 30 per IP in 15 minutes. |
 | `POST /api/signup {username, password}` | `201` like login. `404` unless open signup is enabled; `409` if the name is taken; `400` for a bad name or a password under 10 characters. |
 | `POST /api/logout` | `204`. Revokes this session and closes its sync sockets. |
+| `GET /api/login-methods` | `{password: true, humaneTools, connect: [app names]}`, no auth. The PWA shows "Sign in with humane tools" when `humaneTools`. |
+| `GET /api/oidc/start` | `302` to the accounts provider (code flow with PKCE; a state cookie binds it to this browser). `404` without `NOTABLE_ACCOUNTS_URL`. |
+| `GET /api/oidc/callback` | The provider's redirect back. Signs the browser in (session cookie, `302` to `/`) or finishes an app's connect; a failure goes to `/?login_error=…`. |
+| `GET /api/connect?client&redirect_uri&state&code_challenge&code_challenge_method=S256` | An app (Flow) connects to the account of whoever signs in to humane tools in this browser: `302` to the provider, then to `redirect_uri?code&state` (or `?error&state`). An unregistered app or redirect URL gets `400` and no redirect. |
+| `POST /api/connect/token {code, code_verifier, redirect_uri, client}` | `200 {token, username}`: a session token, as login returns. The code works once, within a minute, with the verifier whose S256 the connect named. |
 | `GET /api/me` | `{username, libraryDocUrl, maxBlobBytes}`. The library doc is created on first use. Clients check `maxBlobBytes` before uploading; the server's `413` still decides. |
 | `PUT /api/blobs/<sha256>` | `201`. The server streams the body to disk and verifies the hash. Returns `400` on a mismatch and `413` over the limit. |
 | `GET`/`HEAD /api/blobs/<sha256>` | The file, with `immutable` caching. Served as `application/octet-stream` with `CSP: sandbox` and `nosniff`, so uploaded bytes never run on this origin. A file you don't own returns `404`, the same as a missing one. |
@@ -87,6 +94,25 @@ in the login form always means HT. The clients need nothing new.
   HT needn't list this server in its `trustedOrigins`.
 - Failed email logins count toward the same rate limits as password logins. HT also limits
   sign-ins to 5 a minute, shared by every caller from this server.
+
+### Through the accounts provider
+
+With `NOTABLE_ACCOUNTS_URL` set, the login page also offers **Sign in with humane tools**: the
+browser goes to the humane.tools accounts provider (ht's ADR-005), which returns a code
+silently when the browser is signed in there. The server swaps the code (with its client secret
+and the PKCE verifier) for tokens, checks the HS256 ID token (aud, exp, nonce, signature) and asks
+userinfo for the email. The account is found exactly as for an email login: by the provider's
+`sub`, which is the humane tools user id, or by the linked email the first time. Then it issues an
+ordinary Notable session and keeps no provider tokens, so signing out at humane tools doesn't end
+Notable sessions (as before).
+
+Apps that read Notable for someone (Flow, `~/projects/hotlustre`) **connect** the same way
+without becoming provider clients themselves: the app's server sends the browser to
+`/api/connect` with a PKCE challenge, Notable sends it on to the provider, and back at its own
+callback the app gets a one-time code that its server swaps for a session token at
+`POST /api/connect/token`. Each app is listed in `NOTABLE_CONNECT_CLIENTS` with its exact
+redirect URLs; nothing is ever sent to another URL. Flows in progress and codes live in memory
+(`src/flows.ts`): a restart only means signing in again.
 
 ## Isolation design
 

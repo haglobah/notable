@@ -1,9 +1,30 @@
-import { createSignal, Show } from "solid-js"
+import { createResource, createSignal, Show } from "solid-js"
 import { login, LoginError } from "../lib/session.ts"
 import { Wordmark } from "./Marks.tsx"
 
+/** What the server offers (GET /api/login-methods); offline or an older server: the password only. */
+const loginMethods = async (): Promise<{ humaneTools: boolean }> => {
+  try {
+    const r = await fetch("/api/login-methods")
+    return r.ok ? ((await r.json()) as { humaneTools: boolean }) : { humaneTools: false }
+  } catch {
+    return { humaneTools: false }
+  }
+}
+
+/** A failed sign-in through humane tools comes back as /?login_error=…; shown once. */
+const takeLoginError = (): string | null => {
+  const url = new URL(location.href)
+  const error = url.searchParams.get("login_error")
+  if (error === null) return null
+  url.searchParams.delete("login_error")
+  history.replaceState(history.state, "", url)
+  return `Signing in with humane tools failed: ${error}.`
+}
+
 export function Login(props: { notice?: string; onLoggedIn: () => void }) {
-  const [error, setError] = createSignal<string | null>(null)
+  const [error, setError] = createSignal<string | null>(takeLoginError())
+  const [methods] = createResource(loginMethods)
   const [busy, setBusy] = createSignal(false)
 
   const submit = async (e: SubmitEvent) => {
@@ -30,6 +51,12 @@ export function Login(props: { notice?: string; onLoggedIn: () => void }) {
         </div>
         <Show when={props.notice}>
           <p class="note" role="status">{props.notice}</p>
+        </Show>
+        <Show when={methods()?.humaneTools}>
+          <div class="login-ht">
+            <a class="button" href="/api/oidc/start">Sign in with humane tools</a>
+            <p class="login-or">or with a Notable username and password:</p>
+          </div>
         </Show>
         <form class="form" onSubmit={submit}>
           <div class="field">

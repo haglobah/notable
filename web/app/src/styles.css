@@ -122,6 +122,9 @@ button, input { font: inherit; color: inherit; }
 .form .button { width: 100%; margin-top: 0.5rem; }
 .alert { margin: 0; padding: 0.75rem 0.9rem; border-radius: var(--radius-control); background: var(--warn-wash); color: var(--warn); font-size: 0.95rem; }
 .note { margin: 0; padding: 0.75rem 0.9rem; border-radius: var(--radius-control); background: var(--pen-wash); font-size: 0.95rem; }
+.login-ht { display: grid; gap: 0.75rem; }
+.login-ht .button { width: 100%; text-decoration: none; text-align: center; }
+.login-or { margin: 0; color: var(--graphite); font-size: 0.9rem; text-align: center; }
 
 /* ---- app shell ---- */
 .shell { max-width: calc(var(--measure) + 2 * var(--gutter)); margin: 0 auto; padding: 0 var(--gutter) calc(6rem + env(safe-area-inset-bottom)); }

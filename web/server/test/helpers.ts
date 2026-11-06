@@ -94,6 +94,8 @@ export async function startHarness(overrides: Partial<Config> = {}): Promise<Har
     sessionIdleDays: 180,
     htUrl: null,
     htLinks: new Map(),
+    accounts: null,
+    connectClients: new Map(),
     // Cheap hashing keeps tests fast; production uses the defaults in config.ts.
     argon2: { memory: 1024, passes: 1, parallelism: 1 },
     ...overrides,

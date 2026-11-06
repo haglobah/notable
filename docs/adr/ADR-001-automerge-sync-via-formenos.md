@@ -136,6 +136,19 @@ and the metrics stack. Server work must stay small.
   command, so it lives in noldor with the rest of the host.
 - Trade-off: ending HT sessions or changing the HT password doesn't end Notable sessions.
 
+### humane tools sign-in through the accounts provider (2026-11-06)
+
+- The redirect sign-in the section above anticipated: `notable` is a trusted client of the
+  humane.tools accounts provider (ht ADR-005, `notableOrigins` there). "Sign in with humane
+  tools" runs the code flow with PKCE from this server and ends, like the email login, in an
+  ordinary Notable session for the linked account (`NOTABLE_HT_LINKS`, matched by the provider's
+  `sub` = the HT user id). No provider tokens are kept.
+- Beat wanted Flow to read his library without typing a password into Flow. Apps like Flow
+  **connect** through this server (`/api/connect`, `/api/connect/token`), listed with exact
+  redirect URLs in `NOTABLE_CONNECT_CLIENTS`. They never become provider clients: the provider
+  only knows Notable, and Notable decides which apps may hold a Notable session.
+- The email/password login stays: Android and self-hosters without HT need it.
+
 ### Sync runs in the foreground only (2026-10-11)
 
 - Onyx freezes Notable about 3 s after it leaves the foreground, even when Android reports it as

@@ -13,8 +13,12 @@ import { AuthenticatedServerAdapter } from "./syncAdapter.ts"
 import { BlobStore, HASH, HashMismatch, TooLarge } from "./blobs.ts"
 import { FailureLimiter } from "./rateLimit.ts"
 import { openHt } from "./ht.ts"
+import { authorizeUrl, exchangeCode, pkceChallenge, randomToken, userinfo, verifyIdToken, type OidcClient } from "./oidc.ts"
+import { SignInFlows, type Purpose } from "./flows.ts"
 
 export const COOKIE = "notable_session"
+/** Binds a sign-in through the accounts provider to the browser that started it (flows.ts). */
+const OIDC_COOKIE = "notable_oidc"
 const SERVER_PEER_ID = "notable-server" as PeerId
 const MAX_JSON_BYTES = 16 * 1024
 const MAX_SYNC_MESSAGE = 256 * 1024 * 1024
@@ -39,6 +43,12 @@ class HttpError extends Error {
     this.status = status
     this.headers = headers
   }
+}
+
+const withParams = (url: string, params: Record<string, string>) => {
+  const u = new URL(url)
+  for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v)
+  return u.toString()
 }
 
 export async function startServer(config: Config, log: (msg: string) => void = () => {}): Promise<RunningServer> {
@@ -67,6 +77,11 @@ export async function startServer(config: Config, log: (msg: string) => void = (
   const ht = config.htUrl ? openHt(config.htUrl) : null
   for (const name of accounts.setHtLinks(config.htLinks)) log(`NOTABLE_HT_LINKS names ${name}, which has no account; create it with notable-admin user add`)
   const secureCookie = config.publicOrigin?.startsWith("https://") ?? false
+  // Signing in through the humane.tools accounts provider (oidc.ts), and apps connecting through it.
+  const oidc: OidcClient | null = config.accounts && config.publicOrigin
+    ? { accountsUrl: config.accounts.url, clientId: "notable", clientSecret: config.accounts.clientSecret, redirectUri: `${config.publicOrigin}/api/oidc/callback` }
+    : null
+  const flows = new SignInFlows()
 
   // --- helpers ---------------------------------------------------------------------------------
 
@@ -121,6 +136,44 @@ export async function startServer(config: Config, log: (msg: string) => void = (
   const sessionCookie = (token: string) =>
     `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${config.sessionIdleDays * 86400}${secureCookie ? "; Secure" : ""}`
   const clearCookie = `${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secureCookie ? "; Secure" : ""}`
+
+  const query = (req: IncomingMessage) => new URL(req.url ?? "/", "http://x").searchParams
+
+  const redirect = (res: ServerResponse, location: string, cookies: string[] = []) => {
+    res.writeHead(302, { location, "cache-control": "no-store", ...(cookies.length ? { "set-cookie": cookies } : {}) })
+    res.end()
+  }
+
+  /** Lax: the provider's redirect back is a cross-site top-level navigation. */
+  const oidcCookie = (state: string, maxAge: number) =>
+    `${OIDC_COOKIE}=${state}; Path=/api/oidc; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secureCookie ? "; Secure" : ""}`
+  const oidcState = (req: IncomingMessage) => {
+    for (const part of (req.headers.cookie ?? "").split(";")) {
+      const [k, ...v] = part.trim().split("=")
+      if (k === OIDC_COOKIE) return v.join("=") || null
+    }
+    return null
+  }
+
+  /** Sends the browser to the provider; the callback finishes `purpose`. */
+  const toProvider = (res: ServerResponse, purpose: Purpose) => {
+    const state = randomToken(), nonce = randomToken(), verifier = randomToken(48)
+    flows.begin(state, purpose, nonce, verifier)
+    redirect(res, authorizeUrl(oidc!, { state, nonce, challenge: pkceChallenge(verifier) }), [oidcCookie(state, 600)])
+  }
+
+  /** The account the provider's answer names, or why there is none. */
+  const providerUser = async (code: string, verifier: string, nonce: string): Promise<User | string> => {
+    const tokens = await exchangeCode(oidc!, code, verifier)
+    if (tokens.type !== "ok") return tokens.type === "rejected" ? "humane tools did not accept the sign-in" : "humane tools sign-in is unavailable"
+    const id = await verifyIdToken(tokens.value.idToken, { clientId: oidc!.clientId, clientSecret: oidc!.clientSecret, nonce })
+    if (id.type !== "ok") return `humane tools answered with an invalid ID token (${id.reason})`
+    const info = await userinfo(oidc!, tokens.value.accessToken)
+    if (info.type !== "ok") return "humane tools sign-in is unavailable"
+    if (info.value.sub !== id.sub) return "humane tools answered for two different accounts"
+    if (info.value.emailVerified === false) return "verify your humane tools email address first"
+    return accounts.userForHt(info.value.sub, info.value.email) ?? `${info.value.email} has no Notable account here; ask the admin to link it in NOTABLE_HT_LINKS`
+  }
 
   const readJson = async (req: IncomingMessage): Promise<Record<string, unknown>> => {
     let size = 0
@@ -242,6 +295,73 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       adapter.closeSessions(new Set([user.sessionHash]))
       res.writeHead(204, { "set-cookie": clearCookie, "cache-control": "no-store" })
       res.end()
+    },
+
+    /** What the login form offers (the PWA asks before showing it). */
+    "GET /api/login-methods": async (_req, res) => json(res, 200, { password: true, humaneTools: !!oidc, connect: [...config.connectClients.keys()] }),
+
+    // "Sign in with humane tools": the provider signs the browser in (silently when it already is
+    // there), the callback gives it an ordinary session.
+    "GET /api/oidc/start": async (_req, res) => {
+      if (!oidc) throw new HttpError(404, "not found")
+      toProvider(res, { kind: "login" })
+    },
+
+    "GET /api/oidc/callback": async (req, res) => {
+      if (!oidc) throw new HttpError(404, "not found")
+      const q = query(req)
+      const state = q.get("state") ?? ""
+      const clear = oidcCookie("", 0)
+      // Only the browser that started the sign-in may finish it.
+      const pending = state && oidcState(req) === state ? flows.pending.take(state) : null
+      if (!pending) return redirect(res, `/?login_error=${encodeURIComponent("the sign-in expired or was started elsewhere; try again")}`, [clear])
+      const { purpose } = pending
+      const fail = (error: string) =>
+        purpose.kind === "login"
+          ? redirect(res, `/?login_error=${encodeURIComponent(error)}`, [clear])
+          : redirect(res, withParams(purpose.redirectUri, { error: "access_denied", error_description: error, state: purpose.state }), [clear])
+      const code = q.get("code")
+      if (!code) return fail(q.get("error") === "login_required" ? "sign in to humane tools first" : `humane tools refused: ${q.get("error_description") ?? q.get("error") ?? "no code"}`)
+      const user = await providerUser(code, pending.verifier, pending.nonce)
+      if (typeof user === "string") return fail(user)
+      if (purpose.kind === "login") {
+        const token = accounts.createSession(user.id, req.headers["user-agent"] ?? null)
+        return redirect(res, "/", [clear, sessionCookie(token)])
+      }
+      const connectCode = randomToken()
+      flows.issueCode(connectCode, user, purpose)
+      redirect(res, withParams(purpose.redirectUri, { code: connectCode, state: purpose.state }), [clear])
+    },
+
+    // An app (Flow) connects to the account of whoever signs in to humane tools in this browser:
+    // OAuth's code flow with PKCE, the app being a client registered in NOTABLE_CONNECT_CLIENTS
+    // by its exact redirect URLs. Its server swaps the code for an ordinary session token.
+    "GET /api/connect": async (req, res) => {
+      if (!oidc) throw new HttpError(404, "not found")
+      const q = query(req)
+      const client = q.get("client") ?? ""
+      const redirectUri = q.get("redirect_uri") ?? ""
+      const allowed = config.connectClients.get(client)
+      // Nothing is sent to an unregistered URL, not even an error.
+      if (!allowed || !allowed.includes(redirectUri)) throw new HttpError(400, "unknown app or redirect URL")
+      const state = q.get("state") ?? ""
+      const challenge = q.get("code_challenge") ?? ""
+      if (!state || q.get("code_challenge_method") !== "S256" || !/^[A-Za-z0-9_-]{43}$/.test(challenge))
+        return redirect(res, withParams(redirectUri, { error: "invalid_request", error_description: "state and an S256 code_challenge are needed", state }))
+      toProvider(res, { kind: "connect", client, redirectUri, state, challenge })
+    },
+
+    "POST /api/connect/token": async (req, res) => {
+      if (!oidc) throw new HttpError(404, "not found")
+      const body = await readJson(req)
+      const { code, code_verifier, redirect_uri, client } = body
+      if (typeof code !== "string" || typeof code_verifier !== "string" || typeof redirect_uri !== "string" || typeof client !== "string")
+        throw new HttpError(400, "code, code_verifier, redirect_uri and client are needed")
+      const issued = flows.codes.take(code)
+      if (!issued || issued.client !== client || issued.redirectUri !== redirect_uri || pkceChallenge(code_verifier) !== issued.challenge)
+        throw new HttpError(400, "invalid or expired code")
+      const token = accounts.createSession(issued.user.id, `${client} (connected)`)
+      json(res, 200, { token, username: issued.user.username })
     },
 
     "GET /api/me": async (req, res) => {

@@ -24,6 +24,12 @@ let
     NOTABLE_HT_URL = cfg.humaneToolsUrl;
     NOTABLE_HT_LINKS = lib.concatStringsSep "," (lib.mapAttrsToList (name: email: "${name}=${email}") cfg.humaneToolsLinks);
   }
+  // lib.optionalAttrs (cfg.accountsUrl != null) { NOTABLE_ACCOUNTS_URL = cfg.accountsUrl; }
+  // lib.optionalAttrs (cfg.connectClients != { }) {
+    NOTABLE_CONNECT_CLIENTS = lib.concatStringsSep "," (
+      lib.concatLists (lib.mapAttrsToList (name: urls: map (url: "${name}=${url}") urls) cfg.connectClients)
+    );
+  }
   // cfg.environment;
 
   # Runs the admin CLI as the service user against the service's state, so files it creates
@@ -105,6 +111,39 @@ in
       '';
     };
 
+    accountsUrl = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "https://accounts.humane.tools";
+      description = ''
+        The humane.tools accounts provider (OIDC, ht's ADR-005). Set, the login page offers "Sign
+        in with humane tools", for the accounts humaneToolsLinks links (by the provider's user
+        id, the same as humaneToolsUrl's). Needs publicOrigin, the `notable` client registered at
+        the provider with publicOrigin + "/api/oidc/callback", and its secret as
+        NOTABLE_OIDC_CLIENT_SECRET in environmentFile.
+      '';
+    };
+
+    connectClients = mkOption {
+      type = types.attrsOf (types.listOf types.str);
+      default = { };
+      example = {
+        flow = [ "https://flow.humane.tools/api/notable/callback" ];
+      };
+      description = ''
+        Apps that may connect to an account through the provider (GET /api/connect, code flow
+        with PKCE), by name, with the exact redirect URLs each may receive a code at. Needs
+        accountsUrl.
+      '';
+    };
+
+    environmentFile = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "/run/secrets/notable.env";
+      description = "A file of secret environment variables (NOTABLE_OIDC_CLIENT_SECRET=…), outside the Nix store.";
+    };
+
     trustProxy = mkOption {
       type = types.bool;
       default = false;
@@ -141,6 +180,17 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.accountsUrl == null || (cfg.publicOrigin != null && cfg.environmentFile != null);
+        message = "services.notable-server.accountsUrl needs publicOrigin and an environmentFile holding NOTABLE_OIDC_CLIENT_SECRET";
+      }
+      {
+        assertion = cfg.connectClients == { } || cfg.accountsUrl != null;
+        message = "services.notable-server.connectClients needs accountsUrl";
+      }
+    ];
+
     users.users.${cfg.user} = {
       isSystemUser = true;
       group = cfg.group;
@@ -166,6 +216,7 @@ in
 
       serviceConfig = {
         ExecStart = lib.getExe cfg.package;
+        EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
         User = cfg.user;
         Group = cfg.group;
         Restart = "on-failure";

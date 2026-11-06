@@ -18,6 +18,17 @@ export type Config = {
   htUrl: string | null
   /** Username -> humane tools email: the accounts HT may sign in as. Applied whole at every start. */
   htLinks: Map<string, string>
+  /**
+   * The humane.tools accounts provider (ht's ADR-005), e.g. "https://accounts.humane.tools", and
+   * this server's secret as its `notable` client. Set, "Sign in with humane tools" redirects there
+   * (oidc.ts); the accounts it signs in are the ones NOTABLE_HT_LINKS links. Needs publicOrigin.
+   */
+  accounts: { url: string; clientSecret: string } | null
+  /**
+   * Apps that may connect to an account through the provider (GET /api/connect), by name, with
+   * the exact redirect URLs each may receive a code at: "flow" -> ["https://flow.humane.tools/…"].
+   */
+  connectClients: Map<string, string[]>
   argon2: Argon2Params
 }
 
@@ -42,6 +53,48 @@ export function argon2FromEnv(env: NodeJS.ProcessEnv = process.env): Argon2Param
   }
 }
 
+const localHost = (hostname: string) => ["localhost", "127.0.0.1", "[::1]"].includes(hostname) || hostname.endsWith(".localhost")
+
+/** An https URL (http only on localhost) without credentials or a fragment. */
+function secureUrl(value: string, name: string): URL {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`${name} must be a URL, got "${value}"`)
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && localHost(url.hostname))) throw new Error(`${name} must use https (http only on localhost), got "${value}"`)
+  if (url.hash || url.username || url.password) throw new Error(`${name} must not carry a fragment or credentials`)
+  return url
+}
+
+/** "flow=https://a/cb,flow=https://b/cb,other=…": each app's redirect URLs. */
+export function parseConnectClients(raw: string | undefined): Map<string, string[]> {
+  const clients = new Map<string, string[]>()
+  for (const entry of (raw ?? "").split(",").map(e => e.trim()).filter(Boolean)) {
+    const at = entry.indexOf("=")
+    const name = entry.slice(0, at).trim().toLowerCase()
+    const url = entry.slice(at + 1).trim()
+    if (at < 1 || !/^[a-z][a-z0-9-]*$/.test(name) || !url) throw new Error(`NOTABLE_CONNECT_CLIENTS: expected name=url, got "${entry}"`)
+    secureUrl(url, `NOTABLE_CONNECT_CLIENTS ${name}`)
+    clients.set(name, [...(clients.get(name) ?? []), url])
+  }
+  return clients
+}
+
+/** NOTABLE_ACCOUNTS_URL and NOTABLE_OIDC_CLIENT_SECRET, both or neither. */
+export function accountsFromEnv(env: NodeJS.ProcessEnv, publicOrigin: string | null): Config["accounts"] {
+  const url = (env.NOTABLE_ACCOUNTS_URL ?? "").trim()
+  const clientSecret = (env.NOTABLE_OIDC_CLIENT_SECRET ?? "").trim()
+  if (!url && !clientSecret) return null
+  if (!url) throw new Error("NOTABLE_OIDC_CLIENT_SECRET needs NOTABLE_ACCOUNTS_URL")
+  const parsed = secureUrl(url, "NOTABLE_ACCOUNTS_URL")
+  if (parsed.origin !== url.replace(/\/$/, "")) throw new Error("NOTABLE_ACCOUNTS_URL must be an origin, without a path")
+  if (clientSecret.length < 32) throw new Error("NOTABLE_ACCOUNTS_URL needs NOTABLE_OIDC_CLIENT_SECRET, 32 characters or more")
+  if (!publicOrigin) throw new Error("NOTABLE_ACCOUNTS_URL needs NOTABLE_PUBLIC_ORIGIN (the provider redirects back to it)")
+  return { url: parsed.origin, clientSecret }
+}
+
 /** "name=email,name=email" as a map, lower-cased; one email per account and one account per email. */
 export function parseHtLinks(raw: string | undefined): Map<string, string> {
   const links = new Map<string, string>()
@@ -54,6 +107,13 @@ export function parseHtLinks(raw: string | undefined): Map<string, string> {
     emails.add(email)
   }
   return links
+}
+
+function accountsAndClients(env: NodeJS.ProcessEnv, publicOrigin: string | null) {
+  const accounts = accountsFromEnv(env, publicOrigin)
+  const connectClients = parseConnectClients(env.NOTABLE_CONNECT_CLIENTS)
+  if (connectClients.size && !accounts) throw new Error("NOTABLE_CONNECT_CLIENTS needs NOTABLE_ACCOUNTS_URL")
+  return { accounts, connectClients }
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
@@ -77,6 +137,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     sessionIdleDays: int(env, "NOTABLE_SESSION_IDLE_DAYS", 180),
     htUrl: env.NOTABLE_HT_URL ? new URL(env.NOTABLE_HT_URL).origin : null,
     htLinks: parseHtLinks(env.NOTABLE_HT_LINKS),
+    ...accountsAndClients(env, publicOrigin),
     argon2: argon2FromEnv(env),
   }
 }
