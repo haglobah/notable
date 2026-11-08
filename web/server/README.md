@@ -59,7 +59,7 @@ carry an allowed `Origin`.
 | `POST /api/logout` | `204`. Revokes this session and closes its sync sockets. |
 | `GET /api/login-methods` | `{password: true, humaneTools, connect: [app names]}`, no auth. The PWA shows "Sign in with humane tools" when `humaneTools`. |
 | `GET /api/oidc/start` | `302` to the accounts provider (code flow with PKCE; a state cookie binds it to this browser). `404` without `NOTABLE_ACCOUNTS_URL`. |
-| `GET /api/oidc/callback` | The provider's redirect back. Signs the browser in (session cookie, `302` to `/`) or finishes an app's connect; a failure goes to `/?login_error=…`. |
+| `GET /api/oidc/callback` | The provider's redirect back. Signs the browser in (session cookie, `302` to `/`) or finishes an app's connect; a failure goes to `/?login_error=<code>` (`SIGN_IN_ERRORS` in `src/server.ts`; the PWA shows a fixed text per code). |
 | `GET /api/connect?client&redirect_uri&state&code_challenge&code_challenge_method=S256` | An app (Flow) connects to the account of whoever signs in to humane tools in this browser: `302` to the provider, then to `redirect_uri?code&state` (or `?error&state`). An unregistered app or redirect URL gets `400` and no redirect. |
 | `POST /api/connect/token {code, code_verifier, redirect_uri, client}` | `200 {token, username}`: a session token, as login returns. The code works once, within a minute, with the verifier whose S256 the connect named. |
 | `GET /api/me` | `{username, libraryDocUrl, maxBlobBytes}`. The library doc is created on first use. Clients check `maxBlobBytes` before uploading; the server's `413` still decides. |

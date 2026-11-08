@@ -12,14 +12,29 @@ const loginMethods = async (): Promise<{ humaneTools: boolean }> => {
   }
 }
 
-/** A failed sign-in through humane tools comes back as /?login_error=…; shown once. */
+/**
+ * What the server's codes for a failed sign-in through humane tools mean (SIGN_IN_ERRORS in
+ * server/src/server.ts). Only these texts are shown: anyone can link to /?login_error=….
+ */
+const LOGIN_ERRORS: Record<string, string> = {
+  expired: "The sign-in expired or was started in another window. Try again.",
+  login_required: "Sign in to humane tools first, then try again.",
+  refused: "humane tools did not accept the sign-in.",
+  unavailable: "humane tools can't be reached right now. Try again later.",
+  invalid_answer: "humane tools answered with something Notable could not check.",
+  email_unverified: "Verify your humane tools email address first.",
+  no_account: "This humane tools account has no Notable account here. Ask the admin to link it.",
+}
+
+/** A failed sign-in through humane tools comes back as /?login_error=<code>; shown once. */
 const takeLoginError = (): string | null => {
   const url = new URL(location.href)
-  const error = url.searchParams.get("login_error")
-  if (error === null) return null
+  const code = url.searchParams.get("login_error")
+  if (code === null) return null
   url.searchParams.delete("login_error")
   history.replaceState(history.state, "", url)
-  return `Signing in with humane tools failed: ${error}.`
+  const reason = Object.hasOwn(LOGIN_ERRORS, code) ? LOGIN_ERRORS[code] : "Something went wrong."
+  return `Signing in with humane tools failed. ${reason}`
 }
 
 export function Login(props: { notice?: string; onLoggedIn: () => void }) {

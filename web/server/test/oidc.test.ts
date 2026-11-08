@@ -146,7 +146,7 @@ describe("signing in through the humane.tools accounts provider", () => {
     provider.setSignedIn({ sub: "ht-emil", email: "emil@example.org", verified: true })
     const b = browser()
     const { url } = await b.go(`${h.base}/api/oidc/start`, u => u.pathname === "/")
-    assert.match(url.searchParams.get("login_error") ?? "", /no Notable account/)
+    assert.equal(url.searchParams.get("login_error"), "no_account")
     assert.equal(b.cookie(new URL(h.base).host, "notable_session"), null)
   })
 
@@ -159,7 +159,7 @@ describe("signing in through the humane.tools accounts provider", () => {
     provider.setSignedIn({ sub: "ht-fred", email: "fred@example.org" })
     const unsaid = await session()
     assert.equal(unsaid.session, null)
-    assert.match(unsaid.error ?? "", /verified/)
+    assert.equal(unsaid.error, "email_unverified")
     provider.setSignedIn({ sub: "ht-fred", email: "fred@example.org", verified: true })
     assert.notEqual((await session()).session, null)
     provider.setSignedIn({ sub: "ht-fred", email: "fred@example.org" })
@@ -174,14 +174,14 @@ describe("signing in through the humane.tools accounts provider", () => {
     const atProvider = await fetch(authorize, { redirect: "manual" })
     const callback = new URL(atProvider.headers.get("location")!)
     const r = await fetch(callback, { redirect: "manual" })
-    assert.match(new URL(r.headers.get("location")!, h.base).searchParams.get("login_error") ?? "", /expired or was started elsewhere/)
+    assert.equal(new URL(r.headers.get("location")!, h.base).searchParams.get("login_error"), "expired")
     assert.equal(r.headers.getSetCookie().some(c => c.startsWith("notable_session=")), false)
   })
 
   test("not signed in at humane tools, the sign-in says so", async () => {
     provider.setSignedIn(null)
     const { url } = await browser().go(`${h.base}/api/oidc/start`, u => u.pathname === "/")
-    assert.match(url.searchParams.get("login_error") ?? "", /sign in to humane tools/)
+    assert.equal(url.searchParams.get("login_error"), "login_required")
   })
 
   describe("an app connecting (Flow)", () => {

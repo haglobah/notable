@@ -45,6 +45,23 @@ class HttpError extends Error {
   }
 }
 
+/**
+ * Why a sign-in through the provider failed. The PWA gets only the code (`/?login_error=<code>`)
+ * and shows its own text for it (app/src/components/Login.tsx), so a link can't put words on the
+ * login page; an app connecting gets the text as its error_description, the log the details.
+ */
+export const SIGN_IN_ERRORS = {
+  expired: "the sign-in expired or was started elsewhere; try again",
+  login_required: "sign in to humane tools first",
+  refused: "humane tools did not accept the sign-in",
+  unavailable: "humane tools sign-in is unavailable",
+  invalid_answer: "humane tools answered with something Notable could not check",
+  email_unverified: "verify your humane tools email address first",
+  no_account: "this humane tools account has no Notable account here; ask the admin to link it in NOTABLE_HT_LINKS",
+} as const
+export type SignInError = keyof typeof SIGN_IN_ERRORS
+type SignInFailure = { error: SignInError; detail?: string }
+
 const withParams = (url: string, params: Record<string, string>) => {
   const u = new URL(url)
   for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v)
@@ -163,20 +180,20 @@ export async function startServer(config: Config, log: (msg: string) => void = (
   }
 
   /** The account the provider's answer names, or why there is none. */
-  const providerUser = async (code: string, verifier: string, nonce: string): Promise<User | string> => {
+  const providerUser = async (code: string, verifier: string, nonce: string): Promise<User | SignInFailure> => {
     const tokens = await exchangeCode(oidc!, code, verifier)
-    if (tokens.type !== "ok") return tokens.type === "rejected" ? "humane tools did not accept the sign-in" : "humane tools sign-in is unavailable"
+    if (tokens.type !== "ok") return { error: tokens.type === "rejected" ? "refused" : "unavailable", detail: `token: ${tokens.error}` }
     const id = await verifyIdToken(tokens.value.idToken, { clientId: oidc!.clientId, clientSecret: oidc!.clientSecret, nonce })
-    if (id.type !== "ok") return `humane tools answered with an invalid ID token (${id.reason})`
+    if (id.type !== "ok") return { error: "invalid_answer", detail: `invalid ID token (${id.reason})` }
     const info = await userinfo(oidc!, tokens.value.accessToken)
-    if (info.type !== "ok") return "humane tools sign-in is unavailable"
-    if (info.value.sub !== id.sub) return "humane tools answered for two different accounts"
+    if (info.type !== "ok") return { error: "unavailable", detail: `userinfo: ${info.error}` }
+    if (info.value.sub !== id.sub) return { error: "invalid_answer", detail: "ID token and userinfo name two different accounts" }
     // The provider sends email_verified with the email scope; without it, only an account already
     // linked to this provider id signs in, never one found by email.
     const { sub, email, emailVerified } = info.value
-    if (emailVerified === false) return "verify your humane tools email address first"
+    if (emailVerified === false) return { error: "email_unverified", detail: email }
     return accounts.userForHt(sub, email, emailVerified === true)
-      ?? (emailVerified === true ? `${email} has no Notable account here; ask the admin to link it in NOTABLE_HT_LINKS` : "humane tools did not say that your email address is verified")
+      ?? (emailVerified === true ? { error: "no_account", detail: email } : { error: "email_unverified", detail: `${email}: no email_verified from the provider` })
   }
 
   const readJson = async (req: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -319,16 +336,19 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       const clear = oidcCookie("", 0)
       // Only the browser that started the sign-in may finish it.
       const pending = state && oidcState(req) === state ? flows.pending.take(state) : null
-      if (!pending) return redirect(res, `/?login_error=${encodeURIComponent("the sign-in expired or was started elsewhere; try again")}`, [clear])
+      if (!pending) return redirect(res, "/?login_error=expired", [clear])
       const { purpose } = pending
-      const fail = (error: string) =>
-        purpose.kind === "login"
-          ? redirect(res, `/?login_error=${encodeURIComponent(error)}`, [clear])
-          : redirect(res, withParams(purpose.redirectUri, { error: "access_denied", error_description: error, state: purpose.state }), [clear])
+      const fail = ({ error, detail }: SignInFailure) => {
+        if (detail) log(`sign-in through humane tools failed (${error}): ${detail}`)
+        return purpose.kind === "login"
+          ? redirect(res, `/?login_error=${error}`, [clear])
+          : redirect(res, withParams(purpose.redirectUri, { error: "access_denied", error_description: SIGN_IN_ERRORS[error], state: purpose.state }), [clear])
+      }
       const code = q.get("code")
-      if (!code) return fail(q.get("error") === "login_required" ? "sign in to humane tools first" : `humane tools refused: ${q.get("error_description") ?? q.get("error") ?? "no code"}`)
+      if (!code)
+        return fail(q.get("error") === "login_required" ? { error: "login_required" } : { error: "refused", detail: q.get("error_description") ?? q.get("error") ?? "no code" })
       const user = await providerUser(code, pending.verifier, pending.nonce)
-      if (typeof user === "string") return fail(user)
+      if (!("id" in user)) return fail(user)
       if (purpose.kind === "login") {
         const token = accounts.createSession(user.id, req.headers["user-agent"] ?? null)
         return redirect(res, "/", [clear, sessionCookie(token)])
