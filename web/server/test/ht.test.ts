@@ -11,6 +11,8 @@ async function fakeHt() {
     ["dora@example.org", { id: "ht-dora", password: "dora's ht password", verified: true }],
     ["emil@example.org", { id: "ht-emil", password: "emil's ht password", verified: true }],
     ["new@example.org", { id: "ht-new", password: "unverified password", verified: false }],
+    // As when HT runs with email verification switched off: it signs the address in unverified.
+    ["lax@example.org", { id: "ht-lax", password: "lax password", verified: false, lax: true }],
   ])
   const signOuts: { cookie?: string; origin?: string }[] = []
   let down = false
@@ -30,12 +32,12 @@ async function fakeHt() {
         const key = email.toLowerCase()
         const u = users.get(key)
         if (!u || u.password !== password) return void res.writeHead(401, { "content-type": "application/json" }).end('{"code":"INVALID_EMAIL_OR_PASSWORD"}')
-        if (!u.verified) return void res.writeHead(403, { "content-type": "application/json" }).end('{"code":"EMAIL_NOT_VERIFIED"}')
+        if (!u.verified && !("lax" in u)) return void res.writeHead(403, { "content-type": "application/json" }).end('{"code":"EMAIL_NOT_VERIFIED"}')
         res.writeHead(200, {
           "content-type": "application/json",
           "set-cookie": [`humane-shared.session_token=tok-${u.id}.sig; Path=/; HttpOnly`, "humane-shared.session_data=x; Path=/"],
         })
-        return void res.end(JSON.stringify({ redirect: false, token: `tok-${u.id}`, user: { id: u.id, email: key, name: key } }))
+        return void res.end(JSON.stringify({ redirect: false, token: `tok-${u.id}`, user: { id: u.id, email: key, name: key, emailVerified: u.verified } }))
       }
       if (req.method === "POST" && req.url === "/api/auth/sign-out") {
         signOuts.push({ cookie: req.headers.cookie, origin: req.headers.origin })
@@ -65,7 +67,8 @@ describe("humane tools sign-in", () => {
     ht = await fakeHt()
     h = await startHarness({ htUrl: ht.url })
     await h.server.accounts.createUser("dora", "dora's notable password")
-    h.server.accounts.setHtLinks(parseHtLinks("dora=Dora@Example.org"))
+    await h.server.accounts.createUser("lena", "lena's notable password")
+    h.server.accounts.setHtLinks(parseHtLinks("dora=Dora@Example.org,lena=lax@example.org"))
   })
   after(async () => {
     await h.close()
@@ -114,6 +117,12 @@ describe("humane tools sign-in", () => {
 
   test("an unverified HT email is refused", async () => {
     assert.equal((await loginAs(h, "new@example.org", "unverified password")).status, 403)
+  })
+
+  test("an HT account whose email isn't verified links no account by that email, even when HT signs it in", async () => {
+    const res = await loginAs(h, "lax@example.org", "lax password")
+    assert.equal(res.status, 403)
+    assert.match(((await res.json()) as { error: string }).error, /verify your humane tools email/)
   })
 
   test("HT being down fails email logins only", async () => {
@@ -172,11 +181,21 @@ describe("NOTABLE_HT_LINKS", () => {
     const acc = Accounts.open(":memory:", argon2)
     await acc.createUser("dora", "a long enough password")
     acc.setHtLinks(parseHtLinks("dora=d@x.org"))
-    assert.equal(acc.userForHt("ht-dora", "d@x.org")?.username, "dora")
+    assert.equal(acc.userForHt("ht-dora", "d@x.org", true)?.username, "dora")
     acc.setHtLinks(parseHtLinks("dora=d@x.org"))
-    assert.equal(acc.userForHt("ht-dora", "renamed@x.org")?.username, "dora", "matched by id")
+    assert.equal(acc.userForHt("ht-dora", "renamed@x.org", true)?.username, "dora", "matched by id")
     acc.setHtLinks(parseHtLinks("dora=other@x.org"))
-    assert.equal(acc.userForHt("ht-dora", "d@x.org"), null)
+    assert.equal(acc.userForHt("ht-dora", "d@x.org", true), null)
+    acc.close()
+  })
+
+  test("only a verified email makes the first link; after it, the id alone finds the account", async () => {
+    const acc = Accounts.open(":memory:", argon2)
+    await acc.createUser("dora", "a long enough password")
+    acc.setHtLinks(parseHtLinks("dora=d@x.org"))
+    assert.equal(acc.userForHt("ht-dora", "d@x.org", false), null)
+    assert.equal(acc.userForHt("ht-dora", "d@x.org", true)?.username, "dora")
+    assert.equal(acc.userForHt("ht-dora", "d@x.org", false)?.username, "dora", "linked by id")
     acc.close()
   })
 

@@ -102,7 +102,8 @@ browser goes to the humane.tools accounts provider (ht's ADR-005), which returns
 silently when the browser is signed in there. The server swaps the code (with its client secret
 and the PKCE verifier) for tokens, checks the HS256 ID token (aud, exp, nonce, signature) and asks
 userinfo for the email. The account is found exactly as for an email login: by the provider's
-`sub`, which is the humane tools user id, or by the linked email the first time. Then it issues an
+`sub`, which is the humane tools user id, or by the linked email the first time, which needs the
+provider to say the address is verified (`email_verified: true`). Then it issues an
 ordinary Notable session and keeps no provider tokens, so signing out at humane tools doesn't end
 Notable sessions (as before).
 

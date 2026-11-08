@@ -16,9 +16,9 @@ const sign = (claims: Record<string, unknown>, secret = SECRET) => {
 /** The accounts provider (ht's Better Auth OIDC plugin), as far as Notable uses it. */
 async function fakeProvider() {
   /** Who is signed in at the provider in "the browser"; null: nobody. */
-  let signedIn: { sub: string; email: string; verified: boolean } | null = { sub: "ht-dora", email: "Dora@Example.org", verified: true }
-  const codes = new Map<string, { nonce: string; challenge: string; redirect: string; sub: string; email: string; verified: boolean }>()
-  const tokens = new Map<string, { sub: string; email: string; verified: boolean }>()
+  let signedIn: { sub: string; email: string; verified?: boolean } | null = { sub: "ht-dora", email: "Dora@Example.org", verified: true }
+  const codes = new Map<string, { nonce: string; challenge: string; redirect: string; sub: string; email: string; verified?: boolean }>()
+  const tokens = new Map<string, { sub: string; email: string; verified?: boolean }>()
   let n = 0
   const server: Server = createServer((req, res) => {
     let body = ""
@@ -118,7 +118,8 @@ describe("signing in through the humane.tools accounts provider", () => {
       connectClients: parseConnectClients(`flow=${APP_CB}`),
     })
     await h.server.accounts.createUser("dora", "dora's notable password")
-    h.server.accounts.setHtLinks(parseHtLinks("dora=dora@example.org"))
+    await h.server.accounts.createUser("fred", "fred's notable password")
+    h.server.accounts.setHtLinks(parseHtLinks("dora=dora@example.org,fred=fred@example.org"))
   })
   after(async () => {
     await h.close()
@@ -147,6 +148,22 @@ describe("signing in through the humane.tools accounts provider", () => {
     const { url } = await b.go(`${h.base}/api/oidc/start`, u => u.pathname === "/")
     assert.match(url.searchParams.get("login_error") ?? "", /no Notable account/)
     assert.equal(b.cookie(new URL(h.base).host, "notable_session"), null)
+  })
+
+  test("an email the provider doesn't call verified links no account; once linked, the id is enough", async () => {
+    const session = async () => {
+      const b = browser()
+      const { url } = await b.go(`${h.base}/api/oidc/start`, u => u.pathname === "/")
+      return { error: url.searchParams.get("login_error"), session: b.cookie(new URL(h.base).host, "notable_session") }
+    }
+    provider.setSignedIn({ sub: "ht-fred", email: "fred@example.org" })
+    const unsaid = await session()
+    assert.equal(unsaid.session, null)
+    assert.match(unsaid.error ?? "", /verified/)
+    provider.setSignedIn({ sub: "ht-fred", email: "fred@example.org", verified: true })
+    assert.notEqual((await session()).session, null)
+    provider.setSignedIn({ sub: "ht-fred", email: "fred@example.org" })
+    assert.notEqual((await session()).session, null)
   })
 
   test("a callback the browser did not start is refused", async () => {

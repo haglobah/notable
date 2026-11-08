@@ -218,12 +218,16 @@ export class Accounts {
     return [...links.keys()].filter(name => !known.has(name))
   }
 
-  /** The account linked to this humane tools account, recording HT's user id on first sign-in. */
-  userForHt(htUserId: string, email: string): User | null {
+  /**
+   * The account linked to this humane tools account, recording HT's user id on first sign-in. That
+   * first match is by email, so it needs HT to vouch for the address (`emailVerified`); after it,
+   * the id alone finds the account.
+   */
+  userForHt(htUserId: string, email: string, emailVerified: boolean): User | null {
     const select = "SELECT id, username, library_doc_id FROM users WHERE"
     type Row = { id: number; username: string; library_doc_id: string | null }
     let row = this.db.prepare(`${select} ht_user_id = ?`).get(htUserId) as Row | undefined
-    if (!row) {
+    if (!row && emailVerified) {
       row = this.db.prepare(`${select} ht_email = ? AND ht_user_id IS NULL`).get(email.toLowerCase()) as Row | undefined
       if (row) this.db.prepare("UPDATE users SET ht_user_id = ? WHERE id = ?").run(htUserId, row.id)
     }

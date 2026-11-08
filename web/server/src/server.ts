@@ -171,8 +171,12 @@ export async function startServer(config: Config, log: (msg: string) => void = (
     const info = await userinfo(oidc!, tokens.value.accessToken)
     if (info.type !== "ok") return "humane tools sign-in is unavailable"
     if (info.value.sub !== id.sub) return "humane tools answered for two different accounts"
-    if (info.value.emailVerified === false) return "verify your humane tools email address first"
-    return accounts.userForHt(info.value.sub, info.value.email) ?? `${info.value.email} has no Notable account here; ask the admin to link it in NOTABLE_HT_LINKS`
+    // The provider sends email_verified with the email scope; without it, only an account already
+    // linked to this provider id signs in, never one found by email.
+    const { sub, email, emailVerified } = info.value
+    if (emailVerified === false) return "verify your humane tools email address first"
+    return accounts.userForHt(sub, email, emailVerified === true)
+      ?? (emailVerified === true ? `${email} has no Notable account here; ask the admin to link it in NOTABLE_HT_LINKS` : "humane tools did not say that your email address is verified")
   }
 
   const readJson = async (req: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -230,7 +234,8 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       if (r.status === 401) return null
       throw new HttpError(r.status, r.error, r.retryAfter ? { "retry-after": r.retryAfter } : {})
     }
-    const user = accounts.userForHt(r.account.id, r.account.email)
+    const user = accounts.userForHt(r.account.id, r.account.email, r.account.emailVerified)
+    if (!user && !r.account.emailVerified) throw new HttpError(403, "verify your humane tools email address first")
     if (!user) throw new HttpError(403, `${r.account.email} has no Notable account here; ask the admin to link it in NOTABLE_HT_LINKS`)
     return user
   }

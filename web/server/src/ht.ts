@@ -8,7 +8,7 @@
  * trustedOrigins. The HT session that sign-in creates is signed out again at once; Notable never
  * keeps it.
  */
-export type HtAccount = { id: string; email: string }
+export type HtAccount = { id: string; email: string; emailVerified: boolean }
 
 export type HtResult =
   | { ok: true; account: HtAccount }
@@ -47,11 +47,13 @@ export function openHt(service: string, { timeoutMs = 5000, fetcher = fetch } = 
     }
     if (r.status === 429) return { ok: false, status: 429, error: "too many failed logins, try again later", retryAfter: r.headers.get("retry-after") ?? "60" }
     if (!r.ok) return unavailable
-    const data = (await r.json().catch(() => null)) as { user?: { id?: unknown; email?: unknown } } | null
+    const data = (await r.json().catch(() => null)) as { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } } | null
     signOut(r.headers.getSetCookie())
-    const { id, email: confirmed } = data?.user ?? {}
+    const { id, email: confirmed, emailVerified } = data?.user ?? {}
     if (typeof id !== "string" || !id || typeof confirmed !== "string") return unavailable
-    return { ok: true, account: { id, email: confirmed.toLowerCase() } }
+    // HT may let an unverified address sign in (verification switched off); only a verified one
+    // may link an account by email (Accounts.userForHt).
+    return { ok: true, account: { id, email: confirmed.toLowerCase(), emailVerified: emailVerified === true } }
   }
 
   return { signIn }
