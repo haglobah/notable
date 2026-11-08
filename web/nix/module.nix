@@ -132,8 +132,8 @@ in
       };
       description = ''
         Apps that may connect to an account through the provider (GET /api/connect, code flow
-        with PKCE), by name, with the exact redirect URLs each may receive a code at. Needs
-        accountsUrl.
+        with PKCE, once the person approves it on Notable's consent page), by name, with the exact
+        redirect URLs each may receive a code at. Needs accountsUrl.
       '';
     };
 

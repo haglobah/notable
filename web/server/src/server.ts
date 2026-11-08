@@ -2,6 +2,7 @@ import { staticHandler } from "./static.ts"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { Duplex } from "node:stream"
 import { mkdirSync } from "node:fs"
+import { timingSafeEqual } from "node:crypto"
 import { join } from "node:path"
 import { WebSocketServer } from "ws"
 import { Repo, stringifyAutomergeUrl, type PeerId, type DocumentId } from "@automerge/automerge-repo"
@@ -14,11 +15,13 @@ import { BlobStore, HASH, HashMismatch, TooLarge } from "./blobs.ts"
 import { FailureLimiter } from "./rateLimit.ts"
 import { openHt } from "./ht.ts"
 import { authorizeUrl, exchangeCode, pkceChallenge, randomToken, userinfo, verifyIdToken, type OidcClient } from "./oidc.ts"
-import { SignInFlows, type Purpose } from "./flows.ts"
+import { SignInFlows, type ConnectPurpose, type Purpose } from "./flows.ts"
 
 export const COOKIE = "notable_session"
 /** Binds a sign-in through the accounts provider to the browser that started it (flows.ts). */
 const OIDC_COOKIE = "notable_oidc"
+/** Binds a connect waiting for consent to the browser its consent page was shown in (flows.ts). */
+const CONNECT_COOKIE = "notable_connect"
 const SERVER_PEER_ID = "notable-server" as PeerId
 const MAX_JSON_BYTES = 16 * 1024
 const MAX_SYNC_MESSAGE = 256 * 1024 * 1024
@@ -66,6 +69,67 @@ const withParams = (url: string, params: Record<string, string>) => {
   const u = new URL(url)
   for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v)
   return u.toString()
+}
+
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
+
+const sameSecret = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
+
+/**
+ * A page of the server's own: no scripts, never in a frame (so no page can make a click on it for
+ * someone), and sending its origin with its form post (the global no-referrer would send
+ * `Origin: null`).
+ */
+const htmlPage = (res: ServerResponse, status: number, title: string, body: string, cookies: string[] = []) => {
+  const page = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>
+  body { font: 17px/1.5 system-ui, sans-serif; margin: 0; padding: 12vh 1.5rem; color: #1d1b18; background: #faf8f4; }
+  main { max-width: 32rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; line-height: 1.3; margin: 0 0 1rem; }
+  code { font-size: 0.9em; overflow-wrap: anywhere; }
+  .hint { color: #6b655c; font-size: 0.92rem; }
+  form { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+  button { font: inherit; padding: 0.5rem 1.25rem; border-radius: 6px; border: 1px solid #1d1b18; background: transparent; color: inherit; cursor: pointer; }
+  button[value=connect] { background: #1d1b18; color: #faf8f4; }
+</style>
+</head>
+<body><main>
+${body}
+</main></body>
+</html>
+`
+  res.writeHead(status, {
+    "content-type": "text/html; charset=utf-8",
+    "content-length": Buffer.byteLength(page),
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+    "x-frame-options": "DENY",
+    "referrer-policy": "same-origin",
+    ...(cookies.length ? { "set-cookie": cookies } : {}),
+  })
+  res.end(page)
+}
+
+/** Asks the person signed in whether `purpose`'s app may have their library. */
+const consentPage = (res: ServerResponse, ask: string, user: User, purpose: ConnectPurpose, cookies: string[]) => {
+  const app = escapeHtml(purpose.client.charAt(0).toUpperCase() + purpose.client.slice(1))
+  const target = new URL(purpose.redirectUri)
+  const local = target.protocol === "http:"
+  htmlPage(res, 200, `Connect ${app} to Notable`, `<h1>Connect ${app} to your Notable library?</h1>
+<p>${app} will be able to read and change the documents and notebooks of the Notable account <strong>${escapeHtml(user.username)}</strong>.</p>
+<p>The access goes to <code>${escapeHtml(target.origin)}</code>${local ? ", a server on this computer" : ""}.</p>
+<p class="hint">If you didn't just ask ${app} to connect to Notable, cancel.</p>
+<form method="post" action="/api/connect/consent">
+  <input type="hidden" name="ask" value="${escapeHtml(ask)}">
+  <button type="submit" name="decision" value="connect">Connect</button>
+  <button type="submit" name="decision" value="cancel">Cancel</button>
+</form>`, cookies)
 }
 
 export async function startServer(config: Config, log: (msg: string) => void = () => {}): Promise<RunningServer> {
@@ -156,8 +220,8 @@ export async function startServer(config: Config, log: (msg: string) => void = (
 
   const query = (req: IncomingMessage) => new URL(req.url ?? "/", "http://x").searchParams
 
-  const redirect = (res: ServerResponse, location: string, cookies: string[] = []) => {
-    res.writeHead(302, { location, "cache-control": "no-store", ...(cookies.length ? { "set-cookie": cookies } : {}) })
+  const redirect = (res: ServerResponse, location: string, cookies: string[] = [], status = 302) => {
+    res.writeHead(status, { location, "cache-control": "no-store", ...(cookies.length ? { "set-cookie": cookies } : {}) })
     res.end()
   }
 
@@ -168,6 +232,17 @@ export async function startServer(config: Config, log: (msg: string) => void = (
     for (const part of (req.headers.cookie ?? "").split(";")) {
       const [k, ...v] = part.trim().split("=")
       if (k === OIDC_COOKIE) return v.join("=") || null
+    }
+    return null
+  }
+
+  /** Strict: only the consent page's own form post carries it. */
+  const connectCookie = (value: string, maxAge: number) =>
+    `${CONNECT_COOKIE}=${value}; Path=/api/connect; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secureCookie ? "; Secure" : ""}`
+  const connectBrowser = (req: IncomingMessage) => {
+    for (const part of (req.headers.cookie ?? "").split(";")) {
+      const [k, ...v] = part.trim().split("=")
+      if (k === CONNECT_COOKIE) return v.join("=") || null
     }
     return null
   }
@@ -196,7 +271,7 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       ?? (emailVerified === true ? { error: "no_account", detail: email } : { error: "email_unverified", detail: `${email}: no email_verified from the provider` })
   }
 
-  const readJson = async (req: IncomingMessage): Promise<Record<string, unknown>> => {
+  const readBody = async (req: IncomingMessage): Promise<string> => {
     let size = 0
     const chunks: Buffer[] = []
     for await (const chunk of req) {
@@ -204,8 +279,13 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       if (size > MAX_JSON_BYTES) throw new HttpError(413, "request too large")
       chunks.push(chunk as Buffer)
     }
+    return Buffer.concat(chunks).toString("utf8")
+  }
+
+  const readJson = async (req: IncomingMessage): Promise<Record<string, unknown>> => {
+    const body = await readBody(req)
     try {
-      const v = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+      const v = JSON.parse(body)
       if (typeof v !== "object" || v === null || Array.isArray(v)) throw new Error()
       return v
     } catch {
@@ -353,14 +433,17 @@ export async function startServer(config: Config, log: (msg: string) => void = (
         const token = accounts.createSession(user.id, req.headers["user-agent"] ?? null)
         return redirect(res, "/", [clear, sessionCookie(token)])
       }
-      const connectCode = randomToken()
-      flows.issueCode(connectCode, user, purpose)
-      redirect(res, withParams(purpose.redirectUri, { code: connectCode, state: purpose.state }), [clear])
+      // An app gets a code only once the person says so here: any page can start a connect, and
+      // the provider signs a browser in silently.
+      const ask = randomToken(), browser = randomToken()
+      flows.ask(ask, user, purpose, browser)
+      consentPage(res, ask, user, purpose, [clear, connectCookie(browser, 600)])
     },
 
-    // An app (Flow) connects to the account of whoever signs in to humane tools in this browser:
-    // OAuth's code flow with PKCE, the app being a client registered in NOTABLE_CONNECT_CLIENTS
-    // by its exact redirect URLs. Its server swaps the code for an ordinary session token.
+    // An app (Flow) connects to the account of whoever signs in to humane tools in this browser,
+    // once they approve it on the consent page: OAuth's code flow with PKCE, the app being a
+    // client registered in NOTABLE_CONNECT_CLIENTS by its exact redirect URLs. Its server swaps
+    // the code for an ordinary session token.
     "GET /api/connect": async (req, res) => {
       if (!oidc) throw new HttpError(404, "not found")
       const q = query(req)
@@ -374,6 +457,25 @@ export async function startServer(config: Config, log: (msg: string) => void = (
       if (!state || q.get("code_challenge_method") !== "S256" || !/^[A-Za-z0-9_-]{43}$/.test(challenge))
         return redirect(res, withParams(redirectUri, { error: "invalid_request", error_description: "state and an S256 code_challenge are needed", state }))
       toProvider(res, { kind: "connect", client, redirectUri, state, challenge })
+    },
+
+    // The consent page's form: only from our origin, with the one-time token the page carried,
+    // in the browser it was shown in (the cookie).
+    "POST /api/connect/consent": async (req, res) => {
+      if (!oidc) throw new HttpError(404, "not found")
+      if (!originAllowed(req)) throw new HttpError(403, "origin not allowed")
+      const form = new URLSearchParams(await readBody(req))
+      const asked = flows.asks.take(form.get("ask") ?? "")
+      const browser = connectBrowser(req)
+      const clear = connectCookie("", 0)
+      if (!asked || !browser || !sameSecret(browser, asked.browser))
+        return htmlPage(res, 400, "Connect expired", "<h1>This connect expired</h1>\n<p>It was started in another browser or too long ago. Start it again from the app.</p>", [clear])
+      const { user, purpose } = asked
+      if (form.get("decision") !== "connect")
+        return redirect(res, withParams(purpose.redirectUri, { error: "access_denied", error_description: "the connect was cancelled", state: purpose.state }), [clear], 303)
+      const code = randomToken()
+      flows.issueCode(code, user, purpose)
+      redirect(res, withParams(purpose.redirectUri, { code, state: purpose.state }), [clear], 303)
     },
 
     "POST /api/connect/token": async (req, res) => {

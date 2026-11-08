@@ -191,10 +191,75 @@ describe("signing in through the humane.tools accounts provider", () => {
       `${h.base}/api/connect?${new URLSearchParams({ client: "flow", redirect_uri: APP_CB, state: "app-state", code_challenge: challenge, code_challenge_method: "S256", ...extra })}`
     const swap = (body: Record<string, string>) =>
       fetch(`${h.base}/api/connect/token`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    /** Starts a connect in browser `b`, up to the consent page; returns the page and its form's token. */
+    const ask = async (b: ReturnType<typeof browser>) => {
+      const { url, res } = await b.go(connect(), u => u.href.startsWith(APP_CB))
+      assert.equal(url.pathname, "/api/oidc/callback", "no code reaches the app before consent")
+      assert.equal(res!.status, 200)
+      const html = await res!.text()
+      return { res: res!, html, ask: /name="ask" value="([^"]+)"/.exec(html)![1] }
+    }
+    /** Posts the consent form as the page would: from Notable's origin, with the browser's cookies. */
+    const answer = (b: ReturnType<typeof browser>, token: string, decision: string, headers: Record<string, string> = {}) =>
+      fetch(`${h.base}/api/connect/consent`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: h.base, cookie: b.cookieFor(new URL(h.base)), ...headers },
+        body: new URLSearchParams({ ask: token, decision }),
+      })
+    /** A connect approved in a fresh browser: the URL the app is sent to. */
+    const approved = async () => {
+      const b = browser()
+      const r = await answer(b, (await ask(b)).ask, "connect")
+      assert.equal(r.status, 303)
+      return new URL(r.headers.get("location")!)
+    }
 
-    test("gets a code at its redirect URL and swaps it once for a session token", async () => {
+    test("asks first: a page that can't be framed names the app, the account and where the access goes", async () => {
       provider.setSignedIn({ sub: "ht-dora", email: "dora@example.org", verified: true })
-      const { url } = await browser().go(connect(), u => u.href.startsWith(APP_CB))
+      const { res, html } = await ask(browser())
+      assert.match(res.headers.get("content-type") ?? "", /text\/html/)
+      assert.match(res.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/)
+      assert.equal(res.headers.get("x-frame-options"), "DENY")
+      assert.match(html, /Connect Flow to your Notable library\?/)
+      assert.match(html, /<strong>dora<\/strong>/)
+      assert.match(html, /http:\/\/127\.0\.0\.1:9<\/code>, a server on this computer/)
+      assert.doesNotMatch(html, /<script/i)
+    })
+
+    test("cancelling sends the app away with access_denied and no code", async () => {
+      const b = browser()
+      const r = await answer(b, (await ask(b)).ask, "cancel")
+      assert.equal(r.status, 303)
+      const url = new URL(r.headers.get("location")!)
+      assert.ok(url.href.startsWith(APP_CB))
+      assert.equal(url.searchParams.get("error"), "access_denied")
+      assert.equal(url.searchParams.get("state"), "app-state")
+      assert.equal(url.searchParams.get("code"), null)
+    })
+
+    test("consent counts only from Notable's origin, in the browser that saw the page, once", async () => {
+      const b = browser()
+      const { ask: token } = await ask(b)
+      const elsewhere = await answer(b, token, "connect", { origin: "https://evil.example" })
+      assert.equal(elsewhere.status, 403)
+      const noOrigin = await answer(b, token, "connect", { origin: "" })
+      assert.equal(noOrigin.status, 403)
+      const otherBrowser = await answer(browser(), token, "connect")
+      assert.equal(otherBrowser.status, 400)
+      assert.equal(otherBrowser.headers.get("location"), null)
+      // The other browser's attempt used the token up.
+      assert.equal((await answer(b, token, "connect")).status, 400)
+      const b2 = browser()
+      const { ask: second } = await ask(b2)
+      assert.equal((await answer(b2, second, "connect")).status, 303)
+      assert.equal((await answer(b2, second, "connect")).status, 400)
+    })
+
+    test("gets a code at its redirect URL once approved, and swaps it once for a session token", async () => {
+      provider.setSignedIn({ sub: "ht-dora", email: "dora@example.org", verified: true })
+      const url = await approved()
+      assert.ok(url.href.startsWith(APP_CB))
       assert.equal(url.searchParams.get("state"), "app-state")
       const code = url.searchParams.get("code")!
       assert.ok(code)
@@ -209,7 +274,7 @@ describe("signing in through the humane.tools accounts provider", () => {
     })
 
     test("a code is worthless without the verifier", async () => {
-      const { url } = await browser().go(connect(), u => u.href.startsWith(APP_CB))
+      const url = await approved()
       const r = await swap({ code: url.searchParams.get("code")!, code_verifier: "w".repeat(50), redirect_uri: APP_CB, client: "flow" })
       assert.equal(r.status, 400)
     })

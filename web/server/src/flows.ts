@@ -4,16 +4,21 @@
  *
  * - A pending sign-in is what /api/oidc/start or /api/connect sent to the provider, keyed by its
  *   `state` and bound to the browser by a cookie holding that state: the callback takes it once.
- * - A connect code is what /api/oidc/callback hands to a connecting app (Flow) at its registered
- *   redirect URL; the app's server swaps it once, with the PKCE verifier only it has, for a
- *   session token (POST /api/connect/token).
+ * - An ask is a connect waiting for the person to approve it on the consent page that
+ *   /api/oidc/callback shows, keyed by the one-time token in the page's form and bound to the
+ *   browser by a cookie holding a second random value: POST /api/connect/consent takes it once.
+ * - A connect code is what /api/connect/consent hands to a connecting app (Flow) at its
+ *   registered redirect URL; the app's server swaps it once, with the PKCE verifier only it has,
+ *   for a session token (POST /api/connect/token).
  */
 import type { User } from "./accounts.ts"
 
 /** What to do once the provider says who it is: sign the browser in, or give an app a code. */
 export type Purpose = { kind: "login" } | { kind: "connect"; client: string; redirectUri: string; state: string; challenge: string }
+export type ConnectPurpose = Extract<Purpose, { kind: "connect" }>
 
 export type Pending = { purpose: Purpose; nonce: string; verifier: string; expires: number }
+export type Ask = { user: User; purpose: ConnectPurpose; browser: string; expires: number }
 export type ConnectCode = { user: User; client: string; redirectUri: string; challenge: string; expires: number }
 
 const PENDING_MS = 10 * 60_000
@@ -38,13 +43,18 @@ class OnceStore<T extends { expires: number }> {
 
 export class SignInFlows {
   readonly pending = new OnceStore<Pending>()
+  readonly asks = new OnceStore<Ask>()
   readonly codes = new OnceStore<ConnectCode>()
 
   begin(state: string, purpose: Purpose, nonce: string, verifier: string) {
     this.pending.put(state, { purpose, nonce, verifier, expires: Date.now() + PENDING_MS })
   }
 
-  issueCode(code: string, user: User, purpose: Extract<Purpose, { kind: "connect" }>) {
+  ask(token: string, user: User, purpose: ConnectPurpose, browser: string) {
+    this.asks.put(token, { user, purpose, browser, expires: Date.now() + PENDING_MS })
+  }
+
+  issueCode(code: string, user: User, purpose: ConnectPurpose) {
     this.codes.put(code, { user, client: purpose.client, redirectUri: purpose.redirectUri, challenge: purpose.challenge, expires: Date.now() + CODE_MS })
   }
 }

@@ -60,7 +60,8 @@ carry an allowed `Origin`.
 | `GET /api/login-methods` | `{password: true, humaneTools, connect: [app names]}`, no auth. The PWA shows "Sign in with humane tools" when `humaneTools`. |
 | `GET /api/oidc/start` | `302` to the accounts provider (code flow with PKCE; a state cookie binds it to this browser). `404` without `NOTABLE_ACCOUNTS_URL`. |
 | `GET /api/oidc/callback` | The provider's redirect back. Signs the browser in (session cookie, `302` to `/`) or finishes an app's connect; a failure goes to `/?login_error=<code>` (`SIGN_IN_ERRORS` in `src/server.ts`; the PWA shows a fixed text per code). |
-| `GET /api/connect?client&redirect_uri&state&code_challenge&code_challenge_method=S256` | An app (Flow) connects to the account of whoever signs in to humane tools in this browser: `302` to the provider, then to `redirect_uri?code&state` (or `?error&state`). An unregistered app or redirect URL gets `400` and no redirect. |
+| `GET /api/connect?client&redirect_uri&state&code_challenge&code_challenge_method=S256` | An app (Flow) connects to the account of whoever signs in to humane tools in this browser: `302` to the provider, whose redirect back shows a consent page ("Connect Flow to your Notable library?"); a failed sign-in goes to `redirect_uri?error&state` at once. An unregistered app or redirect URL gets `400` and no redirect. |
+| `POST /api/connect/consent` (form: `ask`, `decision`) | The consent page's form. Only from this origin, with the page's one-time `ask` token, in the browser the page was shown in (a `SameSite=Strict` cookie): `303` to `redirect_uri?code&state` for `decision=connect`, to `?error=access_denied&state` otherwise; `400` when the ask expired or doesn't match. |
 | `POST /api/connect/token {code, code_verifier, redirect_uri, client}` | `200 {token, username}`: a session token, as login returns. The code works once, within a minute, with the verifier whose S256 the connect named. |
 | `GET /api/me` | `{username, libraryDocUrl, maxBlobBytes}`. The library doc is created on first use. Clients check `maxBlobBytes` before uploading; the server's `413` still decides. |
 | `PUT /api/blobs/<sha256>` | `201`. The server streams the body to disk and verifies the hash. Returns `400` on a mismatch and `413` over the limit. |
@@ -110,8 +111,14 @@ Notable sessions (as before).
 Apps that read Notable for someone (Flow, `~/projects/hotlustre`) **connect** the same way
 without becoming provider clients themselves: the app's server sends the browser to
 `/api/connect` with a PKCE challenge, Notable sends it on to the provider, and back at its own
-callback the app gets a one-time code that its server swaps for a session token at
-`POST /api/connect/token`. Each app is listed in `NOTABLE_CONNECT_CLIENTS` with its exact
+callback Notable asks the person, on a page of its own, whether the app may have their library.
+Only after they click Connect does the app get a one-time code, which its server swaps for a
+session token at `POST /api/connect/token`. The click is needed because any page can send a
+browser to `/api/connect` and the provider signs in silently: without it, a page could have a
+code sent to a registered `http://localhost` URL, where whatever listens on that port of the
+person's computer would get it, along with the page's own PKCE challenge. The page can't be framed
+and has no scripts; its form carries a one-time token and counts only from this origin, in the
+browser the page was shown in. Each app is listed in `NOTABLE_CONNECT_CLIENTS` with its exact
 redirect URLs; nothing is ever sent to another URL. Flows in progress and codes live in memory
 (`src/flows.ts`): a restart only means signing in again.
 
