@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -50,6 +51,7 @@ import com.ethran.notable.ui.SnackState
 import com.ethran.notable.ui.components.NotableApp
 import com.ethran.notable.ui.components.crashLogsAsText
 import com.ethran.notable.ui.theme.InkaTheme
+import com.ethran.notable.utils.SteadyRotationController
 import com.ethran.notable.utils.hasUsableStorage
 import com.onyx.android.sdk.api.device.epd.EpdController
 import dagger.hilt.android.AndroidEntryPoint
@@ -118,6 +120,7 @@ class MainActivity : ComponentActivity() {
         SCREEN_HEIGHT = applicationContext.resources.displayMetrics.heightPixels
 
         trackSystemGestureBlocking()
+        trackSteadyRotation()
 
         val snackState = SnackState()
 
@@ -247,6 +250,33 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // Our own, more hesitant auto-rotate; held only while resumed and enabled.
+    private val steadyRotation = SteadyRotationController(this)
+
+    private fun trackSteadyRotation() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                try {
+                    snapshotFlow { GlobalAppSettings.current.steadyRotation }
+                        .collect { if (it) steadyRotation.start() else steadyRotation.stop() }
+                } finally {
+                    steadyRotation.stop()
+                }
+            }
+        }
+    }
+
+    // Writing, a resting hand, or a hovering pen keep the screen where it is.
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        steadyRotation.onInput()
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        steadyRotation.onInput()
+        return super.dispatchGenericMotionEvent(ev)
     }
 
     private fun setOnyxSystemGesturesBlocked(blocked: Boolean) {

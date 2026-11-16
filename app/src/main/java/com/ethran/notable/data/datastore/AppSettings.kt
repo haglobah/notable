@@ -73,6 +73,9 @@ data class AppSettings(
     // stop working inside the app while this is on — hence opt-in.
     val blockSystemGestures: Boolean = false,
     val renameOnCreate: Boolean = true,
+    // While the system's auto-rotate is on, turn only on a deliberate tilt held
+    // for a moment, and never right after writing (utils/SteadyRotation.kt).
+    val steadyRotation: Boolean = false,
     /**
      * The library's sort on this device (docs/plans/ebook-features.md, "Filters and sort"): a
      * `LibrarySearch.SortKey.key`, or null for the folder's usual order. Not in the docs.

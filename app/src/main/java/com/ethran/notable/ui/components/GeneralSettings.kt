@@ -59,6 +59,12 @@ fun GeneralSettings(
                 onSettingsChange(settings.copy(continuousStrokeSlider = isChecked))
             })
         SettingToggleRow(
+            label = stringResource(R.string.steady_rotation),
+            value = settings.steadyRotation,
+            onToggle = { isChecked ->
+                onSettingsChange(settings.copy(steadyRotation = isChecked))
+            })
+        SettingToggleRow(
             label = stringResource(R.string.rename_on_create),
             value = settings.renameOnCreate,
             onToggle = { isChecked ->

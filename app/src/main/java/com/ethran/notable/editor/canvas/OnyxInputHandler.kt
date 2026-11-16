@@ -1,5 +1,6 @@
 package com.ethran.notable.editor.canvas
 
+import com.ethran.notable.utils.SteadyRotationController
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.RectF
@@ -81,12 +82,15 @@ class OnyxInputHandler(
         // - erase :  `onBeginRawErasing()` -> `onRawErasingTouchPointMoveReceived()` -> `onRawErasingTouchPointListReceived()` -> `onEndRawErasing()`
 
         override fun onBeginRawDrawing(p0: Boolean, p1: TouchPoint?) {
+            SteadyRotationController.penActivity()
         }
 
         override fun onEndRawDrawing(p0: Boolean, p1: TouchPoint?) {
+            SteadyRotationController.penActivity()
         }
 
         override fun onRawDrawingTouchPointMoveReceived(p0: TouchPoint?) {
+            SteadyRotationController.penActivity()
         }
 
         override fun onRawDrawingTouchPointListReceived(plist: TouchPointList) =
@@ -95,6 +99,7 @@ class OnyxInputHandler(
 
         // Handle button/eraser tip of the pen:
         override fun onBeginRawErasing(p0: Boolean, p1: TouchPoint?) {
+            SteadyRotationController.penActivity()
             if (touchHelper == null) return
             // Re-assert the native eraser indicator because setRawDrawingEnabled(true) (called
             // on every resume) resets it to disabled internally. The track style follows the active
@@ -124,6 +129,7 @@ class OnyxInputHandler(
 
         override fun onPenActive(point: TouchPoint?) {
             super.onPenActive(point)
+            SteadyRotationController.penActivity()
         }
     }
 
