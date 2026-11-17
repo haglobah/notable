@@ -242,6 +242,21 @@ pages).
   quick-pages row go; folders stay as a row above the cards. The PWA's "Library"/folder title and
   the "Continue reading" shelf go (Reading is one tap; "Last read" is a sort).
 
+## Recent and clearing the search (round 6)
+
+Beat: going back to the documents opened last has to be quick, and neither "Reading" nor the
+"Last read" sort is: both reorder the library.
+
+- **"Recent ▾"** on line 1 of the library bar, before the sort: a menu anchored under it with the
+  10 notebooks opened last anywhere in the library (`readAt` descending, ties by title), each
+  with when ("5 min. ago"). A tap opens the editor where the notebook was left (`openPageId`,
+  else its first page). Notebooks without pages and never-opened ones are left out; with none,
+  the button isn't shown. Nothing new is stored: `readAt` is already written once per opening.
+- **PWA:** the same "Recent" menu on line 1 of its bar, links to the reader (which restores the
+  position), times as "5 min. ago", "yesterday", then a date. Its search field gets its own ✕
+  (empties the search and keeps the focus; the browser's own cancel button is hidden), as on the
+  Boox, so both bars have the same controls.
+
 ## PWA
 
 - Worker requests `outline` and `search` (`pdf.worker.ts`).

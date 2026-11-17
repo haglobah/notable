@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { A, useParams, useSearchParams } from "@solidjs/router"
 import { facetsOf, normalize, parseQuery, queryLibrary, type Facet, type Facets, type Library, type NotebookEntry, type SortKey } from "@notable/schema"
-import { childFolders, countIn, edited, entriesIn, folderPath, kindOf } from "../lib/library.ts"
+import { childFolders, countIn, edited, entriesIn, folderPath, kindOf, openedAgo, recentEntries } from "../lib/library.ts"
 import { bylineOf, quickFirst } from "../lib/books.ts"
 import { directionLabel, parseSort, selected, setOnly, toggle, withoutFields, type SortChoice } from "../lib/filters.ts"
 import { useSession } from "./session.tsx"
@@ -45,6 +45,7 @@ export function LibraryView() {
           return queryLibrary(lib(), { query: query(), ...scope(), ...(c ? { sort: c.sort, descending: c.descending } : {}) })
         })
         const facets = createMemo(() => facetsOf(queryLibrary(lib(), { query: "", ...scope() })))
+        const recent = createMemo(() => recentEntries(lib()))
         const where = () => (everywhere() ? "in your library" : `in ${here()} and its folders`)
 
         return (
@@ -65,7 +66,7 @@ export function LibraryView() {
               </div>
               <DropZone label={`Drop to add to ${here()}`} onFiles={files => s.uploads.add(files, folderId())} />
               <UploadList uploads={s.uploads} />
-              <LibraryBar query={query()} onQuery={setQuery} facets={facets()} choice={choice()} onChoice={setChoice} searching={!!results()} />
+              <LibraryBar query={query()} onQuery={setQuery} facets={facets()} choice={choice()} onChoice={setChoice} searching={!!results()} recent={recent()} />
 
               <Show when={results()}>
                 {r => (
@@ -184,12 +185,15 @@ function usePopover() {
 
 /**
  * The two lines above the notebooks (docs/plans/ebook-features.md, "Library bar design"):
- * search and sort; then reading state and the facet menus. Every control writes the query text.
+ * search (✕ empties it, ? shows the syntax), Recent and sort; then reading state and the facet
+ * menus. Every filter control writes the query text.
  */
 function LibraryBar(p: {
   query: string; onQuery: (q: string) => void; facets: Facets
   choice: SortChoice | null; onChoice: (c: SortChoice | null) => void; searching: boolean
+  recent: NotebookEntry[]
 }) {
+  let input: HTMLInputElement | undefined
   const states = () => selected(p.query, "is").map(normalize)
   const anyFilter = () => FILTER_FIELDS.some(f => selected(p.query, f).length > 0)
   const kinds = () => p.facets.kinds.map(k => ({ ...k, label: KIND_LABELS[k.value] ?? k.value }))
@@ -198,10 +202,17 @@ function LibraryBar(p: {
       <div class="lib-line">
         <form class="lib-search" role="search" onSubmit={e => e.preventDefault()}>
           <svg class="lib-search-glyph" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" /><path d="M10.4 10.4 14 14" /></svg>
-          <input type="search" aria-label="Search the library" placeholder="Search titles, authors, tags…"
+          <input ref={input} type="search" aria-label="Search the library" placeholder="Search titles, authors, tags…"
             value={p.query} onInput={e => p.onQuery(e.currentTarget.value)} />
+          <Show when={p.query}>
+            <button type="button" class="lib-text lib-clear" aria-label="Clear search" title="Clear search"
+              onClick={() => { p.onQuery(""); input?.focus() }}>
+              <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+            </button>
+          </Show>
           <QueryHelp />
         </form>
+        <Show when={p.recent.length > 0}><RecentMenu recent={p.recent} /></Show>
         <SortControl choice={p.choice} onChoice={p.onChoice} searching={p.searching} />
       </div>
       <div class="lib-line lib-filters">
@@ -228,6 +239,30 @@ function LibraryBar(p: {
         </Show>
       </div>
     </div>
+  )
+}
+
+/** "Recent": the documents opened last, anywhere in the library, each with when; a tap opens it. */
+function RecentMenu(p: { recent: NotebookEntry[] }) {
+  const pop = usePopover()
+  return (
+    <details class="facet lib-recent" ref={pop.ref}>
+      <summary class="lib-text">Recent</summary>
+      <div class="facet-pop facet-pop-end" role="menu" aria-label="Recently opened">
+        <ul>
+          <For each={p.recent}>
+            {e => (
+              <li>
+                <A href={`/n/${e.id}`} role="menuitem" class="menu-row recent-row" onClick={() => pop.close()}>
+                  <span class="recent-title">{e.title || "Untitled"}</span>
+                  <span class="menu-hint">{openedAgo(e.readAt!)}</span>
+                </A>
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
+    </details>
   )
 }
 

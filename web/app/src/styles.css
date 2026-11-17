@@ -387,6 +387,8 @@ button, input { font: inherit; color: inherit; }
   font: inherit; font-size: 1rem; outline: none;
 }
 .lib-search input::placeholder { color: var(--graphite-soft); }
+/* The bar draws its own ✕, on every browser. */
+.lib-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .lib-search-glyph { width: 1rem; height: 1rem; flex: none; fill: none; stroke: var(--graphite-soft); stroke-width: 1.6; stroke-linecap: round; }
 
 /* Text buttons: the default look of everything on the bar. */
@@ -455,3 +457,11 @@ summary.lib-text::after { content: ""; width: 0.4rem; height: 0.4rem; margin-lef
 button.link { border: 0; padding: 0; background: none; color: var(--graphite); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .lib-clear { width: 44px; justify-content: center; padding: 0; color: var(--graphite-soft); }
 .lib-clear svg { width: 0.8rem; height: 0.8rem; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+/* "Recent": no check gutter; long titles end in an ellipsis before the time. */
+.lib-recent { flex: none; }
+.lib-recent .facet-pop { width: min(24rem, calc(100vw - 2 * var(--gutter))); overflow-x: hidden; }
+.lib-recent .facet-pop ul { min-width: 0; }
+.recent-row { padding-left: 0.5rem; align-items: center; text-decoration: none; }
+.recent-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-row .menu-hint { flex: none; }

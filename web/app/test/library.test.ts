@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { libraryFromJson, type Folder, type Library, type NotebookEntry } from "@notable/schema"
 import { bylineOf, quickFirst } from "../src/lib/books.ts"
-import { childFolders, countIn, edited, entriesIn, folderPath, kindOf } from "../src/lib/library.ts"
+import { childFolders, countIn, edited, entriesIn, folderPath, kindOf, openedAgo, recentEntries } from "../src/lib/library.ts"
 
 const d = (iso: string) => new Date(iso)
 const folder = (id: string, title: string, parentId: string | null): Folder => ({ id, title, parentId, createdAt: d("2026-01-01"), updatedAt: d("2026-01-01") })
@@ -66,4 +66,29 @@ test("the quick-pages notebook comes first, the rest keep their order", () => {
   assert.deepEqual(quickFirst(books, es).map(e => e.id), ["n-journal", "b-dune", "b-fr", "q-1"])
   assert.deepEqual(quickFirst({ ...books, quickNotebookId: undefined }, es).map(e => e.id), ["b-dune", "b-fr", "n-journal", "q-1"])
   assert.deepEqual(quickFirst(books, es.slice(0, 2)).map(e => e.id), ["b-dune", "b-fr"])
+})
+
+test("recent: opened entries, most recently opened first, capped; never-opened and empty ones left out", () => {
+  const at = (e: NotebookEntry, readAt: string | undefined, pageCount?: number): NotebookEntry => ({ ...e, readAt: readAt ? d(readAt) : undefined, pageCount })
+  const recentLib: Library = {
+    folders: {},
+    notebooks: {
+      a: at(entry("a", null, "2026-01-01"), "2026-03-01"),
+      b: at(entry("b", "x", "2026-01-01"), "2026-03-03"),
+      never: at(entry("never", null, "2026-04-01"), undefined),
+      empty: at(entry("empty", null, "2026-01-01"), "2026-03-04", 0),
+      c: at(entry("c", null, "2026-01-01"), "2026-03-02", 5),
+    },
+  }
+  assert.deepEqual(recentEntries(recentLib).map(e => e.id), ["b", "c", "a"])
+  assert.deepEqual(recentEntries(recentLib, 2).map(e => e.id), ["b", "c"])
+})
+
+test("recent: how long ago, then a date", () => {
+  const now = d("2026-11-16T12:00:00")
+  assert.equal(openedAgo(d("2026-11-16T11:59:40"), now), "just now")
+  assert.match(openedAgo(d("2026-11-16T11:55:00"), now), /5/)
+  assert.match(openedAgo(d("2026-11-16T09:00:00"), now), /3/)
+  assert.match(openedAgo(d("2026-11-13T12:00:00"), now), /3/)
+  assert.doesNotMatch(openedAgo(d("2026-10-01T12:00:00"), now), /ago/)
 })
