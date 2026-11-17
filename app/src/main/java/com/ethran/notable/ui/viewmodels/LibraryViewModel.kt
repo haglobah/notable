@@ -47,7 +47,8 @@ data class LibrarySort(val key: LibrarySearch.SortKey? = null, val descending: B
 
 /**
  * The library view's search side: [results] when there is a query, else [sortedBooks] when a sort
- * is chosen (null: the folder's usual order). [facets] fill the filter bar's menus.
+ * is chosen (null: the folder's usual order). [facets] fill the filter bar's menus. [recent]: the
+ * notebooks opened last, anywhere in the library, for the bar's "Recent" menu.
  */
 data class LibraryBrowse(
     val results: LibrarySearchResults? = null,
@@ -56,6 +57,7 @@ data class LibraryBrowse(
     val sort: LibrarySort = LibrarySort(),
     val everywhere: Boolean = false,
     val inFolder: Boolean = false,
+    val recent: List<Notebook> = emptyList(),
 )
 
 data class LibraryUiState(
@@ -157,6 +159,7 @@ class LibraryViewModel @Inject constructor(
             results = results, sortedBooks = sorted,
             facets = LibrarySearchIndex.facets(searchScope, folders, books, quick),
             sort = input.sort, everywhere = input.everywhere, inFolder = input.folderId != null,
+            recent = RecentNotebooks.of(books),
         )
     }
 

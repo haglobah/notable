@@ -271,6 +271,7 @@
     <string name="bar_type">Typ</string>
     <string name="bar_clear">Wyczyść</string>
     <string name="bar_sort">Sortuj</string>
+    <string name="bar_recent">Ostatnie</string>
     <string name="bar_flip">Odwróć kolejność</string>
     <string name="bar_search_everywhere">Szukaj wszędzie</string>
     <string name="bar_search_only">Szukaj tylko w %1$s</string>

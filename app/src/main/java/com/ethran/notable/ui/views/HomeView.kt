@@ -87,6 +87,7 @@ import androidx.compose.ui.text.input.ImeAction
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.X
 import com.ethran.notable.ui.viewmodels.LibraryViewModel
+import com.ethran.notable.ui.viewmodels.RecentNotebooks
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.FilePlus
@@ -227,7 +228,8 @@ fun LibraryContent(
             header = {
                 Column {
                     LibraryBar(query = query, onQueryChange = onQueryChange, browse = browse,
-                        onToggleFilter = onToggleFilter, onSort = onSort)
+                        onToggleFilter = onToggleFilter, onSort = onSort,
+                        onOpenNotebook = { nb -> onNavigateToEditor(RecentNotebooks.pageOf(nb), nb.id) })
                     Spacer(Modifier.height(20.dp))
                     if (results != null) {
                         if (results.quickPages.isNotEmpty()) ShowPagesRow(

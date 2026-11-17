@@ -254,6 +254,7 @@
     <string name="bar_type">Type</string>
     <string name="bar_clear">Clear</string>
     <string name="bar_sort">Sort</string>
+    <string name="bar_recent">Recent</string>
     <string name="bar_flip">Reverse the order</string>
     <string name="bar_search_everywhere">Search everywhere</string>
     <string name="bar_search_only">Search only %1$s</string>

@@ -1,5 +1,6 @@
 package com.ethran.notable.ui.components
 
+import android.text.format.DateUtils
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,9 +48,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ethran.notable.R
+import com.ethran.notable.data.db.Notebook
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
 import com.ethran.notable.sync.automerge.LibrarySearch
 import com.ethran.notable.sync.automerge.LibrarySearch.SortKey
@@ -116,8 +119,8 @@ private val BAND = 34.dp // drawn height of pills and segments; their hit areas 
 
 /**
  * The controls above the notebooks (docs/plans/ebook-features.md, "Library bar design (round 4)"):
- * two lines. 1: an underline search field with ✕ and `?`, and the sort (the key opens the menu,
- * the arrow flips it). 2: All · Reading · Unread · Finished, the facet menus, Clear; it scrolls
+ * two lines. 1: an underline search field with ✕ and `?`, "Recent" (the notebooks opened last;
+ * a tap opens one), and the sort (the key opens the menu, the arrow flips it). 2: All · Reading · Unread · Finished, the facet menus, Clear; it scrolls
  * sideways and never wraps. Black on white, 1 px rules, selected = inverted, no animation; every
  * hit area is at least 48 dp tall. Filters are query tokens ([QueryFilters]).
  */
@@ -128,11 +131,16 @@ fun LibraryBar(
     browse: LibraryBrowse,
     onToggleFilter: (field: String, value: String) -> Unit,
     onSort: (SortKey?, Boolean?) -> Unit,
+    onOpenNotebook: (Notebook) -> Unit = {},
 ) {
     Column {
         Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
             SearchField(query, onQueryChange, Modifier.weight(1f))
             Spacer(Modifier.width(24.dp))
+            if (browse.recent.isNotEmpty()) {
+                RecentControl(browse.recent, onOpenNotebook)
+                Spacer(Modifier.width(12.dp))
+            }
             SortControl(browse, onSort)
         }
         Row(Modifier.fillMaxWidth().height(48.dp).horizontalScroll(rememberScrollState()),
@@ -211,6 +219,42 @@ private fun SortControl(browse: LibraryBrowse, onSort: (SortKey?, Boolean?) -> U
                 onSort(key, !browse.sort.isDescending)
             }
         }
+    }
+}
+
+/** "Recent ▾": the notebooks opened last, newest first, each with when; a tap opens it where it was left. */
+@Composable
+private fun RecentControl(recent: List<Notebook>, onOpen: (Notebook) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextTarget(stringResource(R.string.bar_recent) + " ▾") { open = !open }
+        if (open) MenuPanel(onClose = { open = false }) {
+            items(recent, key = { it.id }) { nb ->
+                RecentRow(nb.title, nb.readAt?.let { whenOpened(it.time) }) {
+                    open = false
+                    onOpen(nb)
+                }
+            }
+        }
+    }
+}
+
+private fun whenOpened(at: Long): String = DateUtils.getRelativeTimeSpanString(
+    at, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS, DateUtils.FORMAT_ABBREV_RELATIVE,
+).toString()
+
+@Composable
+private fun RecentRow(title: String, opened: String?, onClick: () -> Unit) {
+    Column {
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
+                role = Role.Button, onClick = onClick)
+            .padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, fontSize = LABEL, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f))
+            if (opened != null) Text(opened, fontSize = 14.sp, color = Ink, modifier = Modifier.padding(start = 16.dp))
+        }
+        Divider(color = Ink, thickness = 1.dp)
     }
 }
 
