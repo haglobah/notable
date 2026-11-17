@@ -15,6 +15,7 @@
     <string name="hexagon_grid">W sześciokąty</string>
 
     <string name="enable_scribble_to_erase">Zamaż aby usunąć</string>
+    <string name="enable_scribble_to_erase_description">Zamaż pomyłkę, aby ją usunąć</string>
     <string name="enable_smooth_scrolling">Włącz płynne przewijanie</string>
     <string name="continuous_zoom">Włącz płynne przybliżanie</string>
     <string name="continuous_stroke_slider">Płynny regulator grubości kreski</string>
@@ -42,8 +43,10 @@
     <string name="gesture_action_toggle_zen_mode">Przełącz tryb Zen</string>
 
     <string name="enable_quick_nav">Przeciągnij trzema palcami w górę aby pokazać QuickNav</string>
-    <string name="block_system_gestures">Blokuj gesty systemowe w Notable — naprawia gesty trzema palcami przy włączonym systemowym zrzucie ekranu, ale krawędziowe gesty nawigacji przestaną działać w aplikacji</string>
-    <string name="steady_rotation">Stabilniejszy autoobrót — obracaj tylko przy wyraźnym przechyleniu, chwilę utrzymanym, i nie podczas pisania</string>
+    <string name="block_system_gestures">Blokuj gesty systemowe</string>
+    <string name="block_system_gestures_description">Naprawia gesty trzema palcami przy włączonym systemowym zrzucie ekranu, ale krawędziowe gesty nawigacji przestaną działać w aplikacji</string>
+    <string name="steady_rotation">Stabilniejszy autoobrót</string>
+    <string name="steady_rotation_description">Obraca tylko przy wyraźnym, chwilę utrzymanym przechyleniu, i nie podczas pisania</string>
     <string name="work_in_progress">(w trakcie implementacji)</string>
     <string name="toolbar_position_top">Góra</string>
     <string name="toolbar_position_bottom">Dół</string>
@@ -72,13 +75,13 @@
     <string name="welcome_view_continue">Kontynuuj</string>
     <string name="welcome_view_complete_setup_first">Najpierw zakończ konfigurację</string>
 
-    <string name="welcome_view_prevent_frozen">⚠️ Zapobiegaj zamrażaniu Notable (urządzenia Onyx)</string>
+    <string name="welcome_view_prevent_frozen">Zapobiegaj zamrażaniu Notable (urządzenia Onyx)</string>
     <string name="welcome_view_prevent_frozen_details">Urządzenia Onyx mogą automatycznie zamrażać (zamykać) aplikacje działające w tle, aby oszczędzać baterię. Jeśli nie wyłączysz tej funkcji, Notable będzie ciągle zamykany w tle, co może powodować utratę pracy.</string>
-    <string name="welcome_view_prevent_frozen_instructions_title">Jak zapobiec zamrażaniu:</string>
+    <string name="welcome_view_prevent_frozen_instructions_title">Jak zapobiec zamrażaniu</string>
     <string name="welcome_view_prevent_frozen_instructions">1. Przytrzymaj ikonę Notable na launcherze Onyx (ekran główny).\n2. Wybierz &quot;Odmrozić&quot; z menu.</string>
     <string name="welcome_view_prevent_frozen_recommended">Ten krok jest wysoce zalecany dla płynnego działania.</string>
 
-    <string name="welcome_view_quick_start_title"><![CDATA[📖 Szybki start i przewodnik gestów]]></string>
+    <string name="welcome_view_quick_start_title">Szybki start i gesty</string>
     <string name="welcome_view_quick_start_navigation">Nawigacja</string>
     <string name="welcome_view_quick_start_navigation_details">• Przeciągnij w górę/w dół: Przewijaj stronę\n• Przeciągnij w lewo/w prawo: Poprzednia/następna strona\n• Uszczypnij dwoma palcami: Przybliż/oddal\n• Stuknij numer strony: Szybkie przejście\n• Przeciągnięcie dwoma palcami w lewo/w prawo: Pokaż/ukryj pasek narzędzi</string>
 
@@ -115,7 +118,7 @@
     <string name="observe_pdf">Podgląd PDF</string>
     <string name="current_page">Bieżąca strona</string>
 
-    <string name="toolbar_scribble_to_erase_two_lined_short">Zamaż\n→usuń</string>
+    <string name="toolbar_scribble_to_erase_two_lined_short">Zamaż, aby usunąć</string>
     <string name="toolbar_position">Pozycja paska narzędzi</string>
 
     <!-- Sync Settings Tab -->
@@ -138,6 +141,7 @@
     <string name="toolbar_settings_import_dropped">Zaimportowano układ paska narzędzi; pominięto nieznane elementy: %1$d</string>
     <string name="toolbar_settings_import_failed">Import nie powiódł się: %1$s</string>
     <string name="toolbar_settings_import_confirm_title">Zaimportować układ paska narzędzi?</string>
+    <string name="toolbar_settings_import_confirm">Importuj</string>
     <string name="toolbar_settings_import_confirm_message">Zastąpi to obecny układ paska narzędzi i wszystkie pisaki. Tej operacji nie można cofnąć.</string>
     <string name="toolbar_settings_pick_pen_type">Rodzaj pisaka</string>
     <string name="toolbar_settings_edit_pen">Edytuj pisak</string>
@@ -198,6 +202,35 @@
     <string name="details_delete_message">Usunąć „%1$s”? Tej operacji nie można cofnąć.</string>
     <string name="details_save_failed">Nie udało się zapisać zmian. Spróbuj ponownie.</string>
     <string name="details_retry">Spróbuj ponownie</string>
+    <!-- Dialogs on the design system (docs/plans/design-system.md) -->
+    <string name="dialog_cancel">Anuluj</string>
+    <string name="dialog_confirm">Potwierdź</string>
+    <string name="dialog_delete">Usuń</string>
+    <string name="export_heading">Eksportuj notatnik</string>
+    <string name="export_message">PDF służy do czytania i udostępniania. Xopp zachowuje każde pociągnięcie i można go ponownie zaimportować; Xournal++ przy zapisie zamienia pociągnięcia na długopis.</string>
+    <string name="folder_heading">Szczegóły folderu</string>
+    <string name="folder_delete">Usuń folder</string>
+    <string name="move_heading">Przenieś „%1$s”</string>
+    <string name="move_hint">Otwórz folder docelowy, a potem wybierz Przenieś tutaj.</string>
+    <string name="move_up">Poziom wyżej</string>
+    <string name="move_here">Przenieś tutaj</string>
+    <string name="move_no_folders">Brak folderów.</string>
+    <string name="empty_book_heading">Usunąć pusty notatnik?</string>
+    <string name="empty_book_message">„%1$s” nie ma stron. Utworzono: %2$s.</string>
+    <string name="empty_book_keep">Zachowaj</string>
+    <string name="bg_mode_native">Szablon</string>
+    <string name="bg_mode_image">Obraz</string>
+    <string name="bg_mode_cover">Okładka</string>
+    <string name="bg_mode_pdf">PDF</string>
+    <string name="bg_choose_image">Wybierz obraz</string>
+    <string name="bg_choose_cover">Wybierz obraz okładki</string>
+    <string name="bg_choose_repeating">Wybierz powtarzany obraz</string>
+    <string name="bg_from_file">Z pliku…</string>
+    <string name="bg_import_pdf">Importuj PDF</string>
+    <string name="bg_previous_page">Poprzednia strona</string>
+    <string name="bg_next_page">Następna strona</string>
+    <string name="bg_preview_loading">Wczytywanie podglądu</string>
+    <string name="snack_dismiss">Zamknij</string>
     <!-- Czytanie (docs/plans/ebook-features.md) -->
     <string name="book_contents">Spis treści</string>
     <string name="book_search">Szukaj w książce</string>
@@ -243,7 +276,6 @@
     <string name="filter_language">Język</string>
     <string name="filter_everywhere">Wszędzie</string>
     <string name="filter_done">Gotowe</string>
-    <string name="filter_value_count">%1$s (%2$d)</string>
     <string name="sort_label">Sortuj: %1$s</string>
     <string name="sort_usual">Zwykła kolejność</string>
     <string name="sort_relevance">Trafność</string>
@@ -299,4 +331,26 @@
         <item quantity="many">%1$d wyników</item>
         <item quantity="other">%1$d wyników</item>
     </plurals>
+
+    <!-- Editor menu, page menu, pages overview -->
+    <string name="menu_group_navigate">Nawigacja</string>
+    <string name="menu_group_reading">Czytanie</string>
+    <string name="menu_group_page">Strona</string>
+    <string name="menu_group_notebook">Zeszyt</string>
+    <string name="menu_group_edit">Edycja</string>
+    <string name="menu_group_help">Pomoc</string>
+    <string name="menu_group_commands">Polecenia</string>
+    <string name="page_menu_move_left">Przesuń w lewo</string>
+    <string name="page_menu_move_right">Przesuń w prawo</string>
+    <string name="page_menu_insert_after">Wstaw stronę za</string>
+    <string name="page_menu_duplicate">Duplikuj stronę</string>
+    <string name="page_menu_delete">Usuń stronę</string>
+    <string name="page_menu_add_after">Dodaj stronę za</string>
+    <string name="pages_title">Strony</string>
+    <string name="pages_back_to">Wróć do: %1$s</string>
+    <string name="pages_generate_previews">Generuj podglądy</string>
+    <string name="pages_edit_mode">Tryb edycji</string>
+    <string name="pages_jump_to_current">Przejdź do bieżącej</string>
+    <string name="pages_delete_title">Usunąć stronę?</string>
+    <string name="pages_delete_message">Strona i cała jej zawartość zostaną usunięte.</string>
 </resources>

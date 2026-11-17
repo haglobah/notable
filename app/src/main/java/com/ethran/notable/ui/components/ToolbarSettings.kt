@@ -3,11 +3,10 @@ package com.ethran.notable.ui.components
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
@@ -18,22 +17,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.OutlinedButton
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,8 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.findRootCoordinates
@@ -61,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.ethran.notable.R
 import com.ethran.notable.data.datastore.AppSettings
-import com.ethran.notable.editor.ui.toolbar.ToolbarButton
 import com.ethran.notable.editor.ui.toolbar.model.IconRef
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarElementId
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarElements
@@ -71,10 +61,31 @@ import com.ethran.notable.editor.ui.toolbar.model.ToolbarPen
 import com.ethran.notable.editor.utils.Pen
 import com.ethran.notable.ui.LocalSnackContext
 import com.ethran.notable.ui.SnackConf
-import com.ethran.notable.ui.dialogs.ShowSimpleConfirmationDialog
+import com.ethran.notable.ui.design.nColorMark
+import com.ethran.notable.ui.design.LightNotableColors
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NConfirmDialog
+import com.ethran.notable.ui.design.NControlSize
+import com.ethran.notable.ui.design.NDialog
+import com.ethran.notable.ui.design.NDivider
+import com.ethran.notable.ui.design.NIcon
+import com.ethran.notable.ui.design.NIconButton
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.inkClickable
 import com.ethran.notable.ui.theme.InkaTheme
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Check
+import compose.icons.feathericons.Download
 import compose.icons.feathericons.EyeOff
+import compose.icons.feathericons.Menu
+import compose.icons.feathericons.Plus
+import compose.icons.feathericons.RotateCcw
+import compose.icons.feathericons.Trash2
+import compose.icons.feathericons.Upload
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 import android.graphics.Color as AndroidColor
@@ -155,9 +166,12 @@ fun ToolbarSettings(
     }
 
     pendingImport?.let { result ->
-        ShowSimpleConfirmationDialog(
+        NConfirmDialog(
             title = stringResource(R.string.toolbar_settings_import_confirm_title),
             message = stringResource(R.string.toolbar_settings_import_confirm_message),
+            confirmText = stringResource(R.string.toolbar_settings_import_confirm),
+            cancelText = stringResource(android.R.string.cancel),
+            destructive = true,
             onConfirm = {
                 onSettingsChange(
                     settings.copy(toolbarLayout = result.layout, toolbarPens = result.pens)
@@ -168,19 +182,18 @@ fun ToolbarSettings(
                 )
                 pendingImport = null
             },
-            onCancel = { pendingImport = null },
+            onDismiss = { pendingImport = null },
         )
     }
 
     Column {
         ToolbarPreview(layout, pens)
-        SettingsDivider()
 
         Text(
             text = stringResource(R.string.toolbar_settings_drag_hint),
-            style = MaterialTheme.typography.caption,
-            color = Color.Black,
-            modifier = Modifier.padding(vertical = 4.dp)
+            style = NotableTheme.type.meta,
+            color = NotableTheme.colors.secondary,
+            modifier = Modifier.padding(top = NotableSpace.md, bottom = NotableSpace.xs)
         )
 
         ReorderableElementList(
@@ -209,37 +222,32 @@ fun ToolbarSettings(
             },
         )
 
-        Row(
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(top = NotableSpace.xl),
+            horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm),
+            verticalArrangement = Arrangement.spacedBy(NotableSpace.sm),
         ) {
-            EInkButton(onClick = { addPenOpen = true }, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.toolbar_settings_add_pen))
-            }
-            EInkButton(
+            NButton(
+                stringResource(R.string.toolbar_settings_add_pen),
+                onClick = { addPenOpen = true },
+                icon = FeatherIcons.Plus,
+            )
+            NButton(
+                stringResource(R.string.toolbar_settings_add_divider),
                 onClick = {
                     commit(layout.copy(scrollable = layout.scrollable + ToolbarElementId.DIVIDER.name))
                 },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(stringResource(R.string.toolbar_settings_add_divider))
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            EInkButton(
+                icon = FeatherIcons.Plus,
+            )
+            NButton(
+                stringResource(R.string.toolbar_settings_export),
                 onClick = { exportLauncher.launch("notable-toolbar.json") },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(stringResource(R.string.toolbar_settings_export))
-            }
-            EInkButton(
+                icon = FeatherIcons.Upload,
+            )
+            NButton(
+                stringResource(R.string.toolbar_settings_import),
                 // OpenDocument filters on MIME; some file managers report .json as
                 // text/plain or octet-stream, so accept broadly and validate content.
                 onClick = {
@@ -247,22 +255,20 @@ fun ToolbarSettings(
                         arrayOf("application/json", "text/plain", "application/octet-stream")
                     )
                 },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(stringResource(R.string.toolbar_settings_import))
-            }
+                icon = FeatherIcons.Download,
+            )
         }
-        EInkButton(
+        NButton(
+            stringResource(R.string.toolbar_settings_reset),
             onClick = {
                 onSettingsChange(
                     settings.copy(toolbarLayout = null, toolbarPens = ToolbarPen.DEFAULT_PENS)
                 )
             },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(stringResource(R.string.toolbar_settings_reset))
-        }
-        Spacer(Modifier.height(16.dp))
+            modifier = Modifier.padding(top = NotableSpace.xl),
+            style = NButtonStyle.Danger,
+            icon = FeatherIcons.RotateCcw,
+        )
     }
 
     if (addPenOpen) {
@@ -545,9 +551,8 @@ private fun SectionHeaderRow(zone: Zone) {
         modifier = Modifier
             .fillMaxWidth()
             .height(ROW_HEIGHT)
-            .background(Color.Black)
-            .padding(horizontal = 8.dp),
-        contentAlignment = Alignment.CenterStart,
+            .padding(bottom = NotableSpace.xs),
+        contentAlignment = Alignment.BottomStart,
     ) {
         Text(
             text = stringResource(
@@ -557,26 +562,29 @@ private fun SectionHeaderRow(zone: Zone) {
                     Zone.HIDDEN -> R.string.toolbar_settings_section_hidden
                 }
             ),
-            style = MaterialTheme.typography.subtitle2,
-            color = Color.White,
+            style = NotableTheme.type.heading,
+            color = NotableTheme.colors.ink,
         )
     }
 }
 
+/** Ink that reads on a pen color: pens are drawn on paper, so this uses the light palette. */
+private fun inkOn(background: Color?): Color =
+    if (background != null && background.alpha > 0.5f && background.luminance() < 0.4f)
+        LightNotableColors.paper else LightNotableColors.ink
+
 /**
- * A tool's icon at list/dialog scale: [ToolbarButton]'s look (circular pen-color
- * background, white tint on dark colors) but smaller — the real 38 dp toolbar buttons
+ * A tool's icon at list/dialog scale: [ToolbarButton]'s look (the pen-color dot) but smaller — the real 38 dp toolbar buttons
  * read oversized next to settings text.
  */
 @Composable
 private fun ToolIcon(icon: IconRef?, penColor: Color? = null, onClick: (() -> Unit)? = null) {
-    val tint =
-        if (penColor == Color.Black || penColor == Color.DarkGray) Color.White else Color.Black
+    val tint = NotableTheme.colors.ink
     Box(
         modifier = Modifier
             .size(28.dp)
-            .background(penColor ?: Color.Transparent, CircleShape)
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
+            .nColorMark(penColor, NotableTheme.colors, radius = 3.5.dp, inset = 4.dp)
+            .then(if (onClick != null) Modifier.inkClickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         when (icon) {
@@ -605,75 +613,71 @@ private fun ElementRow(
     val preset = if (entry.startsWith(ToolbarPen.LAYOUT_PREFIX))
         pens.find { it.id == entry.removePrefix(ToolbarPen.LAYOUT_PREFIX) } else null
 
-    Row(
+    val c = NotableTheme.colors
+    // Exactly ROW_HEIGHT tall, hairline included — the drag detector maps y to row index.
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .height(ROW_HEIGHT)
-            .background(MaterialTheme.colors.background)
+            .background(c.paper)
             .then(
-                if (preset != null) Modifier.clickable { onEditPen(preset.id) } else Modifier
+                if (preset != null) Modifier.inkClickable { onEditPen(preset.id) } else Modifier
             ),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Default.Menu,
-            contentDescription = null,
-            tint = Color.Black,
-            modifier = Modifier
-                .padding(horizontal = 8.dp)
-                .size(18.dp)
-        )
+        Row(Modifier.fillMaxWidth().height(ROW_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
+            // Drag handle: the drag itself is a long-press anywhere on the row.
+            NIcon(
+                FeatherIcons.Menu,
+                tint = c.secondary,
+                size = 18.dp,
+                modifier = Modifier.padding(end = NotableSpace.md),
+            )
 
-        if (preset != null) {
-            ToolIcon(
-                icon = ToolbarElements.penIcon(preset.pen),
-                penColor = Color(preset.color),
-                onClick = { onEditPen(preset.id) },
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = stringResource(penNameRes(preset.pen)),
-                style = MaterialTheme.typography.body1,
-                modifier = Modifier.weight(1f)
-            )
-        } else {
-            val id = ToolbarElementId.fromString(entry)
-            if (id == ToolbarElementId.DIVIDER) Box(
-                Modifier.size(28.dp), contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    Modifier
-                        .size(width = 2.dp, height = 20.dp)
-                        .background(MaterialTheme.colors.onSurface)
+            if (preset != null) {
+                ToolIcon(
+                    icon = ToolbarElements.penIcon(preset.pen),
+                    penColor = Color(preset.color),
+                    onClick = { onEditPen(preset.id) },
                 )
-            } else ToolIcon(icon = id?.let { ToolbarElements.all[it]?.icon })
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = id?.let { stringResource(elementNameRes(it)) } ?: entry,
-                style = MaterialTheme.typography.body1,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        if (onDelete != null) {
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = stringResource(R.string.toolbar_settings_delete),
-                    tint = MaterialTheme.colors.onSurface,
+                Spacer(Modifier.width(NotableSpace.md))
+                Text(
+                    text = stringResource(penNameRes(preset.pen)),
+                    style = NotableTheme.type.body,
+                    color = c.ink,
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                val id = ToolbarElementId.fromString(entry)
+                if (id == ToolbarElementId.DIVIDER) Box(
+                    Modifier.size(28.dp), contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier
+                            .size(width = NotableSize.strong, height = 20.dp)
+                            .background(c.ink)
+                    )
+                } else ToolIcon(icon = id?.let { ToolbarElements.all[it]?.icon })
+                Spacer(Modifier.width(NotableSpace.md))
+                Text(
+                    text = id?.let { stringResource(elementNameRes(it)) } ?: entry,
+                    style = NotableTheme.type.body,
+                    color = c.ink,
+                    modifier = Modifier.weight(1f)
                 )
             }
+
+            if (onDelete != null) NIconButton(
+                FeatherIcons.Trash2,
+                contentDescription = stringResource(R.string.toolbar_settings_delete),
+                onClick = onDelete,
+            )
+            if (onHide != null) NIconButton(
+                FeatherIcons.EyeOff,
+                contentDescription = stringResource(R.string.toolbar_settings_hide),
+                onClick = onHide,
+            )
         }
-        if (onHide != null) {
-            IconButton(onClick = onHide) {
-                Icon(
-                    imageVector = FeatherIcons.EyeOff,
-                    contentDescription = stringResource(R.string.toolbar_settings_hide),
-                    tint = MaterialTheme.colors.onSurface,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
+        NDivider(Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -692,24 +696,20 @@ private fun ToolbarPreview(layout: ToolbarLayout, pens: List<ToolbarPen>) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .border(1.dp, Color.Black)
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+            .padding(top = NotableSpace.sm)
+            .heightIn(min = NotableSize.control)
+            .border(NotableSize.hairline, NotableTheme.colors.rule, NotableShape.control)
+            .padding(horizontal = NotableSpace.sm, vertical = NotableSpace.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         @Composable
         fun previewIcon(icon: IconRef, background: Color? = null) {
-            val tint =
-                if (background == Color.Black || background == Color.DarkGray) Color.White
-                else Color.Black
+            val tint = NotableTheme.colors.ink
             Box(
                 modifier = Modifier
                     .padding(1.dp)
                     .size(22.dp)
-                    .background(
-                        color = background ?: Color.Transparent,
-                        shape = CircleShape,
-                    ),
+                    .nColorMark(background, NotableTheme.colors, radius = 3.dp, inset = 3.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 when (icon) {
@@ -739,8 +739,8 @@ private fun ToolbarPreview(layout: ToolbarLayout, pens: List<ToolbarPen>) {
                 Box(
                     Modifier
                         .padding(horizontal = 2.dp)
-                        .size(width = 1.dp, height = 16.dp)
-                        .background(MaterialTheme.colors.onSurface)
+                        .size(width = NotableSize.hairline, height = 16.dp)
+                        .background(NotableTheme.colors.rule)
                 )
                 return
             }
@@ -748,8 +748,9 @@ private fun ToolbarPreview(layout: ToolbarLayout, pens: List<ToolbarPen>) {
                 is IconRef.Drawable, is IconRef.Vector -> previewIcon(icon)
                 null -> if (id == ToolbarElementId.PAGE_NAV) Text(
                     text = "1/1",
-                    style = MaterialTheme.typography.caption,
-                    modifier = Modifier.padding(horizontal = 4.dp)
+                    style = NotableTheme.type.meta,
+                    color = NotableTheme.colors.ink,
+                    modifier = Modifier.padding(horizontal = NotableSpace.xs)
                 )
             }
         }
@@ -764,7 +765,7 @@ private fun ToolbarPreview(layout: ToolbarLayout, pens: List<ToolbarPen>) {
         ) {
             layout.scrollable.forEach { previewEntry(it) }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(NotableSpace.md))
         Row(verticalAlignment = Alignment.CenterVertically) {
             layout.pinned.forEach { previewEntry(it) }
         }
@@ -777,30 +778,22 @@ private fun ToolbarPreview(layout: ToolbarLayout, pens: List<ToolbarPen>) {
 
 @Composable
 private fun AddPenDialog(onPick: (Pen) -> Unit, onClose: () -> Unit) {
-    ScaledDialog(onDismissRequest = onClose) {
-        Column(
-            modifier = Modifier
-                .background(MaterialTheme.colors.background)
-                .border(1.dp, MaterialTheme.colors.onSurface)
-                .padding(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.toolbar_settings_pick_pen_type),
-                style = MaterialTheme.typography.h6,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            ToolbarPen.BASE_TYPES.forEach { pen ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPick(pen) }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ToolIcon(icon = ToolbarElements.penIcon(pen))
-                    Spacer(Modifier.width(12.dp))
-                    Text(stringResource(penNameRes(pen)))
-                }
+    NDialog(
+        title = stringResource(R.string.toolbar_settings_pick_pen_type),
+        onDismiss = onClose,
+        maxWidth = 420.dp,
+    ) {
+        ToolbarPen.BASE_TYPES.forEach { pen ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = NotableSize.menuRow)
+                    .inkClickable { onPick(pen) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ToolIcon(icon = ToolbarElements.penIcon(pen))
+                Spacer(Modifier.width(NotableSpace.md))
+                Text(stringResource(penNameRes(pen)), style = NotableTheme.type.body, color = NotableTheme.colors.ink)
             }
         }
     }
@@ -839,117 +832,85 @@ private fun PenEditDialog(
         onClose()
     }
 
-    ScaledDialog(onDismissRequest = ::commitAndClose) {
-        Column(
-            modifier = Modifier
-                .background(MaterialTheme.colors.background)
-                .border(1.dp, MaterialTheme.colors.onSurface)
-                .padding(16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ToolIcon(
-                    icon = ToolbarElements.penIcon(edited.pen),
-                    penColor = Color(edited.color),
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = stringResource(penNameRes(edited.pen)),
-                    style = MaterialTheme.typography.h6,
-                )
-            }
-
-            Text(
-                text = stringResource(R.string.toolbar_settings_color),
-                style = MaterialTheme.typography.subtitle2,
-                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+    val c = NotableTheme.colors
+    NDialog(
+        title = stringResource(penNameRes(edited.pen)),
+        onDismiss = ::commitAndClose,
+        titleAction = {
+            ToolIcon(
+                icon = ToolbarElements.penIcon(edited.pen),
+                penColor = Color(edited.color),
             )
-            ToolbarPen.COLOR_CANDIDATES.chunked(7).forEach { rowColors ->
-                Row {
-                    rowColors.forEach { colorInt ->
-                        val included = colorInt in includedColors
-                        Box(
-                            modifier = Modifier
-                                .padding(2.dp)
-                                .size(36.dp)
-                                .background(Color(colorInt))
-                                .border(
-                                    if (included) 3.dp else 1.dp,
-                                    Color.Black,
-                                )
-                                .clickable {
-                                    // Re-added colors append at the end: the user's
-                                    // stored palette order is preserved, not re-sorted
-                                    // to candidate order.
-                                    val updated =
-                                        if (included) includedColors - colorInt
-                                        else includedColors + colorInt
-                                    if (updated.isNotEmpty())
-                                        edited = edited.copy(colorOptions = updated)
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (included) Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = if (colorInt == AndroidColor.BLACK ||
-                                    colorInt == AndroidColor.DKGRAY ||
-                                    colorInt == AndroidColor.BLUE
-                                ) Color.White else Color.Black,
-                                modifier = Modifier.size(18.dp),
+        },
+    ) {
+        DialogHeading(stringResource(R.string.toolbar_settings_color))
+        ToolbarPen.COLOR_CANDIDATES.chunked(7).forEach { rowColors ->
+            Row {
+                rowColors.forEach { colorInt ->
+                    val included = colorInt in includedColors
+                    // Swatches are user data (the pen's palette): its color is the fill.
+                    Box(
+                        modifier = Modifier
+                            .padding(NotableSpace.xxs)
+                            .size(40.dp)
+                            .background(Color(colorInt), NotableShape.control)
+                            .border(
+                                if (included) NotableSize.strong + 1.dp else NotableSize.hairline,
+                                c.ink,
+                                NotableShape.control,
                             )
-                        }
+                            .inkClickable {
+                                // Re-added colors append at the end: the user's
+                                // stored palette order is preserved, not re-sorted
+                                // to candidate order.
+                                val updated =
+                                    if (included) includedColors - colorInt
+                                    else includedColors + colorInt
+                                if (updated.isNotEmpty())
+                                    edited = edited.copy(colorOptions = updated)
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (included) NIcon(
+                            FeatherIcons.Check,
+                            tint = inkOn(Color(colorInt)),
+                            size = 18.dp,
+                        )
                     }
                 }
             }
+        }
 
-            Text(
-                text = stringResource(R.string.toolbar_settings_size),
-                style = MaterialTheme.typography.subtitle2,
-                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
-            )
-            ToolbarPen.SIZE_CANDIDATES.chunked(7).forEach { rowSizes ->
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    rowSizes.forEach { size ->
-                        val included = size in includedSizes
-                        ToolbarButton(
-                            text = ToolbarElements.sizeLabel(size),
-                            isSelected = included,
-                            onSelect = {
-                                val updated =
-                                    if (included) includedSizes - size
-                                    else (includedSizes + size).sorted()
-                                if (updated.isNotEmpty())
-                                    edited = edited.copy(sizeOptions = updated)
-                            },
-                        )
-                    }
+        DialogHeading(stringResource(R.string.toolbar_settings_size))
+        ToolbarPen.SIZE_CANDIDATES.chunked(7).forEach { rowSizes ->
+            Row(horizontalArrangement = Arrangement.spacedBy(NotableSpace.xs)) {
+                rowSizes.forEach { size ->
+                    val included = size in includedSizes
+                    NButton(
+                        text = ToolbarElements.sizeLabel(size),
+                        selected = included,
+                        size = NControlSize.Compact,
+                        onClick = {
+                            val updated =
+                                if (included) includedSizes - size
+                                else (includedSizes + size).sorted()
+                            if (updated.isNotEmpty())
+                                edited = edited.copy(sizeOptions = updated)
+                        },
+                    )
                 }
             }
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Buttons
-// ---------------------------------------------------------------------------
-
-/** Pure black-on-white, square-cornered button — no theme grays, e-ink friendly. */
 @Composable
-private fun EInkButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable RowScope.() -> Unit,
-) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RectangleShape,
-        border = BorderStroke(1.dp, Color.Black),
-        colors = ButtonDefaults.outlinedButtonColors(
-            backgroundColor = Color.White,
-            contentColor = Color.Black,
-        ),
-        content = content,
+private fun DialogHeading(text: String) {
+    Text(
+        text = text,
+        style = NotableTheme.type.label,
+        color = NotableTheme.colors.ink,
+        modifier = Modifier.padding(top = NotableSpace.lg, bottom = NotableSpace.sm)
     )
 }
 

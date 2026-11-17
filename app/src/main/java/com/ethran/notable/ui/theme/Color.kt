@@ -1,10 +1,10 @@
 package com.ethran.notable.ui.theme
 
-import androidx.compose.ui.graphics.Color
+import com.ethran.notable.ui.design.LightNotableColors
 
-// Neutral, opaque surfaces keep fine lines legible on e-ink displays.
-val Ink = Color(0xFF191919)
-val Paper = Color.White
-val PaperInset = Color(0xFFF2F2F2)
-val SecondaryInk = Color(0xFF595959)
-val PaperLine = Color(0xFFB8B8B8)
+// Legacy names for the light tokens; new code uses NotableTheme.colors (ui/design/Tokens.kt).
+val Ink = LightNotableColors.ink
+val Paper = LightNotableColors.paper
+val PaperInset = LightNotableColors.inset
+val SecondaryInk = LightNotableColors.secondary
+val PaperLine = LightNotableColors.rule

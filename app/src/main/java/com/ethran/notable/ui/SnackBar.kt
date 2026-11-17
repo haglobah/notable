@@ -1,7 +1,5 @@
 package com.ethran.notable.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,10 +19,18 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.ethran.notable.R
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NControlSize
+import com.ethran.notable.ui.design.NIconButton
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.nSurface
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.X
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -123,7 +129,7 @@ fun SnackBar(state: SnackState, dispatcher: SnackDispatcher) {
     Column(
         Modifier
             .fillMaxHeight()
-            .padding(3.dp), verticalArrangement = Arrangement.Bottom
+            .padding(NotableSpace.xs), verticalArrangement = Arrangement.Bottom
     ) {
         allSnacks.forEach { snack ->
             key(snack.id) {
@@ -147,51 +153,53 @@ private fun SnackItem(snack: SnackConf, onDismiss: (String) -> Unit) {
         }
     }
 
+    val c = NotableTheme.colors
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(3.dp), contentAlignment = Alignment.Center
+            .padding(NotableSpace.xs), contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .background(Color.Black)
-                .padding(15.dp, 10.dp),
+                .widthIn(max = 640.dp)
+                .nSurface(c)
+                .padding(
+                    start = NotableSpace.lg,
+                    end = if (snack.text != null) NotableSpace.xs else NotableSpace.lg,
+                    top = NotableSpace.xs,
+                    bottom = NotableSpace.xs,
+                ),
             contentAlignment = Alignment.Center
         ) {
             if (snack.text != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = snack.text, color = Color.White, modifier = Modifier.weight(
-                            1f, fill = false
-                        )
+                        text = snack.text,
+                        style = NotableTheme.type.body,
+                        color = c.ink,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .padding(vertical = NotableSpace.sm)
                     )
 
                     if (!snack.actions.isNullOrEmpty()) {
+                        Spacer(modifier = Modifier.width(NotableSpace.sm))
                         snack.actions.forEach { action ->
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = action.first.uppercase(),
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .border(
-                                        width = 1.dp,
-                                        color = Color.White,
-                                        shape = RoundedCornerShape(4.dp)
-                                    )
-                                    .noRippleClickable { action.second() }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp))
+                            NButton(
+                                action.first,
+                                onClick = { action.second() },
+                                size = NControlSize.Compact,
+                                modifier = Modifier.padding(start = NotableSpace.xs),
+                            )
                         }
                     }
-                    
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "x",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .noRippleClickable { onDismiss(snack.id) }
-                            .padding(1.dp)
+
+                    Spacer(modifier = Modifier.width(NotableSpace.xs))
+                    NIconButton(
+                        FeatherIcons.X,
+                        stringResource(R.string.snack_dismiss),
+                        onClick = { onDismiss(snack.id) },
+                        size = NControlSize.Compact,
                     )
                 }
             } else {
@@ -207,8 +215,8 @@ private fun SnackItemPreview() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(NotableSpace.lg),
+        verticalArrangement = Arrangement.spacedBy(NotableSpace.sm)
     ) {
         // 1. Standard simple text message
         SnackItem(

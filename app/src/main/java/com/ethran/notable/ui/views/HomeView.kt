@@ -5,11 +5,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,8 +20,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -26,10 +29,6 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.Badge
-import androidx.compose.material.BadgedBox
-import androidx.compose.material.Icon
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,8 +39,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -52,47 +54,39 @@ import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.Notebook
+import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.editor.EditorDestination
-import com.ethran.notable.editor.ui.Topbar
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
 import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.navigation.NavigationDestination
+import com.ethran.notable.sync.automerge.LibrarySearch
 import com.ethran.notable.ui.LocalSnackContext
 import com.ethran.notable.ui.SnackConf
-import com.ethran.notable.ui.components.PaperAction
-import com.ethran.notable.ui.components.PaperIconAction
 import com.ethran.notable.ui.components.BreadCrumb
-import com.ethran.notable.ui.components.NotebookCard
 import com.ethran.notable.ui.components.LibraryBar
+import com.ethran.notable.ui.components.NotebookCard
 import com.ethran.notable.ui.components.ResultsLine
 import com.ethran.notable.ui.components.ShowPagesRow
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NIcon
+import com.ethran.notable.ui.design.NIconButton
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.dialogs.EmptyBookWarningHandler
 import com.ethran.notable.ui.dialogs.FolderConfigDialog
 import com.ethran.notable.ui.dialogs.NotebookConfigDialog
-import com.ethran.notable.ui.theme.Ink
-import com.ethran.notable.ui.theme.Paper
-import com.ethran.notable.ui.theme.PaperInset
 import com.ethran.notable.ui.viewmodels.LibraryBrowse
-import com.ethran.notable.sync.automerge.LibrarySearch
 import com.ethran.notable.ui.viewmodels.LibraryUiState
-import com.ethran.notable.ui.theme.PaperLine
-import com.ethran.notable.ui.theme.SecondaryInk
-import com.ethran.notable.data.model.BackgroundType
-import androidx.compose.foundation.border
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
-import compose.icons.feathericons.Search
-import compose.icons.feathericons.X
 import com.ethran.notable.ui.viewmodels.LibraryViewModel
 import com.ethran.notable.ui.viewmodels.RecentNotebooks
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Plus
 import compose.icons.feathericons.FilePlus
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.FolderPlus
+import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Upload
 import io.shipbook.shipbooksdk.ShipBook
@@ -198,7 +192,7 @@ fun LibraryContent(
     onImportXopp: (Uri) -> Unit,
     onPreviewMissing: (String) -> Unit
 ) {
-    Column(Modifier.fillMaxSize().background(Paper)) {
+    Column(Modifier.fillMaxSize().background(NotableTheme.colors.paper)) {
         val results = browse.results?.takeIf { query.isNotBlank() }
         NotebookGrid(
             appRepository = appRepository,
@@ -229,8 +223,10 @@ fun LibraryContent(
                 Column {
                     LibraryBar(query = query, onQueryChange = onQueryChange, browse = browse,
                         onToggleFilter = onToggleFilter, onSort = onSort,
-                        onOpenNotebook = { nb -> onNavigateToEditor(RecentNotebooks.pageOf(nb), nb.id) })
-                    Spacer(Modifier.height(20.dp))
+                        onOpenNotebook = { nb -> onNavigateToEditor(RecentNotebooks.pageOf(nb), nb.id) },
+                        // Navigation lives with the bar, at its far right; a dot marks an update.
+                        trailing = { SettingsButton(updateAvailable = !uiState.isLatestVersion, onClick = onNavigateToSettings) })
+                    Spacer(Modifier.height(NotableSpace.xl))
                     if (results != null) {
                         if (results.quickPages.isNotEmpty()) ShowPagesRow(
                             appRepository = appRepository,
@@ -249,30 +245,18 @@ fun LibraryContent(
                             fontSize = 24,
                             onSelectFolderId = onNavigateToFolder
                         )
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(NotableSpace.lg))
                     }
-                    Row(verticalAlignment = Alignment.Top) {
-                        NotebookImportPanel(
-                            onCreateNewNotebook = onCreateNewNotebook,
-                            onCreateNewQuickPage = onCreateNewQuickPage,
-                            onCreateNewFolder = onCreateNewFolder,
-                            onImportPdf = onImportPdf,
-                            onImportXopp = onImportXopp,
-                            modifier = Modifier.weight(1f),
-                        )
-                        BadgedBox(badge = {
-                            if (!uiState.isLatestVersion) Badge(
-                                backgroundColor = Ink,
-                                modifier = Modifier.offset((-4).dp, 4.dp)
-                            )
-                        }) {
-                            PaperIconAction(stringResource(R.string.settings_title), FeatherIcons.Settings,
-                                onClick = onNavigateToSettings)
-                        }
-                    }
+                    NotebookImportPanel(
+                        onCreateNewNotebook = onCreateNewNotebook,
+                        onCreateNewQuickPage = onCreateNewQuickPage,
+                        onCreateNewFolder = onCreateNewFolder,
+                        onImportPdf = onImportPdf,
+                        onImportXopp = onImportXopp,
+                    )
                     // Folders as a row above the cards, without a heading.
                     if (uiState.folders.isNotEmpty()) {
-                        Spacer(Modifier.height(20.dp))
+                        Spacer(Modifier.height(NotableSpace.sm))
                         FolderList(appRepository, uiState.folders, onNavigateToFolder)
                     }
                 }
@@ -281,6 +265,11 @@ fun LibraryContent(
     }
 }
 
+/** The settings gear; [updateAvailable] adds an ink dot at its corner. */
+@Composable
+private fun SettingsButton(updateAvailable: Boolean, onClick: () -> Unit) =
+    NIconButton(FeatherIcons.Settings, stringResource(R.string.settings_title), onClick, badge = updateAvailable)
+
 @Composable
 fun FolderList(
     appRepository: AppRepository,
@@ -288,7 +277,7 @@ fun FolderList(
     onNavigateToFolder: (String) -> Unit
 ) {
     LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm),
         modifier = Modifier
             .fillMaxWidth()
             .autoEInkAnimationOnScroll()
@@ -304,27 +293,23 @@ fun FolderList(
                         log.i("Closing Directory Dialog")
                         isFolderSettingsOpen = false
                     })
-                Row(
-                    Modifier
-                        .combinedClickable(
-                            onClick = { onNavigateToFolder(folder.id) },
-                            onLongClick = { isFolderSettingsOpen = true })
-                        .background(PaperInset)
-                        .heightIn(min = 48.dp)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = FeatherIcons.Folder, contentDescription = null,
-                        Modifier.height(20.dp), tint = Ink
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(text = folder.title, color = Ink, style = MaterialTheme.typography.body2)
-                }
+                FolderButton(
+                    title = folder.title,
+                    onClick = { onNavigateToFolder(folder.id) },
+                    onLongClick = { isFolderSettingsOpen = true })
             }
         }
     }
 }
+
+/**
+ * A folder: a quiet [NButton] (folder icon, no border), so places read differently from the
+ * outlined actions above them. Long press opens the folder settings.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FolderButton(title: String, onClick: () -> Unit, onLongClick: () -> Unit) =
+    NButton(title, onClick, style = NButtonStyle.Quiet, icon = FeatherIcons.Folder, onLongClick = onLongClick)
 
 @Composable
 fun NotebookGrid(
@@ -347,21 +332,21 @@ fun NotebookGrid(
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(180.dp),
-        contentPadding = PaddingValues(24.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        contentPadding = PaddingValues(horizontal = NotableSpace.gutter, vertical = NotableSpace.xl),
+        verticalArrangement = Arrangement.spacedBy(NotableSpace.xl),
+        horizontalArrangement = Arrangement.spacedBy(NotableSpace.xl),
         modifier = modifier.autoEInkAnimationOnScroll()
     ) {
         item(key = "library-header", span = { GridItemSpan(maxLineSpan) }) { header() }
         if (heading != null || headingContent != null) item(key = "notebooks-heading", span = { GridItemSpan(maxLineSpan) }) {
             if (headingContent != null) headingContent() else Text(
                 text = heading ?: stringResource(R.string.home_notebooks),
-                style = MaterialTheme.typography.h6,
-                color = Ink
+                style = NotableTheme.type.heading,
+                color = NotableTheme.colors.ink
             )
         }
         if (emptyText != null) item(key = "notebooks-empty", span = { GridItemSpan(maxLineSpan) }) {
-            Text(emptyText, style = MaterialTheme.typography.body2, color = SecondaryInk)
+            Text(emptyText, style = NotableTheme.type.body, color = NotableTheme.colors.secondary)
         }
 
         if (books.isNotEmpty()) {
@@ -462,15 +447,15 @@ fun LibraryCreationActions(
     onImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        PaperAction(stringResource(R.string.library_new_notebook), onCreateNewNotebook,
-            icon = FeatherIcons.FilePlus, primary = true)
-        PaperAction(stringResource(R.string.library_new_quick_page), onCreateNewQuickPage,
+    FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm),
+        verticalArrangement = Arrangement.spacedBy(NotableSpace.sm)) {
+        NButton(stringResource(R.string.library_new_notebook), onCreateNewNotebook,
+            icon = FeatherIcons.FilePlus, style = NButtonStyle.Primary)
+        NButton(stringResource(R.string.library_new_quick_page), onCreateNewQuickPage,
             icon = FeatherIcons.Plus)
-        PaperAction(stringResource(R.string.library_new_folder), onCreateNewFolder,
+        NButton(stringResource(R.string.library_new_folder), onCreateNewFolder,
             icon = FeatherIcons.FolderPlus)
-        PaperAction(stringResource(R.string.library_import), onImport, icon = FeatherIcons.Upload)
+        NButton(stringResource(R.string.library_import), onImport, icon = FeatherIcons.Upload)
     }
 }
 

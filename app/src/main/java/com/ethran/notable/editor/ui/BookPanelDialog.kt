@@ -1,25 +1,18 @@
 package com.ethran.notable.editor.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.Divider
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,23 +27,23 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import com.ethran.notable.R
 import com.ethran.notable.editor.BookPanel
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
-import com.ethran.notable.ui.components.PaperAction
-import com.ethran.notable.ui.components.ScaledDialog
-import com.ethran.notable.ui.theme.Ink
-import com.ethran.notable.ui.theme.Paper
-import com.ethran.notable.ui.theme.PaperInset
-import com.ethran.notable.ui.theme.PaperLine
-import com.ethran.notable.ui.theme.SecondaryInk
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NDialog
+import com.ethran.notable.ui.design.NDivider
+import com.ethran.notable.ui.design.NTextField
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.inkClickable
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Search
 
 /**
  * The contents or the search of the book a notebook was made from (docs/plans/ebook-features.md).
@@ -63,23 +56,18 @@ fun BookPanelDialog(
     onJump: (pageId: String) -> Unit,
     onClose: () -> Unit,
 ) {
-    ScaledDialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(
-            Modifier.padding(24.dp).widthIn(max = 640.dp).fillMaxWidth().heightIn(max = 900.dp)
-                .background(Paper).border(1.dp, Ink).padding(24.dp)
-        ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(if (panel is BookPanel.Contents) R.string.book_contents else R.string.book_search),
-                    style = MaterialTheme.typography.h5, color = Ink, modifier = Modifier.weight(1f)
-                )
-                PaperAction(stringResource(R.string.book_close), onClick = onClose)
-            }
-            Spacer(Modifier.height(16.dp))
-            when (panel) {
-                is BookPanel.Contents -> Contents(panel, onJump)
-                is BookPanel.Search -> Search(panel, onSearch, onJump)
-            }
+    NDialog(
+        title = stringResource(if (panel is BookPanel.Contents) R.string.book_contents else R.string.book_search),
+        onDismiss = onClose,
+        modifier = Modifier.heightIn(max = 900.dp),
+        maxWidth = 640.dp,
+        // The lists below scroll by themselves.
+        scrollable = false,
+        titleAction = { NButton(stringResource(R.string.book_close), onClose, style = NButtonStyle.Secondary) },
+    ) {
+        when (panel) {
+            is BookPanel.Contents -> Contents(panel, onJump)
+            is BookPanel.Search -> Search(panel, onSearch, onJump)
         }
     }
 }
@@ -95,9 +83,9 @@ private fun Contents(panel: BookPanel.Contents, onJump: (String) -> Unit) {
             LazyColumn(Modifier.fillMaxWidth().autoEInkAnimationOnScroll()) {
                 items(panel.lines) { line ->
                     Line(onClick = { onJump(line.pageId) }, indent = line.depth) {
-                        Text(line.title, style = MaterialTheme.typography.body1, color = Ink,
+                        Text(line.title, style = NotableTheme.type.body, color = NotableTheme.colors.ink,
                             maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Text("${line.pageIndex + 1}", style = MaterialTheme.typography.body2, color = SecondaryInk)
+                        Text("${line.pageIndex + 1}", style = NotableTheme.type.meta, color = NotableTheme.colors.secondary)
                     }
                 }
             }
@@ -111,23 +99,19 @@ private fun Search(panel: BookPanel.Search, onSearch: (String) -> Unit, onJump: 
     val hint = stringResource(R.string.book_search_hint)
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (panel.results == null && !panel.running) runCatching { focus.requestFocus() } }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        BasicTextField(
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NotableSpace.md)) {
+        NTextField(
             value = query, onValueChange = { query = it }, singleLine = true,
-            textStyle = MaterialTheme.typography.body1.copy(color = Ink),
+            placeholder = hint,
+            leadingIcon = FeatherIcons.Search,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSearch(query) }),
-            decorationBox = { inner ->
-                if (query.isEmpty()) Text(hint, style = MaterialTheme.typography.body1, color = SecondaryInk)
-                inner()
-            },
-            modifier = Modifier.weight(1f).semantics { contentDescription = hint }.focusRequester(focus)
-                .background(PaperInset).border(1.dp, PaperLine).padding(horizontal = 12.dp, vertical = 14.dp)
+            modifier = Modifier.weight(1f).focusRequester(focus),
         )
-        PaperAction(stringResource(R.string.book_search_go), onClick = { onSearch(query) }, primary = true,
+        NButton(stringResource(R.string.book_search_go), onClick = { onSearch(query) }, style = NButtonStyle.Primary,
             enabled = query.isNotBlank())
     }
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(NotableSpace.lg))
     val results = panel.results
     when {
         panel.running -> Note(if (panel.total > 0) stringResource(R.string.book_searching, panel.done, panel.total)
@@ -142,8 +126,8 @@ private fun Search(panel: BookPanel.Search, onSearch: (String) -> Unit, onJump: 
                 items(results) { r ->
                     Line(onClick = { onJump(r.pageId) }) {
                         Column(Modifier.weight(1f)) {
-                            Text(stringResource(R.string.book_page, r.pageIndex + 1), style = MaterialTheme.typography.subtitle2, color = Ink)
-                            Text(r.snippet, style = MaterialTheme.typography.body2, color = Ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Text(stringResource(R.string.book_page, r.pageIndex + 1), style = NotableTheme.type.label, color = NotableTheme.colors.ink)
+                            Text(r.snippet, style = NotableTheme.type.body, color = NotableTheme.colors.ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -154,7 +138,7 @@ private fun Search(panel: BookPanel.Search, onSearch: (String) -> Unit, onJump: 
 
 @Composable
 private fun Note(text: String) {
-    Text(text, style = MaterialTheme.typography.body2, color = SecondaryInk, modifier = Modifier.padding(vertical = 8.dp))
+    Text(text, style = NotableTheme.type.meta, color = NotableTheme.colors.secondary, modifier = Modifier.padding(vertical = NotableSpace.sm))
 }
 
 @Composable
@@ -163,17 +147,17 @@ private fun Missing(count: Int) {
 }
 
 @Composable
-private fun Line(onClick: () -> Unit, indent: Int = 0, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+private fun Line(onClick: () -> Unit, indent: Int = 0, content: @Composable RowScope.() -> Unit) {
     Column {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
-                    role = Role.Button, onClick = onClick)
-                .padding(start = (indent.coerceAtMost(6) * 24).dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+            Modifier.fillMaxWidth().heightIn(min = NotableSize.menuRow)
+                .inkClickable(onClick = onClick)
+                .padding(start = NotableSpace.xl * indent.coerceAtMost(6), top = NotableSpace.md,
+                    bottom = NotableSpace.md, end = NotableSpace.xs),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(NotableSpace.md),
             content = content,
         )
-        Divider(color = PaperLine)
+        NDivider()
     }
 }

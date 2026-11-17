@@ -31,8 +31,9 @@ import com.ethran.notable.editor.ui.toolbar.model.ToolbarElements
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarLayout
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarPen
 import com.ethran.notable.editor.utils.Pen
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.dialogs.BackgroundSelector
-import com.ethran.notable.ui.theme.PaperLine
 
 /**
  * Spec-driven toolbar: iterates a [ToolbarLayout] and renders each element through
@@ -108,7 +109,7 @@ fun ToolbarContent(
         }
         Row(
             Modifier
-                .background(Color.White)
+                .background(NotableTheme.colors.paper)
                 .height(BUTTON_SIZE.dp)
                 .fillMaxWidth()
         ) {
@@ -167,8 +168,8 @@ private fun HorizontalHairline() {
     Box(
         Modifier
             .fillMaxWidth()
-            .height(1.dp)
-            .background(PaperLine)
+            .height(NotableSize.hairline)
+            .background(NotableTheme.colors.rule)
     )
 }
 

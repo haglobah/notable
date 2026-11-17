@@ -11,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -20,6 +19,7 @@ import coil.request.ImageRequest
 import com.ethran.notable.editor.utils.getThumbnailFile
 import com.ethran.notable.io.ThumbnailGeneratorEntryPoint
 import com.ethran.notable.io.thumbnailCacheKey
+import com.ethran.notable.ui.design.NotableTheme
 import dagger.hilt.EntryPoints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filter
@@ -38,9 +38,10 @@ fun PagePreview(
 ) {
     val isPreview = LocalInspectionMode.current
     val context = LocalContext.current
+    val paper = NotableTheme.colors.paper
 
     if (isPreview) {
-        Box(modifier = modifier.background(Color.White))
+        Box(modifier = modifier.background(paper))
         return
     }
 
@@ -76,7 +77,7 @@ fun PagePreview(
 
     val key = cacheKey
     if (key == null) {
-        Box(modifier = modifier.background(Color.White))
+        Box(modifier = modifier.background(paper))
         return
     }
 
@@ -89,8 +90,8 @@ fun PagePreview(
 
     Image(
         painter = painter,
-        contentDescription = "Page Preview",
+        contentDescription = "Page preview",
         contentScale = ContentScale.FillWidth,
-        modifier = modifier.background(Color.White)
+        modifier = modifier.background(paper)
     )
 }

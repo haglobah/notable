@@ -1,5 +1,6 @@
 package com.ethran.notable.ui.components
 
+import com.ethran.notable.ui.design.NotableTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.gestures.quickNavGesture
@@ -29,7 +29,7 @@ fun NotableApp(
     val appNavState = rememberNotableAppState()
     Box(
         Modifier
-            .background(Color.White)
+            .background(NotableTheme.colors.paper)
             .fillMaxSize()
             .quickNavGesture { appNavState.openQuickNav() }
     ) {
@@ -65,7 +65,7 @@ fun NotableApp(
         Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Color.Black)
+            .background(NotableTheme.colors.ink)
     )
     SnackBar(state = snackState, dispatcher = snackDispatcher)
 }

@@ -2,48 +2,53 @@ package com.ethran.notable.ui.views
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.Card
-import androidx.compose.material.Checkbox
-import androidx.compose.material.CircularProgressIndicator
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ethran.notable.navigation.NavigationDestination
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NCheckbox
+import com.ethran.notable.ui.design.NCodeBlock
+import com.ethran.notable.ui.design.NField
+import com.ethran.notable.ui.design.NTextField
+import com.ethran.notable.ui.design.NTopBar
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.theme.InkaTheme
 import com.ethran.notable.ui.viewmodels.BugReportUiState
 import com.ethran.notable.ui.viewmodels.BugReportViewModel
 import com.onyx.android.sdk.utils.ClipboardUtils.copyToClipboard
@@ -107,166 +112,153 @@ fun BugReportScreenContent(
     onSubmitClick: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
+    val c = NotableTheme.colors
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .background(c.paper)
     ) {
-        // Header
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+        NTopBar(title = "Report an issue", onBack = onBack)
+
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(horizontal = NotableSpace.gutter)
+                .padding(top = NotableSpace.xl, bottom = NotableSpace.xl)
+                .widthIn(max = SettingsMaxWidth)
+                .fillMaxWidth()
+        ) {
+            NField("Issue description") {
+                NTextField(
+                    value = uiState.description, onValueChange = onDescriptionChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    minLines = 2,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
+                )
             }
-            Text("Report an Issue", style = MaterialTheme.typography.h6)
-        }
 
-        Spacer(Modifier.height(16.dp))
+            CheckRow("Include diagnostic logs", uiState.includeLogs, onIncludeLogsChange,
+                Modifier.padding(top = NotableSpace.md))
 
-        // Description field
-        OutlinedTextField(
-            value = uiState.description, onValueChange = onDescriptionChange,
-            label = { Text("Issue description") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
-        )
+            if (uiState.includeLogs) {
+                Text(
+                    "Include logs from",
+                    style = NotableTheme.type.meta,
+                    color = c.secondary,
+                    modifier = Modifier.padding(top = NotableSpace.sm)
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(NotableSpace.lg),
+                ) {
+                    uiState.availableTags.forEach { tag ->
+                        CheckRow(tag, uiState.selectedTags[tag] == true, { checked -> onTagChange(tag, checked) })
+                    }
+                    CheckRow("Library logs", uiState.includeLibrariesLogs, onIncludeLibrariesChange)
+                }
+            }
 
-        Spacer(Modifier.height(8.dp))
-
-        // Include logs toggle
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = uiState.includeLogs, onCheckedChange = onIncludeLogsChange
+            ReportPreview(
+                uiState = uiState,
+                modifier = Modifier
+                    .padding(top = NotableSpace.lg)
+                    .weight(1f) // Grow to fill space above buttons
             )
-            Spacer(Modifier.width(8.dp))
-            Text("Include diagnostic logs")
-        }
-
-        // Tags Selection Row
-        if (uiState.includeLogs) {
-            Spacer(Modifier.height(8.dp))
-            Text("Include logs from:", style = MaterialTheme.typography.caption)
 
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
+                    .padding(top = NotableSpace.lg),
+                horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm, Alignment.End)
             ) {
-                uiState.availableTags.forEach { tag ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = uiState.selectedTags[tag] == true,
-                            onCheckedChange = { checked -> onTagChange(tag, checked) }
-                        )
-                        Text(tag, modifier = Modifier.padding(end = 8.dp))
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = uiState.includeLibrariesLogs,
-                        onCheckedChange = onIncludeLibrariesChange
-                    )
-                    Text("Include libraries logs", modifier = Modifier.padding(end = 8.dp))
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Report Preview Card
-        ReportPreviewCard(
-            uiState = uiState, modifier = Modifier.weight(1f) // Grow to fill space above buttons
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        // Action buttons
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            OutlinedButton(
-                onClick = onCopyClick,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Copy Report")
-            }
-
-            Spacer(Modifier.width(16.dp))
-
-            Button(
-                onClick = onSubmitClick,
-                modifier = Modifier.weight(1f),
-                enabled = uiState.description.isNotBlank() && !uiState.isGenerating
-            ) {
-                Text("Submit via GitHub")
+                NButton("Copy report", onClick = onCopyClick)
+                NButton(
+                    "Submit via GitHub",
+                    onClick = onSubmitClick,
+                    style = NButtonStyle.Primary,
+                    enabled = uiState.description.isNotBlank() && !uiState.isGenerating
+                )
             }
         }
     }
 }
 
+/** A check box with its label; the whole row toggles it. */
 @Composable
-private fun ReportPreviewCard(
+private fun CheckRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .heightIn(min = NotableSize.control)
+            .toggleable(
+                value = checked, role = Role.Checkbox,
+                interactionSource = remember { MutableInteractionSource() }, indication = null,
+                onValueChange = onCheckedChange,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        NCheckbox(checked, onCheckedChange = null)
+        Spacer(Modifier.width(NotableSpace.md))
+        Text(label, style = NotableTheme.type.body, color = NotableTheme.colors.ink)
+    }
+}
+
+@Composable
+private fun ReportPreview(
     uiState: BugReportUiState,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        elevation = 4.dp,
-        backgroundColor = MaterialTheme.colors.surface
+    val c = NotableTheme.colors
+    Column(
+        modifier
+            .fillMaxWidth()
+            .border(NotableSize.hairline, c.rule, NotableShape.surface)
+            .padding(NotableSpace.lg)
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("📋 Report Preview", style = MaterialTheme.typography.subtitle1)
-                if (uiState.isGenerating) {
-                    Spacer(Modifier.width(8.dp))
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                "📝 Description:",
-                style = MaterialTheme.typography.caption,
-                color = MaterialTheme.colors.primary
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Report preview", style = NotableTheme.type.heading, color = c.ink)
+            // No spinner on e-ink: a still word says the same without redrawing.
+            if (uiState.isGenerating) Text(
+                "Generating…", style = NotableTheme.type.meta, color = c.secondary,
+                modifier = Modifier.padding(start = NotableSpace.md)
             )
-            Text(
-                uiState.description.ifBlank { "_No description provided_" },
-                modifier = Modifier.padding(vertical = 4.dp)
-            )
+        }
 
-            Text(
-                "📱 Device Info:",
-                style = MaterialTheme.typography.caption,
-                color = MaterialTheme.colors.primary
-            )
-            Text(uiState.deviceInfo, modifier = Modifier.padding(vertical = 4.dp))
+        PreviewLabel("Description")
+        Text(
+            uiState.description.ifBlank { "No description yet" },
+            style = NotableTheme.type.body,
+            color = if (uiState.description.isBlank()) c.secondary else c.ink,
+        )
 
-            if (uiState.includeLogs) {
-                Text(
-                    "📋 Logs:",
-                    style = MaterialTheme.typography.caption,
-                    color = MaterialTheme.colors.primary
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text(
-                        text = uiState.formattedLogs,
-                        modifier = Modifier.padding(vertical = 4.dp),
-                        style = MaterialTheme.typography.body2.copy(fontFamily = FontFamily.Monospace)
-                    )
-                }
-            }
+        PreviewLabel("Device info")
+        Text(uiState.deviceInfo, style = NotableTheme.type.body, color = c.ink)
+
+        if (uiState.includeLogs) {
+            PreviewLabel("Logs")
+            NCodeBlock(uiState.formattedLogs, Modifier.weight(1f), maxHeight = Dp.Infinity)
         }
     }
+}
+
+@Composable
+private fun PreviewLabel(text: String) {
+    Text(
+        text,
+        style = NotableTheme.type.label,
+        color = NotableTheme.colors.secondary,
+        modifier = Modifier.padding(top = NotableSpace.md, bottom = NotableSpace.xs)
+    )
 }
 
 // 3. PREVIEWS
 @Preview(showBackground = true, name = "Report Screen - Logs Enabled")
 @Composable
-fun BugReportScreenPreview() {
+fun BugReportScreenPreview() = InkaTheme {
     BugReportScreenContent(
         uiState = BugReportUiState(
             description = "App crashes when I click the favorite button.",

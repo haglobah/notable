@@ -4,17 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,16 +13,22 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ethran.notable.NotableApp
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NCodeBlock
+import com.ethran.notable.ui.design.NSection
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Copy
+import compose.icons.feathericons.Share2
+import compose.icons.feathericons.Trash2
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -55,50 +52,38 @@ fun CrashLogsSettings() {
         value = withContext(Dispatchers.IO) { loadCrashLogs(context) }
     }
 
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(
-            text = "Crash logs (${logs.size})",
-            style = MaterialTheme.typography.subtitle1
-        )
-        Spacer(Modifier.height(4.dp))
-
+    NSection(
+        title = "Crash logs",
+        description = if (logs.isEmpty()) null else "${logs.size} ${if (logs.size == 1) "file" else "files"}, newest first",
+    ) {
         if (logs.isEmpty()) {
             Text(
-                text = "No crash logs — nothing has crashed since the last clear.",
-                style = MaterialTheme.typography.caption,
-                color = MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
+                text = "Nothing has crashed since the last clear.",
+                style = NotableTheme.type.meta,
+                color = NotableTheme.colors.secondary,
             )
-            return@Column
+            return@NSection
         }
 
         val combined = remember(logs) { combineForExport(logs) }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Text(
-                text = combined,
-                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
-                color = MaterialTheme.colors.onSurface
-            )
-        }
+        NCodeBlock(combined, maxHeight = 240.dp)
 
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
+        Row(
+            Modifier.padding(top = NotableSpace.md),
+            horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm),
+        ) {
+            NButton("Copy", onClick = {
                 clipboard.setText(AnnotatedString(combined))
                 Toast.makeText(context, "Copied crash logs", Toast.LENGTH_SHORT).show()
-            }) { Text("Copy") }
+            }, icon = FeatherIcons.Copy)
 
-            Button(onClick = { shareText(context, combined) }) { Text("Share") }
+            NButton("Share", onClick = { shareText(context, combined) }, icon = FeatherIcons.Share2)
 
-            Button(onClick = {
+            NButton("Clear", onClick = {
                 clearCrashLogs(context)
                 reload++
-            }) { Text("Clear") }
+            }, style = NButtonStyle.Danger, icon = FeatherIcons.Trash2)
         }
     }
 }
