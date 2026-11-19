@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.editor.state.ClipboardStore
 import com.ethran.notable.editor.ui.BookPanelDialog
+import com.ethran.notable.editor.ui.JumpBackChip
 import com.ethran.notable.editor.ui.EditorSurface
 import com.ethran.notable.editor.ui.HorizontalScrollIndicator
 import com.ethran.notable.editor.ui.ScrollIndicator
@@ -267,7 +268,15 @@ fun EditorView(
                     onSearch = { viewModel.bookReading.search(it) },
                     onJump = { viewModel.onToolbarAction(ToolbarAction.JumpToPage(it)) },
                     onClose = { viewModel.onToolbarAction(ToolbarAction.CloseBookPanel) },
+                    onGoToPage = { viewModel.onToolbarAction(ToolbarAction.GoToPageNumber(it)) },
+                    onClearHighlights = { viewModel.onToolbarAction(ToolbarAction.ClearSearchHighlights) },
                 )
+            }
+            // "Back to page 12" after a jump (docs/plans/library-features.md, 32).
+            val jumpBack by viewModel.bookReading.jumpBack.collectAsStateWithLifecycle()
+            if (bookPanel == null) jumpBack?.let { jump ->
+                JumpBackChip(jump, onBack = { viewModel.onToolbarAction(ToolbarAction.JumpBack) },
+                    onDismiss = { viewModel.onToolbarAction(ToolbarAction.DismissJumpBack) })
             }
         }
     }

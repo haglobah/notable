@@ -365,6 +365,20 @@
     <string name="trash_empty_message">Everything in the trash will be deleted for good.</string>
     <string name="trash_delete_title">Delete for good?</string>
     <string name="trash_delete_message">“%1$s” will be deleted for good. This cannot be undone.</string>
+    <!-- Reading aids (docs/plans/library-features.md) -->
+    <string name="book_page_of">Page %1$d of %2$d</string>
+    <string name="book_time_left">about %1$s left</string>
+    <string name="book_chapter_left">%1$s in this chapter</string>
+    <string name="book_time_unknown">time left shows after a few pages read</string>
+    <string name="book_duration_short">under a minute</string>
+    <string name="book_duration_m">%1$d min</string>
+    <string name="book_duration_hm">%1$d h %2$02d min</string>
+    <string name="book_go_to_page">Go to page</string>
+    <string name="book_go_to_page_hint">1 to %1$d</string>
+    <string name="book_clear_highlights">Clear highlights</string>
+    <string name="book_back_to_page">Back to page %1$d</string>
+    <string name="book_back">Back</string>
+    <string name="book_back_dismiss">Stay here</string>
     <plurals name="select_move_title">
         <item quantity="one">Move %1$d item</item>
         <item quantity="other">Move %1$d items</item>

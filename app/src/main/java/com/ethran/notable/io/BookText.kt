@@ -15,7 +15,11 @@ data class OutlineEntry(val title: String, val page: Int, val depth: Int)
  * A page with hits. [quads] are in document points, 8 numbers each (ul, ur, ll, lr as x, y), as in
  * the TS `SearchHit`.
  */
-data class SearchHit(val page: Int, val quads: List<FloatArray>, val snippet: String)
+data class SearchHit(
+    val page: Int, val quads: List<FloatArray>, val snippet: String,
+    /** The page's size and top left corner in points, to place [quads] on its rendering; size 0 when unknown. */
+    val width: Float = 0f, val height: Float = 0f, val x0: Float = 0f, val y0: Float = 0f,
+)
 
 /**
  * The table of contents and in-book search (docs/plans/ebook-features.md, "Table of contents and
@@ -74,7 +78,9 @@ object BookText {
                 if (!found.isNullOrEmpty()) {
                     val st = page.toStructuredText("preserve-whitespace")
                     val text = try { st.asText() } finally { st.destroy() }
+                    val bounds = page.bounds
                     hits += SearchHit(
+                        width = bounds.x1 - bounds.x0, height = bounds.y1 - bounds.y0, x0 = bounds.x0, y0 = bounds.y0,
                         page = i,
                         quads = found.flatMap { it.asList() }.map {
                             floatArrayOf(it.ul_x, it.ul_y, it.ur_x, it.ur_y, it.ll_x, it.ll_y, it.lr_x, it.lr_y)

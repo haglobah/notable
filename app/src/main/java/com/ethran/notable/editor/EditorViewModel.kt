@@ -169,6 +169,12 @@ sealed class ToolbarAction {
     object CloseBookPanel : ToolbarAction()
     /** A contents entry or search result was tapped: show notebook page [pageId]. */
     data class JumpToPage(val pageId: String) : ToolbarAction()
+    /** Go to page [number] (1-based) of the notebook, from the contents (docs/plans/library-features.md). */
+    data class GoToPageNumber(val number: Int) : ToolbarAction()
+    /** Back to where the last jump came from. */
+    object JumpBack : ToolbarAction()
+    object DismissJumpBack : ToolbarAction()
+    object ClearSearchHighlights : ToolbarAction()
 
     object CloseAllMenus : ToolbarAction()
     data class UpdateQuickNavOpen(val isOpen: Boolean) : ToolbarAction()
@@ -249,7 +255,17 @@ class EditorViewModel @Inject constructor(
     }
 
     /** Contents, search and reading state for a notebook made from a book. */
-    val bookReading = BookReading(appRepository, viewModelScope) { showHint(it, 3000) }
+    val bookReading = BookReading(appRepository, viewModelScope) { showHint(it, 3000) }.also {
+        // Pages whose search hits change are drawn fresh on their next visit (docs/plans/library-features.md).
+        SearchHighlights.onChanged = { ids -> ids.forEach { id -> pageDataManager.forgetCachedBitmap(id) } }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Highlights belong to this editor's search; the next book starts without them.
+        SearchHighlights.onChanged = null
+        SearchHighlights.clear()
+    }
 
     // ---- One-Time Events (Channels) ----
     private val uiEventChannel = Channel<EditorUiEvent>(Channel.BUFFERED)
@@ -382,12 +398,23 @@ class EditorViewModel @Inject constructor(
             ToolbarAction.NavigateToPages -> handleNavigateToPages()
             ToolbarAction.NavigateToHome -> sendUiEvent(EditorUiEvent.NavigateToLibrary(null))
 
-            ToolbarAction.OpenContents -> openBookPanel { bookReading.openContents() }
+            ToolbarAction.OpenContents -> openBookPanel { bookReading.openContents(currentPageId) }
             ToolbarAction.OpenBookSearch -> openBookPanel { bookReading.openSearch() }
             ToolbarAction.CloseBookPanel -> closeBookPanel()
             is ToolbarAction.JumpToPage -> {
                 closeBookPanel()
-                if (action.pageId != currentPageId) changePage(action.pageId)
+                if (action.pageId != currentPageId) jumpTo(action.pageId)
+            }
+            is ToolbarAction.GoToPageNumber -> viewModelScope.launch(Dispatchers.IO) {
+                val id = bookReading.pageAt(action.number)
+                if (id == null) showHint("No page ${action.number}", 2000)
+                else withContext(Dispatchers.Main) { onToolbarAction(ToolbarAction.JumpToPage(id)) }
+            }
+            ToolbarAction.JumpBack -> bookReading.takeJumpBack()?.let { if (it != currentPageId) changePage(it) }
+            ToolbarAction.DismissJumpBack -> bookReading.dismissJumpBack()
+            ToolbarAction.ClearSearchHighlights -> {
+                SearchHighlights.clear() // drops the cached bitmaps of the pages that had hits
+                viewModelScope.launch { CanvasEventBus.forceUpdate.emit(null) } // a full redraw, background included
             }
             is ToolbarAction.SetFinished -> viewModelScope.launch(Dispatchers.IO) {
                 bookReading.setFinished(action.finished)?.let { f -> _toolbarState.update { it.copy(isFinished = f) } }
@@ -744,6 +771,7 @@ class EditorViewModel @Inject constructor(
             // The View's LaunchedEffect will handle the full load once navigation syncs.
             Log.d("EditorView", "Page changed")
             _toolbarState.update { it.copy(pageId = newPageId) }
+            bookReading.pageShown(newPageId) // reading pace, and the way back after a jump
             // Do NOT sync here: syncing the notebook that is open in the editor could download a
             // newer remote copy and rewrite Room underneath the live in-memory state (P19).
             // Sync is deferred to editor close (see onDispose).
@@ -762,6 +790,18 @@ class EditorViewModel @Inject constructor(
      *
      * @param id The unique identifier of the page to switch to.
      */
+    /**
+     * A jump (contents, search hit, go to page): remembered so the reader can go back
+     * (docs/plans/library-features.md, 32); a page with search hits is drawn fresh to show them.
+     */
+    private fun jumpTo(id: String) {
+        val from = currentPageId
+        viewModelScope.launch(Dispatchers.IO) {
+            bookReading.jumped(from, id)
+            withContext(Dispatchers.Main) { changePage(id) }
+        }
+    }
+
     fun changePage(id: String) {
         log.d("Changing page to $id, from $currentPageId")
         viewModelScope.launch(Dispatchers.IO) {

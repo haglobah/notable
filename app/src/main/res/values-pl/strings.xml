@@ -388,6 +388,20 @@
     <string name="trash_empty_message">Wszystko w koszu zostanie usunięte na stałe.</string>
     <string name="trash_delete_title">Usunąć na stałe?</string>
     <string name="trash_delete_message">„%1$s” zostanie usunięte na stałe. Tej operacji nie można cofnąć.</string>
+    <!-- Pomoce do czytania (docs/plans/library-features.md) -->
+    <string name="book_page_of">Strona %1$d z %2$d</string>
+    <string name="book_time_left">zostało około %1$s</string>
+    <string name="book_chapter_left">%1$s do końca rozdziału</string>
+    <string name="book_time_unknown">pozostały czas pojawi się po kilku przeczytanych stronach</string>
+    <string name="book_duration_short">mniej niż minuta</string>
+    <string name="book_duration_m">%1$d min</string>
+    <string name="book_duration_hm">%1$d godz. %2$02d min</string>
+    <string name="book_go_to_page">Przejdź do strony</string>
+    <string name="book_go_to_page_hint">1 do %1$d</string>
+    <string name="book_clear_highlights">Wyczyść wyróżnienia</string>
+    <string name="book_back_to_page">Wróć do strony %1$d</string>
+    <string name="book_back">Wróć</string>
+    <string name="book_back_dismiss">Zostań tutaj</string>
     <plurals name="select_move_title">
         <item quantity="one">Przenieś %1$d element</item>
         <item quantity="few">Przenieś %1$d elementy</item>

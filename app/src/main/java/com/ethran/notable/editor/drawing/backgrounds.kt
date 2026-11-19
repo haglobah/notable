@@ -215,7 +215,9 @@ private val bgBitmapPaint = Paint().apply {
 }
 
 fun drawBitmapToCanvas(
-    canvas: Canvas, imageBitmap: Bitmap, scroll: Offset, scale: Float, repeat: Boolean
+    canvas: Canvas, imageBitmap: Bitmap, scroll: Offset, scale: Float, repeat: Boolean,
+    /** Search hits on the page, in fractions of it (docs/plans/library-features.md, 29). */
+    highlights: List<android.graphics.RectF> = emptyList(),
 ) {
     canvas.drawColor(Color.WHITE)
     val imageWidth = imageBitmap.width
@@ -265,7 +267,22 @@ fun drawBitmapToCanvas(
             currentTop += scaledHeight
         }
     }
+    // Over the first copy of the page, where the bitmap's top sits at -scroll.y.
+    if (highlights.isNotEmpty()) {
+        for (r in highlights) {
+            val box = android.graphics.RectF(
+                r.left * widthOnCanvas - scroll.x, r.top * scaledHeight - scroll.y,
+                r.right * widthOnCanvas - scroll.x, r.bottom * scaledHeight - scroll.y,
+            )
+            canvas.drawRect(box, highlightFill)
+            canvas.drawLine(box.left, box.bottom, box.right, box.bottom, highlightLine)
+        }
+    }
 }
+
+/** A search hit: a light grey wash that keeps the text readable on e-ink, and an ink underline. */
+private val highlightFill = Paint().apply { color = Color.argb(70, 0, 0, 0); style = Paint.Style.FILL }
+private val highlightLine = Paint().apply { color = Color.BLACK; strokeWidth = 3f; style = Paint.Style.STROKE }
 
 fun drawBg(
     canvas: Canvas,
@@ -276,6 +293,7 @@ fun drawBg(
     scale: Float = 1f,          // When exporting, we change scale of canvas. therefore canvas.width/height is scaled
     repeat: Boolean = false,    // for repeating image
     clipRect: Rect? = null,     // before the scaling
+    highlights: List<android.graphics.RectF> = emptyList(),
 ) {
 
     log.v("Loading the background")
@@ -305,7 +323,7 @@ fun drawBg(
 
         else -> {
             if (resourceBitmap != null) {
-                drawBitmapToCanvas(canvas, resourceBitmap, scroll, scale, repeat)
+                drawBitmapToCanvas(canvas, resourceBitmap, scroll, scale, repeat, highlights)
                 if (backgroundType is BackgroundType.CoverImage) {
                     drawTitleBox(canvas)
                 }

@@ -898,6 +898,11 @@ class PageDataManager @Inject constructor(
         entries[pageId]?.bitmap?.get()?.takeIf { !it.isRecycled && it.isMutable }
     }
 
+    /** Drops [pageId]'s cached bitmap, so the next visit draws it again (e.g. with search highlights). */
+    fun forgetCachedBitmap(pageId: String) = synchronized(lock) {
+        entries[pageId]?.bitmap = null
+    }
+
     fun cacheBitmap(pageId: String, bitmap: Bitmap) = synchronized(lock) {
         getOrCreateEntryLocked(pageId).bitmap = SoftReference(bitmap)
     }
@@ -1260,7 +1265,8 @@ class PageDataManager @Inject constructor(
         log.i("Page exit, is page loaded: ${validatePageDataLoaded(targetPageId)}")
         if (validatePageDataLoaded(targetPageId)) {
             cacheBitmap(targetPageId, windowedBitmap)
-            requestPreviewSave(targetPageId)
+            // The bitmap shows search hits then; the library's preview mustn't keep them.
+            if (com.ethran.notable.editor.SearchHighlights.on(targetPageId).isEmpty()) requestPreviewSave(targetPageId)
             recomputeHeight(targetPageId)
             // Size accounting is kept current on every setStrokes/setImages, so no recompute here.
         }

@@ -884,7 +884,8 @@ class PageView(
             resourceBitmap = bgImage,
             scale = scale,
             repeat = false,
-            clipRect = clipRect
+            clipRect = clipRect,
+            highlights = SearchHighlights.on(currentPageId),
         )
     }
 
