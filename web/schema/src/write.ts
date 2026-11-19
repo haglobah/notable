@@ -29,6 +29,7 @@ const int = (v: number) => {
 
 export const folderValue = (x: Folder) => ({
   title: s(x.title), parentId: sOrNull(x.parentId), createdAt: x.createdAt, updatedAt: x.updatedAt,
+  ...(x.trashedAt === undefined ? {} : { trashedAt: x.trashedAt }),
 })
 
 const sourceValue = (x: Source) =>
@@ -57,6 +58,8 @@ export const notebookEntryValue = (x: NotebookEntry) => ({
   ...(x.pageCount === undefined ? {} : { pageCount: int(x.pageCount) }),
   ...(x.readPage === undefined ? {} : { readPage: int(x.readPage) }),
   ...(x.rating === undefined ? {} : { rating: x.rating === null ? null : checkRating(x.rating) }),
+  ...(x.queuedAt === undefined ? {} : { queuedAt: x.queuedAt }),
+  ...(x.trashedAt === undefined ? {} : { trashedAt: x.trashedAt }),
 })
 
 const checkRating = (r: number) => {
@@ -108,6 +111,70 @@ export function setFinished(d: Record<string, any>, id: string, at: Date | null)
   const e = d.notebooks[id]
   if (e === undefined) throw new Error(`no notebook ${id}`)
   e.finishedAt = at
+}
+
+/*
+ * Read next and the trash (docs/plans/library-features.md). Call inside `A.change` on the library
+ * doc; each sets one field.
+ */
+
+/** [at] puts entry [id] on the Read next list; null takes it off. */
+export function setQueued(d: Record<string, any>, id: string, at: Date | null) {
+  entryOf(d, id).queuedAt = at
+}
+
+/** [at] moves entry [id] to the trash; null restores it (see restoreEntry for the parent). */
+export function setEntryTrashed(d: Record<string, any>, id: string, at: Date | null) {
+  entryOf(d, id).trashedAt = at
+}
+
+/** [at] moves folder [id], with everything in it, to the trash; null restores it. */
+export function setFolderTrashed(d: Record<string, any>, id: string, at: Date | null) {
+  const f = d.folders[id]
+  if (f === undefined) throw new Error(`no folder ${id}`)
+  f.trashedAt = at
+}
+
+/** Moves entry [id] into folder [folderId] (null: the root). A structural edit: updatedAt moves. */
+export function moveEntry(d: Record<string, any>, id: string, folderId: string | null, at: Date) {
+  const e = entryOf(d, id)
+  e.folderId = sOrNull(folderId)
+  e.updatedAt = at
+}
+
+/**
+ * Moves folder [id] under [parentId] (null: the root). False, and nothing written, when
+ * [parentId] is [id] itself or inside it.
+ */
+export function moveFolder(d: Record<string, any>, id: string, parentId: string | null, at: Date): boolean {
+  const f = d.folders[id]
+  if (f === undefined) throw new Error(`no folder ${id}`)
+  const seen = new Set<string>()
+  for (let p = parentId; p !== null && !seen.has(p); p = d.folders[p]?.parentId == null ? null : String(d.folders[p].parentId)) {
+    if (p === id) return false
+    seen.add(p)
+  }
+  f.parentId = sOrNull(parentId)
+  f.updatedAt = at
+  return true
+}
+
+/** Deletes entry [id] for good (its notebook doc stays, unreferenced). */
+export function deleteEntry(d: Record<string, any>, id: string) {
+  if (d.notebooks[id] !== undefined) delete d.notebooks[id]
+}
+
+/** Deletes folder [id] for good, with every folder below it and every entry in them, as the Boox does. */
+export function deleteFolder(d: Record<string, any>, id: string) {
+  const gone = new Set<string>([id])
+  for (let grew = true; grew;) {
+    grew = false
+    for (const [fid, f] of Object.entries<any>(d.folders)) {
+      if (!gone.has(fid) && f.parentId != null && gone.has(String(f.parentId))) { gone.add(fid); grew = true }
+    }
+  }
+  for (const fid of gone) if (d.folders[fid] !== undefined) delete d.folders[fid]
+  for (const [eid, e] of Object.entries<any>(d.notebooks)) if (e.folderId != null && gone.has(String(e.folderId))) delete d.notebooks[eid]
 }
 
 export const libraryValue = (x: Library) => ({

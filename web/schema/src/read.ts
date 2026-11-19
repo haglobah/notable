@@ -94,7 +94,10 @@ export function readLibrary(doc: unknown): Library {
     folders: Object.fromEntries(Object.keys(folders).map(id => {
       const p = `folders.${id}`
       const o = map(folders, id, "folders")
-      return [id, { id, title: str(o, "title", p), parentId: strOrNull(o, "parentId", p), createdAt: date(o, "createdAt", p), updatedAt: date(o, "updatedAt", p) }]
+      return [id, {
+        id, title: str(o, "title", p), parentId: strOrNull(o, "parentId", p), createdAt: date(o, "createdAt", p), updatedAt: date(o, "updatedAt", p),
+        ...(has(o, "trashedAt") ? { trashedAt: dateOrNull(o, "trashedAt", p) } : {}),
+      }]
     })),
     notebooks: Object.fromEntries(Object.keys(notebooks).map(id => {
       const p = `notebooks.${id}`
@@ -117,22 +120,26 @@ export function readLibrary(doc: unknown): Library {
 }
 
 /** The optional book keys of an entry (meta, readAt, finishedAt); absent keys stay absent. */
-type BookFields = Pick<NotebookEntry, "meta" | "readAt" | "finishedAt" | "pageCount" | "readPage" | "rating">
+type BookFields = Pick<NotebookEntry, "meta" | "readAt" | "finishedAt" | "pageCount" | "readPage" | "rating" | "queuedAt" | "trashedAt">
+
+const has = (o: Obj, k: string) => k in o && o[k] !== undefined
+const dateOrNull = (o: Obj, k: string, p: string) => (o[k] === null ? null : date(o, k, p))
 
 function readBookFields(o: Obj, p: string): BookFields {
-  const has = (k: string) => k in o && o[k] !== undefined
   const out: BookFields = {}
-  if (has("meta")) out.meta = readMeta(map(o, "meta", p), `${p}.meta`)
-  if (has("readAt")) out.readAt = date(o, "readAt", p)
-  if (has("finishedAt")) out.finishedAt = o.finishedAt === null ? null : date(o, "finishedAt", p)
+  if (has(o, "queuedAt")) out.queuedAt = dateOrNull(o, "queuedAt", p)
+  if (has(o, "trashedAt")) out.trashedAt = dateOrNull(o, "trashedAt", p)
+  if (has(o, "meta")) out.meta = readMeta(map(o, "meta", p), `${p}.meta`)
+  if (has(o, "readAt")) out.readAt = date(o, "readAt", p)
+  if (has(o, "finishedAt")) out.finishedAt = o.finishedAt === null ? null : date(o, "finishedAt", p)
   const count = (k: "pageCount" | "readPage") => {
     const v = int(o[k], `${p}.${k}`)
     if (v < 0) throw new SchemaError(`${p}.${k}: expected 0 or more, got ${v}`)
     return v
   }
-  if (has("pageCount")) out.pageCount = count("pageCount")
-  if (has("readPage")) out.readPage = count("readPage")
-  if (has("rating")) {
+  if (has(o, "pageCount")) out.pageCount = count("pageCount")
+  if (has(o, "readPage")) out.readPage = count("readPage")
+  if (has(o, "rating")) {
     if (o.rating === null) out.rating = null
     else {
       const r = int(o.rating, `${p}.rating`)
