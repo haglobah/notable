@@ -40,6 +40,11 @@ fun PageCard(
     modifier: Modifier = Modifier,
     touchModifier: Modifier = Modifier,
     isReorderDragging: Boolean = false,
+    /** Null: not selecting. Else whether this page is selected; a tap then toggles it. */
+    selected: Boolean? = null,
+    onToggleSelected: () -> Unit = {},
+    /** A long press starts selecting (docs/plans/library-features.md, 35). */
+    onLongPress: (() -> Unit)? = null,
 ) {
     val c = NotableTheme.colors
     Box(modifier = modifier) {
@@ -49,11 +54,13 @@ fun PageCard(
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
                 .border(
-                    if (isOpen) NotableSize.strong else NotableSize.hairline,
-                    if (isOpen) c.ink else c.rule,
+                    if (isOpen || selected == true) NotableSize.strong else NotableSize.hairline,
+                    if (isOpen || selected == true) c.ink else c.rule,
                     NotableShape.paper
                 )
-                .inkClickable(enabled = isReorderDragging) { onOpen() }
+                .inkClickable(enabled = isReorderDragging, onLongClick = onLongPress.takeIf { !isEditMode }) {
+                    if (selected != null) onToggleSelected() else onOpen()
+                }
                 .then(touchModifier), pageId
         )
 
@@ -66,7 +73,9 @@ fun PageCard(
                 .padding(NotableSpace.sm)
         )
 
-        if (isEditMode) {
+        if (selected != null) SelectMark(selected, Modifier.align(Alignment.TopStart).padding(NotableSpace.sm))
+
+        if (isEditMode && selected == null) {
             // Bottom-right actions
             Row(
                 modifier = Modifier

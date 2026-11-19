@@ -402,10 +402,29 @@
     <string name="book_back_to_page">Wróć do strony %1$d</string>
     <string name="book_back">Wróć</string>
     <string name="book_back_dismiss">Zostań tutaj</string>
+    <!-- Strony (docs/plans/library-features.md) -->
+    <string name="pages_select">Zaznacz</string>
+    <plurals name="pages_delete_selected_title">
+        <item quantity="one">Usunąć %1$d stronę?</item>
+        <item quantity="few">Usunąć %1$d strony?</item>
+        <item quantity="many">Usunąć %1$d stron?</item>
+        <item quantity="other">Usunąć %1$d strony?</item>
+    </plurals>
+    <string name="pages_move_to_notebook">Przenieś do notatnika…</string>
+    <string name="pages_move_start">Przenieś na początek</string>
+    <string name="pages_move_end">Przenieś na koniec</string>
+    <string name="pages_template">Szablon…</string>
+    <string name="pages_move_filter">Znajdź notatnik</string>
+    <string name="pages_move_none">Żaden inny notatnik nie pasuje.</string>
+    <string name="pages_add_title">Nowa strona %1$d</string>
+    <string name="pages_add_usual">Z szablonem notatnika</string>
+    <string name="pages_add_choose">Wybierz szablon…</string>
     <plurals name="select_move_title">
         <item quantity="one">Przenieś %1$d element</item>
         <item quantity="few">Przenieś %1$d elementy</item>
         <item quantity="many">Przenieś %1$d elementów</item>
         <item quantity="other">Przenieś %1$d elementu</item>
     </plurals>
+    <string name="pages_duplicate">Duplikuj</string>
+    <string name="pages_delete">Usuń</string>
 </resources>

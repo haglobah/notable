@@ -257,20 +257,66 @@ class LibraryEdits @Inject constructor(
     }
 
     /** A copy right after the original, with copies of its strokes and images; null when it's gone. */
-    suspend fun duplicatePage(pageId: String): String? {
+    suspend fun duplicatePage(pageId: String): String? = copyPage(pageId, into = null)
+
+    /**
+     * Moves pages into notebook [notebookId], at its end in the order given
+     * (docs/plans/library-features.md, 36): each is copied there with new ids, then deleted where
+     * it was. The copy reaches the target's doc before the original is deleted, so a crash between
+     * leaves the page twice, never lost. Pages already in [notebookId] stay. Returns how many moved.
+     */
+    suspend fun movePagesTo(pageIds: List<String>, notebookId: String): Int {
+        if (books.getById(notebookId) == null) throw IllegalStateException("Notebook no longer exists")
+        var moved = 0
+        for (id in pageIds) {
+            val page = pages.getById(id) ?: continue
+            if (page.notebookId == notebookId) continue
+            copyPage(id, into = notebookId) ?: continue
+            deletePage(id, page.notebookId)
+            moved++
+        }
+        return moved
+    }
+
+    /**
+     * A new page at [index] of the notebook's order with background [type]/[value] instead of the
+     * notebook's (docs/plans/library-features.md, 39); null when the notebook is gone.
+     */
+    suspend fun addPageWithBackground(notebookId: String, index: Int, type: String, value: String): String? {
+        val id = addPage(notebookId, index) ?: return null
+        setPageBackground(id, type, value)
+        return id
+    }
+
+    /**
+     * A copy of [pageId] with copies of its strokes and images: right after it ([into] null), or at
+     * the end of notebook [into]. Null when the page (or that notebook) is gone.
+     */
+    private suspend fun copyPage(pageId: String, into: String?): String? {
         val data = pages.getWithDataById(pageId) ?: return null
         val stamp = Date(now())
-        val copy = data.page.copy(id = UUID.randomUUID().toString(), scroll = 0, createdAt = stamp, updatedAt = stamp)
+        val target = into?.let { books.getById(it) ?: return null }
+        val copy = data.page.copy(id = UUID.randomUUID().toString(), scroll = 0, createdAt = stamp, updatedAt = stamp,
+            notebookId = target?.id ?: data.page.notebookId, parentFolderId = if (target != null) null else data.page.parentFolderId)
+            // An AutoPdf page shows the PDF page at its own index; elsewhere it keeps the one it showed.
+            .let { c ->
+                val from = data.page.notebookId?.let { books.getById(it) }
+                val index = from?.pageIds?.indexOf(pageId) ?: -1
+                if (target != null && c.backgroundType == BackgroundType.AutoPdf.key && index >= 0)
+                    c.copy(backgroundType = BackgroundType.Pdf(index).key) else c
+            }
         val copiedStrokes = data.strokes.map { it.copy(id = UUID.randomUUID().toString(), pageId = copy.id, createdAt = stamp, updatedAt = stamp) }
         val copiedImages = data.images.map { it.copy(id = UUID.randomUUID().toString(), pageId = copy.id, createdAt = stamp, updatedAt = stamp) }
+        // Right after the original, or last in the target notebook.
+        val after = if (target != null) target.pageIds.lastOrNull() else pageId
         val room: suspend () -> Unit = {
             pages.create(copy)
             if (copiedStrokes.isNotEmpty()) strokes.create(copiedStrokes)
             if (copiedImages.isNotEmpty()) images.create(copiedImages)
-            copy.notebookId?.let { books.placePage(it, copy.id, pageId) }
+            copy.notebookId?.let { books.placePage(it, copy.id, after) }
         }
         val nb = copy.notebookId
-        if (nb != null) mirror.create(LocalChange.PageAdded(nb, copy.id, pageId), room)
+        if (nb != null) mirror.create(LocalChange.PageAdded(nb, copy.id, after), room)
         else mirror.create(LocalChange.PageUpserted(copy), room)
         return copy.id
     }

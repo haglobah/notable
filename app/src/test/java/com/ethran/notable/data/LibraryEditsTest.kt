@@ -353,6 +353,38 @@ class LibraryEditsTest {
     }
 
     @Test
+    fun `pages move to another notebook as copies with new ids, the originals deleted after`() = runBlocking {
+        book(3)
+        store.notebooks["nb2"] = Notebook("nb2", "Other", "q1", listOf("q1"), null, createdAt = t0, updatedAt = t0)
+        store.pages["q1"] = Page("q1", notebookId = "nb2", createdAt = t0, updatedAt = t0)
+        store.pages["p1"] = store.pages.getValue("p1").copy(backgroundType = "autoPdf", background = "book.pdf")
+        mirror.changes.clear()
+        assertEquals(2, edits.movePagesTo(listOf("p1", "p3"), "nb2"))
+        assertEquals(listOf("p2"), store.notebooks.getValue("nb1").pageIds)
+        val target = store.notebooks.getValue("nb2").pageIds
+        assertEquals(3, target.size)
+        assertEquals("q1", target[0])
+        val (m1, m3) = target[1] to target[2]
+        assertTrue(m1 != "p1" && m3 != "p3")
+        assertFalse("p1" in store.pages || "p3" in store.pages)
+        assertEquals("nb2", store.pages.getValue(m1).notebookId)
+        assertEquals("the PDF page it showed, pinned", "pdf0", store.pages.getValue(m1).backgroundType)
+        assertEquals("its stroke came along", 1, store.strokes.values.count { it.pageId == m1 })
+        // Copy first, then delete, per page.
+        val kinds = mirror.changes.map { it.second::class.simpleName }
+        assertEquals(listOf("PageAdded", "PageDeleted", "PageAdded", "PageDeleted"), kinds)
+        assertEquals("a page already there stays", 0, edits.movePagesTo(listOf("q1"), "nb2"))
+    }
+
+    @Test
+    fun `a page can be added with its own template`() = runBlocking {
+        book(2)
+        val id = edits.addPageWithBackground("nb1", 1, "native", "lined")!!
+        assertEquals(listOf("p1", id, "p2"), store.notebooks.getValue("nb1").pageIds)
+        assertEquals("lined", store.pages.getValue(id).background)
+    }
+
+    @Test
     fun `ratings and page count backfills go to the doc first`() = runBlocking {
         book()
         edits.rateNotebook("nb1", 9)

@@ -379,8 +379,25 @@
     <string name="book_back_to_page">Back to page %1$d</string>
     <string name="book_back">Back</string>
     <string name="book_back_dismiss">Stay here</string>
+    <!-- Pages (docs/plans/library-features.md) -->
+    <string name="pages_select">Select</string>
+    <plurals name="pages_delete_selected_title">
+        <item quantity="one">Delete %1$d page?</item>
+        <item quantity="other">Delete %1$d pages?</item>
+    </plurals>
+    <string name="pages_move_to_notebook">Move to notebook…</string>
+    <string name="pages_move_start">Move to start</string>
+    <string name="pages_move_end">Move to end</string>
+    <string name="pages_template">Template…</string>
+    <string name="pages_move_filter">Find a notebook</string>
+    <string name="pages_move_none">No other notebook matches.</string>
+    <string name="pages_add_title">New page %1$d</string>
+    <string name="pages_add_usual">With the notebook\'s template</string>
+    <string name="pages_add_choose">Choose a template…</string>
     <plurals name="select_move_title">
         <item quantity="one">Move %1$d item</item>
         <item quantity="other">Move %1$d items</item>
     </plurals>
+    <string name="pages_duplicate">Duplicate</string>
+    <string name="pages_delete">Delete</string>
 </resources>
