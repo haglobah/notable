@@ -41,7 +41,8 @@ object FixtureJson {
         quickNotebookId = o.strOrNull("quickNotebookId"),
         folders = o.obj("folders").mapValues { (id, v) ->
             val f = v.jsonObject
-            AmFolder(id, f.str("title"), f.strOrNull("parentId"), f.date("createdAt"), f.date("updatedAt"))
+            AmFolder(id, f.str("title"), f.strOrNull("parentId"), f.date("createdAt"), f.date("updatedAt"),
+                trashedAt = f.strOrNull("trashedAt")?.let { f.date("trashedAt") }, hasTrashedAt = "trashedAt" in f)
         },
         notebooks = o.obj("notebooks").mapValues { (id, v) ->
             val n = v.jsonObject
@@ -62,6 +63,10 @@ object FixtureJson {
                 readPage = n["readPage"]?.jsonPrimitive?.int,
                 rating = n["rating"]?.let { if (it is JsonNull) null else it.jsonPrimitive.int },
                 hasRating = "rating" in n,
+                queuedAt = n.strOrNull("queuedAt")?.let { n.date("queuedAt") },
+                hasQueuedAt = "queuedAt" in n,
+                trashedAt = n.strOrNull("trashedAt")?.let { n.date("trashedAt") },
+                hasTrashedAt = "trashedAt" in n,
             )
         },
     )

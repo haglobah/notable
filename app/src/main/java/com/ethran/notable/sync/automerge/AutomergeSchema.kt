@@ -113,6 +113,7 @@ object AutomergeSchema {
         setStrOrNull(tx, o, "parentId", f.parentId)
         tx.set(o, "createdAt", f.createdAt)
         tx.set(o, "updatedAt", f.updatedAt)
+        if (f.hasTrashedAt) setDateOrNull(tx, o, "trashedAt", f.trashedAt)
     }
 
     fun putNotebookEntry(tx: Transaction, notebooks: ObjectId, n: AmNotebookEntry) {
@@ -145,6 +146,21 @@ object AutomergeSchema {
         n.pageCount?.let { tx.set(o, "pageCount", it) }
         n.readPage?.let { tx.set(o, "readPage", it) }
         if (n.hasRating) setRating(tx, o, n.rating)
+        if (n.hasQueuedAt) setDateOrNull(tx, o, "queuedAt", n.queuedAt)
+        if (n.hasTrashedAt) setDateOrNull(tx, o, "trashedAt", n.trashedAt)
+    }
+
+    /*
+     * Read next and the trash (docs/plans/library-features.md): one field each, null to undo.
+     * [entry] is a library entry or, for setTrashedAt, a folder too.
+     */
+
+    fun setQueuedAt(tx: Transaction, entry: ObjectId, at: Date?) = setDateOrNull(tx, entry, "queuedAt", at)
+
+    fun setTrashedAt(tx: Transaction, entryOrFolder: ObjectId, at: Date?) = setDateOrNull(tx, entryOrFolder, "trashedAt", at)
+
+    private fun setDateOrNull(tx: Transaction, obj: ObjectId, key: String, at: Date?) {
+        if (at == null) tx.setNull(obj, key) else tx.set(obj, key, at)
     }
 
     /** An entry's `meta`, written whole (once, at import; docs/plans/ebook-features.md). */
@@ -261,7 +277,8 @@ object AutomergeSchema {
             folders = r.keys(folders).associateWith { id ->
                 val p = "folders.$id"
                 val o = r.map(folders, id, p)
-                AmFolder(id, r.str(o, "title", p), r.strOrNull(o, "parentId", p), r.date(o, "createdAt", p), r.date(o, "updatedAt", p))
+                AmFolder(id, r.str(o, "title", p), r.strOrNull(o, "parentId", p), r.date(o, "createdAt", p), r.date(o, "updatedAt", p),
+                    trashedAt = dateOrNull(r, o, "trashedAt", p), hasTrashedAt = r.has(o, "trashedAt"))
             },
             notebooks = r.keys(notebooks).associateWith { id ->
                 val p = "notebooks.$id"
@@ -288,10 +305,18 @@ object AutomergeSchema {
                         r.int(o, "rating", p).also { if (it < 1 || it > 10) throw SchemaException("$p.rating: expected 1 to 10, got $it") }.toInt()
                     } else null,
                     hasRating = r.has(o, "rating"),
+                    queuedAt = dateOrNull(r, o, "queuedAt", p),
+                    hasQueuedAt = r.has(o, "queuedAt"),
+                    trashedAt = dateOrNull(r, o, "trashedAt", p),
+                    hasTrashedAt = r.has(o, "trashedAt"),
                 )
             },
         )
     }
+
+    /** An optional timestamp that may be null; absent and null both read as null. */
+    private fun dateOrNull(r: Reader, o: ObjectId, key: String, p: String): Date? =
+        if (r.has(o, key) && r.get(o, key, p) !is AmValue.Null) r.date(o, key, p) else null
 
     private fun count(r: Reader, o: ObjectId, key: String, p: String): Int {
         val v = r.int(o, key, p)
