@@ -1,7 +1,7 @@
 /* The library doc as a Solid signal, re-read on every change (the Boox syncs into it live). */
 import { createSignal, onCleanup, type Accessor } from "solid-js"
 import type { DocHandle } from "@automerge/automerge-repo"
-import { readLibrary, type Folder, type Library, type NotebookEntry } from "@notable/schema"
+import { isTrashed, readLibrary, type Folder, type Library, type NotebookEntry } from "@notable/schema"
 
 export type LibraryState = { ok: true; library: Library } | { ok: false; error: string }
 
@@ -23,12 +23,14 @@ export function useLibrary(handle: DocHandle<unknown>): Accessor<LibraryState> {
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" })
 
+/* What's in the trash (docs/plans/library-features.md) stays out of every list here. */
+
 export const childFolders = (lib: Library, parentId: string | null): Folder[] =>
-  Object.values(lib.folders).filter(f => f.parentId === parentId).sort((a, b) => collator.compare(a.title, b.title))
+  Object.values(lib.folders).filter(f => f.parentId === parentId && !f.trashedAt).sort((a, b) => collator.compare(a.title, b.title))
 
 /** Most recently changed first: what you were just reading or writing is at the top. */
 export const entriesIn = (lib: Library, folderId: string | null): NotebookEntry[] =>
-  Object.values(lib.notebooks).filter(n => n.folderId === folderId).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+  Object.values(lib.notebooks).filter(n => n.folderId === folderId && !n.trashedAt).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
 
 /**
  * The bar's "Recent" menu: entries a reader opened, most recently opened first (ties by title), at
@@ -36,7 +38,7 @@ export const entriesIn = (lib: Library, folderId: string | null): NotebookEntry[
  */
 export const recentEntries = (lib: Library, limit = 10): NotebookEntry[] =>
   Object.values(lib.notebooks)
-    .filter(n => n.readAt && n.pageCount !== 0)
+    .filter(n => n.readAt && n.pageCount !== 0 && !isTrashed(lib, n))
     .sort((a, b) => b.readAt!.getTime() - a.readAt!.getTime() || collator.compare(a.title, b.title))
     .slice(0, limit)
 
@@ -54,8 +56,8 @@ export function folderPath(lib: Library, folderId: string | null): Folder[] {
 }
 
 export const countIn = (lib: Library, folderId: string) =>
-  Object.values(lib.notebooks).filter(n => n.folderId === folderId).length +
-  Object.values(lib.folders).filter(f => f.parentId === folderId).length
+  Object.values(lib.notebooks).filter(n => n.folderId === folderId && !n.trashedAt).length +
+  Object.values(lib.folders).filter(f => f.parentId === folderId && !f.trashedAt).length
 
 export type KindLabel = "PDF" | "EPUB" | "Notebook" | "Quick page"
 export const kindOf = (e: NotebookEntry): KindLabel =>

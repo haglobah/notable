@@ -1,7 +1,9 @@
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { A, useParams, useSearchParams } from "@solidjs/router"
-import { facetsOf, normalize, parseQuery, queryLibrary, type Facet, type Facets, type Library, type NotebookEntry, type SortKey } from "@notable/schema"
+import { facetsOf, isFolderTrashed, normalize, parseQuery, queryLibrary, readNext, type Facet, type Facets, type Library, type NotebookEntry, type SortKey } from "@notable/schema"
 import { childFolders, countIn, edited, entriesIn, folderPath, kindOf, openedAgo, recentEntries } from "../lib/library.ts"
+import { itemKey, moveItems, setItemsFinished, setItemsQueued, trashItems, type Item } from "../lib/libraryActions.ts"
+import { hideFinished, setHideFinished } from "../lib/libraryPrefs.ts"
 import { bylineOf, quickFirst } from "../lib/books.ts"
 import { directionLabel, parseSort, selected, setOnly, toggle, withoutFields, type SortChoice } from "../lib/filters.ts"
 import { useSession } from "./session.tsx"
@@ -22,18 +24,29 @@ export function LibraryView() {
   const setQuery = (q: string) => setSearch({ q: q.trim() ? q : undefined }, { replace: true })
   const setChoice = (c: SortChoice | null) => setSearch({ sort: c?.sort, dir: c ? (c.descending ? "desc" : "asc") : undefined }, { replace: true })
 
+  // Hide finished (per device); an explicit `is:` filter asks for states by name and wins.
+  const shown = (list: NotebookEntry[]) => (hideFinished() && !selected(query(), "is").length ? list.filter(e => !e.finishedAt) : list)
+  // Selecting (docs/plans/library-features.md): null when not; else the chosen items by key.
+  const [picked, setPicked] = createSignal<Map<string, Item> | null>(null)
+  const toggleItem = (i: Item) => setPicked(m => {
+    const next = new Map(m ?? [])
+    if (next.has(itemKey(i))) next.delete(itemKey(i)); else next.set(itemKey(i), i)
+    return next
+  })
+  const isPicked = (i: Item) => picked()?.has(itemKey(i)) ?? false
+
   return (
     <Show when={s.library().ok ? s.library() : null} keyed fallback={<LibraryProblem />}>
       {state => {
         const lib = () => (state as Extract<typeof state, { ok: true }>).library
         const path = createMemo(() => folderPath(lib(), folderId()))
-        const missing = () => folderId() !== null && !lib().folders[folderId()!]
+        const missing = () => folderId() !== null && (!lib().folders[folderId()!] || isFolderTrashed(lib(), folderId()))
         const folders = createMemo(() => childFolders(lib(), folderId()))
         // No query: this folder's own entries, in the chosen order or the most recently edited first.
         const entries = createMemo(() => {
           const c = choice()
           const ordered = c ? queryLibrary(lib(), { query: "", sort: c.sort, descending: c.descending, folderId: folderId() }) : entriesIn(lib(), folderId())
-          return quickFirst(lib(), ordered)
+          return quickFirst(lib(), shown(ordered))
         })
         const here = () => (path().length ? path()[path().length - 1].title : "Library")
         // In a folder a query covers it and its subfolders, unless "Everywhere" is on; at the root, everything.
@@ -42,10 +55,29 @@ export function LibraryView() {
         const results = createMemo(() => {
           if (!parseQuery(query()).length) return null
           const c = choice()
-          return queryLibrary(lib(), { query: query(), ...scope(), ...(c ? { sort: c.sort, descending: c.descending } : {}) })
+          return shown(queryLibrary(lib(), { query: query(), ...scope(), ...(c ? { sort: c.sort, descending: c.descending } : {}) }))
         })
         const facets = createMemo(() => facetsOf(queryLibrary(lib(), { query: "", ...scope() })))
         const recent = createMemo(() => recentEntries(lib()))
+        const next = createMemo(() => readNext(lib()).filter(e => e.pageCount !== 0))
+        // Quick pages (old single-page entries) aren't selectable: the Boox keeps them as page rows without a trash.
+        const selectable = (): Item[] => [
+          ...(results() ?? entries()).filter(e => e.kind !== "quickPage").map(e => ({ kind: "notebook" as const, id: e.id })),
+          ...(results() ? [] : folders().map(f => ({ kind: "folder" as const, id: f.id }))),
+        ]
+        const [moving, setMoving] = createSignal(false)
+        const [note, setNote] = createSignal("")
+        // [say] gets how many changed (what [what] returns, else the items) and how many of them are books.
+        const act = (what: (d: any, items: Item[], at: Date) => number | void, say: (n: number, books: number) => string) => {
+          const items = [...(picked()?.values() ?? [])]
+          const bookCount = items.filter(i => i.kind === "notebook").length
+          let n = items.length
+          s.libraryHandle.change((d: any) => { const r = what(d, items, new Date()); if (typeof r === "number") n = r })
+          setPicked(null)
+          setNote(say(n, bookCount))
+        }
+        const books = () => [...(picked()?.values() ?? [])].filter(i => i.kind === "notebook").map(i => lib().notebooks[i.id]).filter(Boolean)
+        const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`
         const where = () => (everywhere() ? "in your library" : `in ${here()} and its folders`)
 
         return (
@@ -62,11 +94,58 @@ export function LibraryView() {
                     </ol>
                   </nav>
                 </Show>
-                <AddButton folderId={folderId()} />
+                <div class="head-actions">
+                  <Show when={picked() === null}>
+                    <button type="button" class="button text" onClick={() => { setNote(""); setPicked(new Map()) }}>Select</button>
+                    <A class="button text" href="/trash">Trash</A>
+                  </Show>
+                  <AddButton folderId={folderId()} />
+                </div>
               </div>
               <DropZone label={`Drop to add to ${here()}`} onFiles={files => s.uploads.add(files, folderId())} />
               <UploadList uploads={s.uploads} />
-              <LibraryBar query={query()} onQuery={setQuery} facets={facets()} choice={choice()} onChoice={setChoice} searching={!!results()} recent={recent()} />
+              <Show when={picked()} fallback={
+                <LibraryBar query={query()} onQuery={setQuery} facets={facets()} choice={choice()} onChoice={setChoice} searching={!!results()} recent={recent()} next={next()} />
+              }>
+                {m => {
+                  const allRead = () => books().length > 0 && books().every(e => e.finishedAt)
+                  const allQueued = () => books().length > 0 && books().every(e => e.queuedAt)
+                  return (
+                    <div class="select-bar" role="toolbar" aria-label="Selection">
+                      <span class="select-count" aria-live="polite">{m().size} selected</span>
+                      <Show when={m().size < selectable().length}>
+                        <button type="button" class="button text" onClick={() => setPicked(new Map(selectable().map(i => [itemKey(i), i])))}>Select all</button>
+                      </Show>
+                      <span class="select-gap" />
+                      <button type="button" class="button quiet" disabled={!m().size} onClick={() => setMoving(true)}>Move…</button>
+                      <Show when={books().length > 0}>
+                        <button type="button" class="button quiet" onClick={() => {
+                          const read = !allRead()
+                          act((d, items, at) => setItemsFinished(d, items, read ? at : null), (_, b) => `Marked ${plural(b, "book")} as ${read ? "read" : "unread"}`)
+                        }}>{allRead() ? "Mark as unread" : "Mark as read"}</button>
+                        <button type="button" class="button quiet" onClick={() => {
+                          const queue = !allQueued()
+                          act((d, items, at) => setItemsQueued(d, items, queue ? at : null), () => queue ? "Added to Read next" : "Removed from Read next")
+                        }}>{allQueued() ? "Remove from Read next" : "Add to Read next"}</button>
+                      </Show>
+                      <button type="button" class="button quiet danger" disabled={!m().size}
+                        onClick={() => act((d, items, at) => trashItems(d, items, at), n => `Moved ${plural(n, "item")} to the trash`)}>Move to trash</button>
+                      <button type="button" class="button" onClick={() => setPicked(null)}>Done</button>
+                    </div>
+                  )
+                }}
+              </Show>
+              <Show when={note()}>
+                <p class="select-note" role="status">{note()}<Show when={note().includes("trash")}> · <A href="/trash">Open the trash</A></Show></p>
+              </Show>
+              <Show when={moving()}>
+                <MovePicker lib={lib()} from={folderId()} exclude={[...(picked()?.values() ?? [])].filter(i => i.kind === "folder").map(i => i.id)}
+                  onCancel={() => setMoving(false)}
+                  onPick={target => {
+                    setMoving(false)
+                    act((d, items, at) => moveItems(d, items, target, at), n => `Moved ${plural(n, "item")}`)
+                  }} />
+              </Show>
 
               <Show when={results()}>
                 {r => (
@@ -82,7 +161,7 @@ export function LibraryView() {
                     </p>
                     <Show when={r().length > 0}>
                       <ul class="shelf cards" aria-label="Matches">
-                        <For each={r()}>{e => <li><EntryCard lib={lib()} entry={e} withFolder /></li>}</For>
+                        <For each={r()}>{e => <li><EntryCard lib={lib()} entry={e} withFolder picking={picked() !== null} picked={isPicked({ kind: "notebook", id: e.id })} onPick={() => toggleItem({ kind: "notebook", id: e.id })} /></li>}</For>
                       </ul>
                     </Show>
                   </section>
@@ -96,15 +175,23 @@ export function LibraryView() {
                     <For each={folders()}>
                       {f => {
                         const n = () => countIn(lib(), f.id)
+                        const body = () => (
+                          <>
+                            <Glyph kind="Folder" />
+                            <span>
+                              <span class="item-title">{f.title}</span>
+                              <span class="item-meta" style={{ display: "block" }}>{n() === 0 ? "Empty" : `${n()} item${n() === 1 ? "" : "s"}`}</span>
+                            </span>
+                          </>
+                        )
                         return (
                           <li>
-                            <A class="item" href={`/f/${f.id}`}>
-                              <Glyph kind="Folder" />
-                              <span>
-                                <span class="item-title">{f.title}</span>
-                                <span class="item-meta" style={{ display: "block" }}>{n() === 0 ? "Empty" : `${n()} item${n() === 1 ? "" : "s"}`}</span>
-                              </span>
-                            </A>
+                            <Show when={picked() !== null} fallback={<A class="item" href={`/f/${f.id}`}>{body()}</A>}>
+                              <button type="button" class="item pick" aria-pressed={isPicked({ kind: "folder", id: f.id })}
+                                onClick={() => toggleItem({ kind: "folder", id: f.id })}>
+                                <span class="pick-mark" aria-hidden="true" />{body()}
+                              </button>
+                            </Show>
                           </li>
                         )
                       }}
@@ -113,7 +200,7 @@ export function LibraryView() {
                 </Show>
                 <Show when={entries().length > 0}>
                   <ul class="shelf cards" aria-label="Documents and notebooks">
-                    <For each={entries()}>{e => <li><EntryCard lib={lib()} entry={e} /></li>}</For>
+                    <For each={entries()}>{e => <li><EntryCard lib={lib()} entry={e} picking={picked() !== null} picked={isPicked({ kind: "notebook", id: e.id })} onPick={() => toggleItem({ kind: "notebook", id: e.id })} /></li>}</For>
                   </ul>
                 </Show>
               </Show>
@@ -126,13 +213,13 @@ export function LibraryView() {
   )
 }
 
-function EntryCard(p: { lib: Library; entry: NotebookEntry; withFolder?: boolean }) {
+function EntryCard(p: { lib: Library; entry: NotebookEntry; withFolder?: boolean; picking?: boolean; picked?: boolean; onPick?: () => void }) {
   const folder = () => {
     if (!p.withFolder || !p.entry.folderId) return null
     return folderPath(p.lib, p.entry.folderId).map(f => f.title).join(" / ") || null
   }
-  return (
-    <A class="card" href={`/n/${p.entry.id}`}>
+  const body = () => (
+    <>
       <Cover entry={p.entry} />
       <span class="card-title">{p.entry.title || "Untitled"}</span>
       <Show when={bylineOf(p.entry)}>{b => <span class="card-byline">{b()}</span>}</Show>
@@ -140,12 +227,54 @@ function EntryCard(p: { lib: Library; entry: NotebookEntry; withFolder?: boolean
         <Show when={typeof p.entry.rating === "number"}><span class="card-rating">★ {p.entry.rating}</span>{" "}</Show>
         {kindOf(p.entry)}, {p.entry.finishedAt ? "finished" : `edited ${edited(p.entry.updatedAt)}`}
         <Show when={folder()}>{f => <>, in {f()}</>}</Show>
+        <Show when={p.entry.queuedAt && !p.entry.finishedAt}>, read next</Show>
       </span>
-    </A>
+    </>
+  )
+  return (
+    <Show when={p.picking && p.entry.kind !== "quickPage"} fallback={<A class="card" href={`/n/${p.entry.id}`}>{body()}</A>}>
+      <button type="button" class="card pick" aria-pressed={!!p.picked} onClick={() => p.onPick?.()}>
+        <span class="pick-mark" aria-hidden="true" />{body()}
+      </button>
+    </Show>
   )
 }
 
-const STATES: [string | null, string][] = [[null, "All"], ["reading", "Reading"], ["unread", "Unread"], ["finished", "Finished"]]
+/** Where to move the selection: every live folder as a tree, the root first. */
+function MovePicker(p: { lib: Library; from: string | null; exclude: string[]; onCancel: () => void; onPick: (folderId: string | null) => void }) {
+  let dialog: HTMLDialogElement | undefined
+  const rows = () => {
+    const out: { id: string; title: string; depth: number }[] = []
+    const walk = (parent: string | null, depth: number) => {
+      for (const f of childFolders(p.lib, parent)) {
+        if (p.exclude.includes(f.id)) continue
+        out.push({ id: f.id, title: f.title, depth })
+        walk(f.id, depth + 1)
+      }
+    }
+    walk(null, 1)
+    return out
+  }
+  return (
+    <dialog ref={el => { dialog = el; queueMicrotask(() => el.showModal()) }} class="move-picker" aria-label="Move to"
+      onCancel={e => { e.preventDefault(); p.onCancel() }}
+      onClick={e => { if (e.target === dialog) p.onCancel() }}>
+      <h2>Move to</h2>
+      <ul>
+        <li><button type="button" class="menu-row" aria-current={p.from === null ? "true" : undefined} onClick={() => p.onPick(null)}>Library</button></li>
+        <For each={rows()}>
+          {r => (
+            <li><button type="button" class="menu-row" style={{ "padding-left": `${r.depth * 1.1 + 0.75}rem` }}
+              aria-current={p.from === r.id ? "true" : undefined} onClick={() => p.onPick(r.id)}>{r.title}</button></li>
+          )}
+        </For>
+      </ul>
+      <div class="move-actions"><button type="button" class="button quiet" onClick={() => p.onCancel()}>Cancel</button></div>
+    </dialog>
+  )
+}
+
+const STATES: [string | null, string][] = [[null, "All"], ["reading", "Reading"], ["unread", "Unread"], ["finished", "Finished"], ["next", "Read next"]]
 const KIND_LABELS: Record<string, string> = { pdf: "PDF", epub: "EPUB", notebook: "Notebook", quickpage: "Quick page" }
 const SORTS: [SortKey, string][] = [
   ["relevance", "Best match"], ["title", "Title"], ["author", "Author"], ["series", "Series"],
@@ -191,7 +320,7 @@ function usePopover() {
 function LibraryBar(p: {
   query: string; onQuery: (q: string) => void; facets: Facets
   choice: SortChoice | null; onChoice: (c: SortChoice | null) => void; searching: boolean
-  recent: NotebookEntry[]
+  recent: NotebookEntry[]; next: NotebookEntry[]
 }) {
   let input: HTMLInputElement | undefined
   const states = () => selected(p.query, "is").map(normalize)
@@ -213,6 +342,7 @@ function LibraryBar(p: {
           <QueryHelp />
         </form>
         <Show when={p.recent.length > 0}><RecentMenu recent={p.recent} /></Show>
+        <Show when={p.next.length > 0}><ReadNextMenu next={p.next} /></Show>
         <SortControl choice={p.choice} onChoice={p.onChoice} searching={p.searching} />
       </div>
       <div class="lib-line lib-filters">
@@ -232,6 +362,7 @@ function LibraryBar(p: {
         <FacetMenu label="Tag" field="tag" options={p.facets.tags} query={p.query} onQuery={p.onQuery} />
         <FacetMenu label="Language" field="lang" options={p.facets.languages} query={p.query} onQuery={p.onQuery} />
         <FacetMenu label="Type" field="kind" options={kinds()} query={p.query} onQuery={p.onQuery} />
+        <button type="button" class="lib-text lib-toggle" aria-pressed={hideFinished()} onClick={() => setHideFinished(!hideFinished())}>Hide finished</button>
         <Show when={anyFilter()}>
           <button type="button" class="lib-text lib-clear" aria-label="Clear filters" title="Clear filters" onClick={() => p.onQuery(withoutFields(p.query, FILTER_FIELDS))}>
             <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" /></svg>
@@ -256,6 +387,30 @@ function RecentMenu(p: { recent: NotebookEntry[] }) {
                 <A href={`/n/${e.id}`} role="menuitem" class="menu-row recent-row" onClick={() => pop.close()}>
                   <span class="recent-title">{e.title || "Untitled"}</span>
                   <span class="menu-hint">{openedAgo(e.readAt!)}</span>
+                </A>
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
+    </details>
+  )
+}
+
+/** "Read next": the books put on the list, oldest first; a tap opens one. */
+function ReadNextMenu(p: { next: NotebookEntry[] }) {
+  const pop = usePopover()
+  return (
+    <details class="facet lib-recent" ref={pop.ref}>
+      <summary class="lib-text">Read next <span class="lib-count">{p.next.length}</span></summary>
+      <div class="facet-pop facet-pop-end" role="menu" aria-label="Read next">
+        <ul>
+          <For each={p.next}>
+            {e => (
+              <li>
+                <A href={`/n/${e.id}`} role="menuitem" class="menu-row recent-row" onClick={() => pop.close()}>
+                  <span class="recent-title">{e.title || "Untitled"}</span>
+                  <span class="menu-hint">{e.meta?.authors[0] ?? ""}</span>
                 </A>
               </li>
             )}
@@ -314,7 +469,7 @@ function QueryHelp() {
   const rows: [string, string][] = [
     ["author:le guin", "by field: author, series, tag, folder, lang, published"],
     ["kind:pdf,epub", "any of several"],
-    ["is:reading", "unread, reading, finished"],
+    ["is:reading", "unread, reading, finished, next"],
     ["rating:>=8", "also pages:<200, progress:>50, 7-9"],
     ["has:series", "also author, tag, rating, pages…"],
     ["read:2026-10", "also added, edited, finished"],

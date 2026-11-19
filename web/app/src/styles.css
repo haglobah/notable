@@ -465,3 +465,41 @@ button.link { border: 0; padding: 0; background: none; color: var(--graphite); f
 .recent-row { padding-left: 0.5rem; align-items: center; text-decoration: none; }
 .recent-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-row .menu-hint { flex: none; }
+
+/* ---- selecting, moving and the trash (docs/plans/library-features.md) ---- */
+.head-actions { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+.button.danger, .button.text.danger { color: var(--warn); border-color: var(--warn); }
+.select-bar {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--rule);
+}
+.select-count { font-weight: 600; }
+.select-gap { flex: 1; }
+.select-note { color: var(--graphite-soft); margin: -0.5rem 0 1rem; }
+button.card, button.item { font: inherit; text-align: left; background: none; border: 0; cursor: pointer; width: calc(100% + 0.8rem); }
+button.item { width: calc(100% + 1rem); color: inherit; }
+.pick { position: relative; }
+.pick .pick-mark {
+  position: absolute; top: 0.8rem; right: 0.8rem; z-index: 1; width: 1.4rem; height: 1.4rem; border-radius: 50%;
+  border: 2px solid var(--graphite); background: var(--paper);
+}
+.item.pick .pick-mark { top: 50%; transform: translateY(-50%); }
+.pick[aria-pressed="true"] .pick-mark { background: var(--graphite); }
+.pick[aria-pressed="true"] .pick-mark::after {
+  content: ""; position: absolute; left: 0.38rem; top: 0.14rem; width: 0.32rem; height: 0.62rem;
+  border: solid var(--paper); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.card.pick[aria-pressed="true"] .cover { outline: 3px solid var(--graphite); outline-offset: -1px; }
+.lib-toggle[aria-pressed="true"] { background: var(--graphite); color: var(--paper); }
+.move-picker { border: 1px solid var(--rule); border-radius: var(--radius-sheet); padding: 1rem; width: min(28rem, calc(100vw - 32px)); background: var(--paper); color: inherit; }
+.move-picker::backdrop { background: color-mix(in srgb, var(--graphite) 30%, transparent); }
+.move-picker h2 { font-family: var(--serif); font-weight: 500; font-size: 1.25rem; margin: 0 0 0.5rem; }
+.move-picker ul { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
+.move-picker .menu-row[aria-current="true"] { font-weight: 600; }
+.move-actions { display: flex; justify-content: flex-end; margin-top: 0.75rem; }
+.trash-row { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) auto auto; gap: 0.75rem; align-items: center; padding: 0.6rem 0; border-top: 1px solid var(--rule); }
+.trash-what { min-width: 0; }
+@media (max-width: 34rem) {
+  .trash-row { grid-template-columns: 2.25rem minmax(0, 1fr); }
+  .trash-row .button { grid-column: 2; justify-self: start; }
+}

@@ -9,6 +9,7 @@ import { Wordmark } from "./components/Marks.tsx"
 import { createUploads } from "./components/Uploads.tsx"
 import { SessionContext, useSession } from "./components/session.tsx"
 import { LibraryView } from "./components/LibraryView.tsx"
+import { TrashView } from "./components/TrashView.tsx"
 import { ReaderView } from "./components/ReaderView.tsx"
 import { CodeView } from "./components/CodeView.tsx"
 import { startImage } from "./image/service.ts"
@@ -137,6 +138,7 @@ function LoggedIn(props: { me: Me; repo: Repo; library: DocHandle<unknown>; offl
       <Router root={Shell}>
         <Route path="/" component={LibraryView} />
         <Route path="/f/:folderId" component={LibraryView} />
+        <Route path="/trash" component={TrashView} />
         <Route path="/n/:notebookId" component={ReaderView} />
         <Route path="/code" component={CodeView} />
         <Route path="*" component={NotFound} />
