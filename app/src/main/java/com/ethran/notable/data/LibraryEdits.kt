@@ -12,6 +12,8 @@ import com.ethran.notable.data.db.Stroke
 import com.ethran.notable.data.db.StrokeRepository
 import com.ethran.notable.data.db.newPage
 import com.ethran.notable.data.model.BackgroundType
+import com.ethran.notable.sync.automerge.LibrarySearch
+import com.ethran.notable.ui.viewmodels.LibrarySearchIndex
 import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
@@ -117,6 +119,67 @@ class LibraryEdits @Inject constructor(
     suspend fun rateNotebook(id: String, rating: Int?) {
         require(rating == null || rating in 1..10) { "rating must be 1 to 10, got $rating" }
         mirror.write(LocalChange.NotebookRated(id, rating)) { books.setRating(id, rating) }
+    }
+
+    /* -------------------- Read next and the trash (docs/plans/library-features.md) -------------------- */
+
+    /** Puts notebook [id] on the Read next list ([queued]) or takes it off. */
+    suspend fun setNotebookQueued(id: String, queued: Boolean) {
+        val at = if (queued) now() else null
+        mirror.write(LocalChange.NotebookQueued(id, at)) { books.setQueuedAt(id, at?.let(::Date)) }
+    }
+
+    suspend fun trashNotebook(id: String) {
+        val at = now()
+        mirror.write(LocalChange.NotebookTrashed(id, at)) { books.setTrashedAt(id, Date(at)) }
+    }
+
+    /** Folder [id] and everything in it go to the trash together. */
+    suspend fun trashFolder(id: String) {
+        val at = now()
+        mirror.write(LocalChange.FolderTrashed(id, at)) { folders.setTrashedAt(id, Date(at)) }
+    }
+
+    /** Out of the trash; to the root when its folder is itself in the trash or gone. */
+    suspend fun restoreNotebook(id: String) {
+        val nb = books.getById(id) ?: return
+        val folder = nb.parentFolderId
+        if (folder != null && !folderLive(folder)) moveNotebook(id, null)
+        mirror.write(LocalChange.NotebookTrashed(id, null)) { books.setTrashedAt(id, null) }
+    }
+
+    /** Out of the trash with everything in it; to the root when its parent is in the trash or gone. */
+    suspend fun restoreFolder(id: String) {
+        val parent = folders.getParent(id)
+        if (parent != null && !folderLive(parent)) moveFolder(id, null)
+        mirror.write(LocalChange.FolderTrashed(id, null)) { folders.setTrashedAt(id, null) }
+    }
+
+    /** Folder [id] exists and neither it nor one above it is in the trash. */
+    private fun folderLive(id: String): Boolean {
+        val all = folders.getAll().associateBy { it.id }
+        val seen = HashSet<String>()
+        var at: String? = id
+        while (at != null && seen.add(at)) {
+            val f = all[at] ?: return false
+            if (f.trashedAt != null) return false
+            at = f.parentFolderId
+        }
+        return true
+    }
+
+    /** Deletes for good what has been in the trash [LibrarySearch.TRASH_DAYS] days or more; returns how many items. */
+    suspend fun emptyExpiredTrash(): Int {
+        val lib = LibrarySearchIndex.library(folders.getAll(), books.getAll(), emptyList())
+        val due = LibrarySearch.expiredTrash(lib, Date(now()))
+        due.forEach { deleteTrashItem(it) }
+        return due.size
+    }
+
+    /** Deletes a trash item for good. */
+    suspend fun deleteTrashItem(item: LibrarySearch.TrashItem) = when (item) {
+        is LibrarySearch.TrashItem.Folder -> deleteFolder(item.id)
+        is LibrarySearch.TrashItem.Notebook -> deleteNotebook(item.id)
     }
 
     /** Brings the entry's page count and open page index up to the notebook doc's. */
@@ -236,8 +299,12 @@ class LibraryEdits @Inject constructor(
         return OpenAt(nb.id, first)
     }
 
-    /** The quick notebook when the library names one Room has. */
+    /**
+     * The quick notebook when the library names one Room has and it isn't in the trash (a trashed
+     * one is left there; "+ Quick page" then starts a new one).
+     */
     suspend fun quickNotebook(): Notebook? = mirror.quickNotebookId()?.let { books.getById(it) }
+        ?.takeIf { it.trashedAt == null && (it.parentFolderId == null || folderLive(it.parentFolderId)) }
 
     /**
      * Old quick pages (one entry each) move into the quick notebook, oldest first, each appended

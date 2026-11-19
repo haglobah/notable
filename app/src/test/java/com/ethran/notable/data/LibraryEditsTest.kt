@@ -80,6 +80,8 @@ private class Store {
         override suspend fun setFinishedAt(id: String, at: Date?): Int { write("finishedAt"); return change(id) { it.copy(finishedAt = at) } }
         override suspend fun setRating(id: String, rating: Int?): Int { write("rating"); return change(id) { it.copy(rating = rating) } }
         override suspend fun setPageCount(id: String, count: Int): Int { write("pageCount"); return change(id) { it.copy(pageCount = count) } }
+        override suspend fun setQueuedAt(id: String, at: Date?): Int { write("queuedAt"); return change(id) { it.copy(queuedAt = at) } }
+        override suspend fun setTrashedAt(id: String, at: Date?): Int { write("trashedAt"); return change(id) { it.copy(trashedAt = at) } }
         override suspend fun create(notebook: Notebook): Long { write("notebook+"); notebooks[notebook.id] = notebook; return 1 }
         override suspend fun update(notebook: Notebook) { write("notebook"); notebooks[notebook.id] = notebook }
         override suspend fun upsert(notebook: Notebook) { write("notebook"); notebooks[notebook.id] = notebook }
@@ -123,7 +125,13 @@ private class Store {
         override suspend fun setParent(id: String, parentId: String?, updatedAt: Date) {
             write("folderParent"); folders[id]?.let { folders[id] = it.copy(parentFolderId = parentId, updatedAt = updatedAt) }
         }
-        override suspend fun delete(id: String) { write("folder-"); folders.remove(id) }
+        override suspend fun setTrashedAt(id: String, at: Date?): Int {
+            write("folderTrashedAt"); return folders[id]?.let { folders[id] = it.copy(trashedAt = at); 1 } ?: 0
+        }
+        override suspend fun delete(id: String) {
+            write("folder-"); folders.remove(id)
+            notebooks.values.filter { it.parentFolderId == id }.map { it.id }.forEach { notebooks.remove(it) }
+        }
     }
 
     val strokeDao = object : StrokeDao {
@@ -283,6 +291,65 @@ class LibraryEditsTest {
         edits.setNotebookFinished("nb1", false)
         assertEquals("write" to LocalChange.NotebookFinished("nb1", null), lastChange())
         assertNull(store.notebooks.getValue("nb1").finishedAt)
+    }
+
+    @Test
+    fun `read next and the trash go to the doc first and leave the edited date`() = runBlocking {
+        book()
+        val at = Date(1_780_000_500_000)
+        edits.setNotebookQueued("nb1", true)
+        assertEquals("write" to LocalChange.NotebookQueued("nb1", at.time), lastChange())
+        assertEquals(at, store.notebooks.getValue("nb1").queuedAt)
+        edits.setNotebookQueued("nb1", false)
+        assertEquals("write" to LocalChange.NotebookQueued("nb1", null), lastChange())
+        edits.trashNotebook("nb1")
+        assertEquals("write" to LocalChange.NotebookTrashed("nb1", at.time), lastChange())
+        edits.trashFolder("f1")
+        assertEquals("write" to LocalChange.FolderTrashed("f1", at.time), lastChange())
+        assertEquals(at, store.folders.getValue("f1").trashedAt)
+        assertEquals(t0, store.notebooks.getValue("nb1").updatedAt)
+        assertEquals(t0, store.folders.getValue("f1").updatedAt)
+        assertEquals("Room writes outside the mirror", emptyList<String>(), store.outside)
+    }
+
+    @Test
+    fun `a notebook restored from a trashed folder goes to the root, the folder keeps its place`() = runBlocking {
+        book()
+        store.folders["f2"] = Folder("f2", "Inner", "f1", t0, t0)
+        edits.trashFolder("f1")
+        edits.trashNotebook("nb1")
+        edits.trashFolder("f2")
+        edits.restoreNotebook("nb1")
+        assertNull(store.notebooks.getValue("nb1").trashedAt)
+        assertNull("its folder is in the trash", store.notebooks.getValue("nb1").parentFolderId)
+        edits.restoreFolder("f2")
+        assertNull(store.folders.getValue("f2").parentFolderId)
+        edits.restoreFolder("f1")
+        assertNull(store.folders.getValue("f1").trashedAt)
+        assertNull(store.folders.getValue("f1").parentFolderId)
+    }
+
+    @Test
+    fun `restoring into a live folder keeps the folder`() = runBlocking {
+        book()
+        edits.trashNotebook("nb1")
+        edits.restoreNotebook("nb1")
+        assertEquals("f1", store.notebooks.getValue("nb1").parentFolderId)
+        assertEquals("write" to LocalChange.NotebookTrashed("nb1", null), lastChange())
+    }
+
+    @Test
+    fun `the trash empties what has been in it for 30 days`() = runBlocking {
+        book()
+        val day = 86_400_000L
+        store.folders["old"] = Folder("old", "Old", null, t0, t0, trashedAt = Date(1_780_000_500_000 - 31 * day))
+        store.notebooks["nbOld"] = Notebook("nbOld", "Old", parentFolderId = null, trashedAt = Date(1_780_000_500_000 - 30 * day))
+        store.notebooks["nbNew"] = Notebook("nbNew", "New", parentFolderId = null, trashedAt = Date(1_780_000_500_000 - 29 * day))
+        assertEquals(2, edits.emptyExpiredTrash())
+        assertFalse("old" in store.folders)
+        assertFalse("nbOld" in store.notebooks)
+        assertTrue("nbNew" in store.notebooks)
+        assertTrue("nb1" in store.notebooks)
     }
 
     @Test

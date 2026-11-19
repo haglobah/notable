@@ -28,14 +28,14 @@ data class LibrarySearchResults(
  */
 object LibrarySearchIndex {
     fun library(folders: List<Folder>, notebooks: List<Notebook>, quickPages: List<Page>) = AmLibrary(
-        folders = folders.associate { it.id to AmFolder(it.id, it.title, it.parentFolderId, it.createdAt, it.updatedAt) },
+        folders = folders.associate { it.id to AmFolder(it.id, it.title, it.parentFolderId, it.createdAt, it.updatedAt, trashedAt = it.trashedAt) },
         notebooks = notebooks.associate {
             it.id to AmNotebookEntry(
                 id = it.id, docUrl = "", title = it.title, folderId = it.parentFolderId, kind = AmEntryKind.NOTEBOOK,
                 source = sourceKind(it.defaultBackgroundType, it.defaultBackground),
                 createdAt = it.createdAt, updatedAt = it.updatedAt,
                 meta = it.bookMeta, readAt = it.readAt, finishedAt = it.finishedAt,
-                rating = it.rating,
+                rating = it.rating, queuedAt = it.queuedAt, trashedAt = it.trashedAt,
                 // Room's pages mirror the doc's pageOrder; the entry's copy may lag behind.
                 pageCount = it.pageIds.size,
                 readPage = it.openPageId?.let { open -> it.pageIds.indexOf(open) }?.takeIf { i -> i >= 0 },
@@ -54,6 +54,18 @@ object LibrarySearchIndex {
         BackgroundType.AutoPdf, is BackgroundType.Pdf ->
             if (EpubFiles.isEpub(value)) AmSource.Epub("", EpubFiles.layoutOf(value) ?: EpubFiles.BOOX_LAYOUT) else AmSource.Pdf("")
         else -> AmSource.None
+    }
+
+    /** [LibrarySearch.readNext] as Room rows (docs/plans/library-features.md). */
+    fun readNext(folders: List<Folder>, notebooks: List<Notebook>): List<Notebook> {
+        val byId = notebooks.associateBy { it.id }
+        return LibrarySearch.readNext(library(folders, notebooks, emptyList())).mapNotNull { byId[it.id] }
+    }
+
+    /** Ids of notebooks in the trash, directly or through a folder. */
+    fun trashedNotebookIds(folders: List<Folder>, notebooks: List<Notebook>): Set<String> {
+        val lib = library(folders, notebooks, emptyList())
+        return lib.notebooks.values.filter { LibrarySearch.isTrashed(lib, it) }.map { it.id }.toSet()
     }
 
     /** [LibrarySearch.search]: nothing for a query without tokens. */

@@ -58,6 +58,10 @@ data class Notebook(
      * [pageIds]' size, the entry is due a backfill ([com.ethran.notable.data.LibraryEdits.backfillPageCounts]).
      */
     val pageCount: Int? = null,
+    /** On the Read next list since then (docs/plans/library-features.md); null when not. */
+    val queuedAt: Date? = null,
+    /** In the trash since then; null when not. */
+    val trashedAt: Date? = null,
 )
 
 // DAO
@@ -106,6 +110,12 @@ interface NotebookDao {
 
     @Query("UPDATE notebook SET rating=:rating WHERE id=:id")
     suspend fun setRating(id: String, rating: Int?): Int
+
+    @Query("UPDATE notebook SET queuedAt=:at WHERE id=:id")
+    suspend fun setQueuedAt(id: String, at: Date?): Int
+
+    @Query("UPDATE notebook SET trashedAt=:at WHERE id=:id")
+    suspend fun setTrashedAt(id: String, at: Date?): Int
 
     @Query("UPDATE notebook SET pageCount=:count WHERE id=:id")
     suspend fun setPageCount(id: String, count: Int): Int
@@ -221,6 +231,8 @@ class BookRepository @Inject constructor(
     suspend fun setReadAt(id: String, at: Date) = exists(notebookDao.setReadAt(id, at))
     suspend fun setFinishedAt(id: String, at: Date?) = exists(notebookDao.setFinishedAt(id, at))
     suspend fun setRating(id: String, rating: Int?) = exists(notebookDao.setRating(id, rating))
+    suspend fun setQueuedAt(id: String, at: Date?) = exists(notebookDao.setQueuedAt(id, at))
+    suspend fun setTrashedAt(id: String, at: Date?) = exists(notebookDao.setTrashedAt(id, at))
     /** Returns false when the notebook is gone (a backfill skips it). */
     suspend fun setPageCount(id: String, count: Int) = notebookDao.setPageCount(id, count) == 1
 

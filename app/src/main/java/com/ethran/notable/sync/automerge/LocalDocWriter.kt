@@ -130,6 +130,9 @@ class LocalDocWriter(
         is LocalChange.NotebookFinished -> readingState(change.id, null, change.at?.let(::Date), setFinished = true)
         is LocalChange.NotebookRated -> rate(change.id, change.rating, cleared = change.rating == null)
         is LocalChange.ReadingSynced -> syncReading(change.id)
+        is LocalChange.NotebookQueued -> entryDate(change.id, EntryDate.QUEUED, change.at?.let(::Date))
+        is LocalChange.NotebookTrashed -> entryDate(change.id, EntryDate.TRASHED, change.at?.let(::Date))
+        is LocalChange.FolderTrashed -> folderTrashed(change.id, change.at?.let(::Date))
         is LocalChange.QuickNotebookSet -> editLibrary { doc, tx ->
             if (AutomergeSchema.readLibrary(doc).quickNotebookId != change.id) AutomergeSchema.setQuickNotebookId(tx, change.id)
         }
@@ -167,6 +170,9 @@ class LocalDocWriter(
             readingState(nb.id, nb.readAt, nb.finishedAt, setFinished = true) +
                 rate(nb.id, nb.rating, cleared = false) + syncReading(nb.id)
         } ?: NONE
+        is DocDebt.NotebookTrash -> local.notebook(debt.id)?.let { entryDate(it.id, EntryDate.TRASHED, it.trashedAt) } ?: NONE
+        is DocDebt.NotebookQueue -> local.notebook(debt.id)?.let { entryDate(it.id, EntryDate.QUEUED, it.queuedAt) } ?: NONE
+        is DocDebt.FolderTrash -> local.folders().firstOrNull { it.id == debt.id }?.let { folderTrashed(it.id, it.trashedAt) } ?: NONE
     }
 
     /** The library's quickNotebookId, when it names a live entry. */
@@ -439,6 +445,33 @@ class LocalDocWriter(
             }
             changed
         }
+    }
+
+    private enum class EntryDate { QUEUED, TRASHED }
+
+    /**
+     * Entry [id]'s queuedAt or trashedAt (docs/plans/library-features.md), when it differs; null
+     * and absent count as the same, so a null is written only over a date. No updatedAt bump.
+     */
+    private fun entryDate(id: String, which: EntryDate, at: Date?): WriteReceipt {
+        val (url, migrated) = ensureDoc(id)
+        if (url == null) return migrated
+        return migrated + commit(docs.libraryUrl()) { doc, tx ->
+            val e = AutomergeSchema.entryObjOrNull(doc, id) ?: return@commit false
+            val cur = AutomergeSchema.readLibrary(doc).notebooks.getValue(id)
+            val now = if (which == EntryDate.QUEUED) cur.queuedAt else cur.trashedAt
+            if (now == at) return@commit false
+            if (which == EntryDate.QUEUED) AutomergeSchema.setQueuedAt(tx, e, at) else AutomergeSchema.setTrashedAt(tx, e, at)
+            true
+        }
+    }
+
+    /** Folder [id]'s trashedAt, when it differs (null and absent alike). */
+    private fun folderTrashed(id: String, at: Date?): WriteReceipt = commit(docs.libraryUrl()) { doc, tx ->
+        val f = AutomergeSchema.folderObjOrNull(doc, id) ?: return@commit false
+        if (AutomergeSchema.readLibrary(doc).folders[id]?.trashedAt == at) return@commit false
+        AutomergeSchema.setTrashedAt(tx, f, at)
+        true
     }
 
     /**

@@ -302,7 +302,7 @@ class AutomergeProjector(
                 parent != null || sink.folder(f.parentId) != null -> f.parentId
                 else -> null.also { warnings += "folder ${f.id}: parent ${f.parentId} is unknown; placed at the top" }
             }
-            val row = Folder(f.id, f.title, parentId, f.createdAt, f.updatedAt)
+            val row = Folder(f.id, f.title, parentId, f.createdAt, f.updatedAt, trashedAt = f.trashedAt)
             if (sink.folder(f.id) != row) sink.upsertFolder(row)
         }
         lib.folders.values.forEach { visit(it, 0) }
@@ -321,7 +321,7 @@ class AutomergeProjector(
                 val next = nb.copy(
                     title = e.title, parentFolderId = folder, createdAt = e.createdAt, updatedAt = e.updatedAt,
                     bookMeta = e.meta, readAt = e.readAt, finishedAt = e.finishedAt,
-                    rating = e.rating, pageCount = e.pageCount,
+                    rating = e.rating, pageCount = e.pageCount, queuedAt = e.queuedAt, trashedAt = e.trashedAt,
                 )
                 if (next != nb) sink.upsertNotebook(next)
             }
@@ -526,7 +526,7 @@ class AutomergeProjector(
             linkedExternalUri = existing?.linkedExternalUri,
             createdAt = e.createdAt, updatedAt = e.updatedAt,
             bookMeta = e.meta, readAt = e.readAt, finishedAt = e.finishedAt,
-            rating = e.rating, pageCount = e.pageCount,
+            rating = e.rating, pageCount = e.pageCount, queuedAt = e.queuedAt, trashedAt = e.trashedAt,
         )
     }
 

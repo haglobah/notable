@@ -60,6 +60,15 @@ sealed interface LocalChange {
      */
     data class ReadingSynced(val id: String) : LocalChange
 
+    /* Read next and the trash (docs/plans/library-features.md). Not edits: updatedAt stays. */
+
+    /** Put on the Read next list at [at]; null takes it off. */
+    data class NotebookQueued(val id: String, val at: Long?) : LocalChange
+    /** Moved to the trash at [at]; null restores it. */
+    data class NotebookTrashed(val id: String, val at: Long?) : LocalChange
+    /** Folder [id], with everything in it, moved to the trash at [at]; null restores it. */
+    data class FolderTrashed(val id: String, val at: Long?) : LocalChange
+
     /* Quick pages (docs/plans/ebook-features.md, round 5). */
 
     /** Notebook [id] is the one "+ Quick page" appends to. */

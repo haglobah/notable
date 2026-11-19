@@ -106,6 +106,9 @@ internal class FakeRoom(val sink: FakeSink = FakeSink()) : ProjectionSink by sin
             is LocalChange.NotebookFinished -> notebook(change.id) { it.copy(finishedAt = change.at?.let(::Date)) }
             is LocalChange.NotebookRated -> notebook(change.id) { it.copy(rating = change.rating) }
             is LocalChange.ReadingSynced -> notebook(change.id) { it.copy(pageCount = it.pageIds.size) }
+            is LocalChange.NotebookQueued -> notebook(change.id) { it.copy(queuedAt = change.at?.let(::Date)) }
+            is LocalChange.NotebookTrashed -> notebook(change.id) { it.copy(trashedAt = change.at?.let(::Date)) }
+            is LocalChange.FolderTrashed -> sink.folders[change.id]?.let { sink.folders[it.id] = it.copy(trashedAt = change.at?.let(::Date)) }
             is LocalChange.QuickNotebookSet -> Unit
             is LocalChange.QuickPageMoved -> {
                 sink.pages[change.pageId]?.let { sink.pages[it.id] = it.copy(notebookId = change.notebookId, parentFolderId = null) }
@@ -1043,6 +1046,54 @@ class LocalDocWriterTest {
         d.room.sink.notebooks["nb1"] = d.room.sink.notebooks.getValue("nb1").copy(rating = 6)
         d.writer.replay(DocDebt.ReadingState("nb1"))
         assertEquals(6, d.entry().rating)
+    }
+
+    /* ------------------------ Read next and the trash (library-features) ------------------------ */
+
+    @Test
+    fun `queue and trash are single fields that merge with edits elsewhere and project to Room`() {
+        val d = bookDevice(pages = 1)
+        d.room.sink.folders["f1"] = com.ethran.notable.data.db.Folder("f1", "Uni", null, t0, t1)
+        d.edit(LocalChange.FolderUpserted(d.room.sink.folders.getValue("f1")))
+        val other = peer(d)
+        d.edit(LocalChange.NotebookQueued("nb1", 1_780_002_000_000))
+        d.edit(LocalChange.NotebookTrashed("nb1", 1_780_002_000_001))
+        d.edit(LocalChange.FolderTrashed("f1", 1_780_002_000_002))
+        other.edit(LocalChange.NotebookRenamed("nb1", "Renamed"))
+        d.docs.syncWith(other.docs)
+        val e = d.entry()
+        assertEquals(Date(1_780_002_000_000), e.queuedAt)
+        assertEquals(Date(1_780_002_000_001), e.trashedAt)
+        assertEquals("Renamed", e.title)
+        assertEquals(Date(1_780_002_000_002), d.docs.library().folders.getValue("f1").trashedAt)
+        other.project()
+        assertEquals(Date(1_780_002_000_001), other.room.sink.notebooks.getValue("nb1").trashedAt)
+        assertEquals(Date(1_780_002_000_000), other.room.sink.notebooks.getValue("nb1").queuedAt)
+        assertEquals(Date(1_780_002_000_002), other.room.sink.folders.getValue("f1").trashedAt)
+
+        d.edit(LocalChange.NotebookTrashed("nb1", null))
+        assertNull(d.entry().trashedAt)
+        assertTrue(d.entry().hasTrashedAt)
+        assertTrue("unchanged: no commit", d.edit(LocalChange.NotebookTrashed("nb1", null)).commits.isEmpty())
+        val fresh = bookDevice(pages = 1)
+        assertTrue("null over absent: no commit", fresh.edit(LocalChange.NotebookQueued("nb1", null)).commits.isEmpty())
+    }
+
+    @Test
+    fun `queue and trash that failed to reach the doc are replayed from Room`() {
+        val d = bookDevice(pages = 1)
+        d.room.sink.notebooks["nb1"] = d.room.sink.notebooks.getValue("nb1").copy(queuedAt = Date(5), trashedAt = Date(6))
+        d.writer.replay(DocDebt.ReadingState("nb1"))
+        assertNull("a reading-state replay leaves them alone", d.entry().trashedAt)
+        d.writer.replay(DocDebt.NotebookQueue("nb1"))
+        d.writer.replay(DocDebt.NotebookTrash("nb1"))
+        assertEquals(Date(5), d.entry().queuedAt)
+        assertEquals(Date(6), d.entry().trashedAt)
+        d.room.sink.folders["f1"] = com.ethran.notable.data.db.Folder("f1", "Uni", null, t0, t1)
+        d.edit(LocalChange.FolderUpserted(d.room.sink.folders.getValue("f1")))
+        d.room.sink.folders["f1"] = d.room.sink.folders.getValue("f1").copy(trashedAt = Date(7))
+        d.writer.replay(DocDebt.FolderTrash("f1"))
+        assertEquals(Date(7), d.docs.library().folders.getValue("f1").trashedAt)
     }
 
     /* ------------------------------ quick pages (round 5) ------------------------------ */
