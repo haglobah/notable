@@ -11,6 +11,7 @@ import androidx.room.ForeignKey
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
 import io.shipbook.shipbooksdk.ShipBook
@@ -52,6 +53,7 @@ interface FolderDao {
     @Query("SELECT * FROM folder WHERE id IS :folderId")
     fun getLive(folderId: String): LiveData<Folder?>
 
+    @Transaction
     @Query("SELECT * FROM folder")
     fun getAll(): List<Folder>
 

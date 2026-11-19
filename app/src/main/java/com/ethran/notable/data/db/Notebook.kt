@@ -8,6 +8,7 @@ import androidx.room.ForeignKey
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
 import com.ethran.notable.data.model.BackgroundType
@@ -70,6 +71,11 @@ interface NotebookDao {
     @Query("SELECT * FROM notebook WHERE parentFolderId is :folderId")
     fun getAllInFolder(folderId: String? = null): LiveData<List<Notebook>>
 
+    /**
+     * In a transaction: rows with long page lists span several cursor windows, and a write between
+     * two window fills (e.g. emptying the trash) made the read fail ("Couldn't read row n").
+     */
+    @Transaction
     @Query("SELECT * FROM notebook")
     fun getAll(): List<Notebook>
 
