@@ -1,0 +1,238 @@
+{
+  "quickNotebookId": "n-journal",
+  "folders": {
+    "f-uni": {
+      "title": "Uni",
+      "parentId": null,
+      "createdAt": "2026-01-02T03:04:05.006Z",
+      "updatedAt": "2026-02-03T04:05:06.007Z"
+    },
+    "f-math": {
+      "title": "Mathe – Übung 🙂",
+      "parentId": "f-uni",
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "updatedAt": "2026-01-03T00:00:00.001Z"
+    },
+    "f-fic": {
+      "title": "Fiction",
+      "parentId": null,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  },
+  "notebooks": {
+    "b-lhod": {
+      "docUrl": "automerge:blhodPlaceholderDocUrl",
+      "title": "The Left Hand of Darkness",
+      "folderId": "f-fic",
+      "kind": "notebook",
+      "source": {
+        "kind": "epub",
+        "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+        "layout": {
+          "w": 446,
+          "h": 595,
+          "em": 12
+        }
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-10-05T00:00:00.000Z",
+      "pageCount": 320,
+      "readPage": 319,
+      "rating": 9,
+      "meta": {
+        "authors": [
+          "Ursula K. Le Guin"
+        ],
+        "series": "Hainish Cycle",
+        "seriesIndex": 4,
+        "description": "A lone human ambassador is sent to the planet Gethen.",
+        "publisher": "Ace",
+        "language": "en",
+        "isbn": "9780441478125",
+        "published": "1969",
+        "subjects": [
+          "Science Fiction",
+          "Gender"
+        ]
+      },
+      "readAt": "2026-10-01T00:00:00.000Z",
+      "finishedAt": "2026-10-05T00:00:00.000Z"
+    },
+    "b-earth": {
+      "docUrl": "automerge:bearthPlaceholderDocUrl",
+      "title": "A Wizard of Earthsea",
+      "folderId": "f-fic",
+      "kind": "notebook",
+      "source": {
+        "kind": "epub",
+        "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+        "layout": {
+          "w": 446,
+          "h": 595,
+          "em": 12
+        }
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-10-20T00:00:00.000Z",
+      "pageCount": 180,
+      "readPage": 45,
+      "rating": 8,
+      "meta": {
+        "authors": [
+          "Ursula K. Le Guin"
+        ],
+        "series": "Earthsea",
+        "seriesIndex": 1,
+        "description": null,
+        "publisher": "Parnassus",
+        "language": "en",
+        "isbn": null,
+        "published": null,
+        "subjects": [
+          "Fantasy"
+        ]
+      },
+      "readAt": "2026-10-20T00:00:00.000Z",
+      "finishedAt": null
+    },
+    "b-dune": {
+      "docUrl": "automerge:bdunePlaceholderDocUrl",
+      "title": "Dune",
+      "folderId": null,
+      "kind": "notebook",
+      "source": {
+        "kind": "epub",
+        "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+        "layout": {
+          "w": 446,
+          "h": 595,
+          "em": 12
+        }
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-09-01T00:00:00.000Z",
+      "pageCount": 612,
+      "meta": {
+        "authors": [
+          "Frank Herbert"
+        ],
+        "series": "Dune",
+        "seriesIndex": 1,
+        "description": "Set on the desert world Arrakis.",
+        "publisher": null,
+        "language": "en",
+        "isbn": null,
+        "published": null,
+        "subjects": [
+          "Science Fiction"
+        ]
+      }
+    },
+    "b-fr": {
+      "docUrl": "automerge:bfrPlaceholderDocUrl",
+      "title": "L'Étranger",
+      "folderId": null,
+      "kind": "notebook",
+      "source": {
+        "kind": "epub",
+        "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+        "layout": {
+          "w": 446,
+          "h": 595,
+          "em": 12
+        }
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-08-01T00:00:00.000Z",
+      "rating": null,
+      "meta": {
+        "authors": [
+          "Albert Camus"
+        ],
+        "series": null,
+        "seriesIndex": 0.5,
+        "description": null,
+        "publisher": null,
+        "language": "fr",
+        "isbn": null,
+        "published": null,
+        "subjects": [
+          "Roman"
+        ]
+      }
+    },
+    "p-crdt": {
+      "docUrl": "automerge:pcrdtPlaceholderDocUrl",
+      "title": "Paper: CRDTs",
+      "folderId": "f-math",
+      "kind": "notebook",
+      "source": {
+        "kind": "pdf",
+        "blob": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-10-10T00:00:00.000Z",
+      "pageCount": 14,
+      "readPage": 3,
+      "rating": 7,
+      "meta": {
+        "authors": [
+          "Martin Kleppmann",
+          "Annette Bieniusa"
+        ],
+        "series": null,
+        "seriesIndex": null,
+        "description": "Conflict-free replicated data types",
+        "publisher": null,
+        "language": null,
+        "isbn": null,
+        "published": null,
+        "subjects": [
+          "distributed systems",
+          "crdt"
+        ]
+      },
+      "readAt": "2026-10-10T00:00:00.000Z"
+    },
+    "p-anal": {
+      "docUrl": "automerge:panalPlaceholderDocUrl",
+      "title": "Analysis I Übungsblatt",
+      "folderId": "f-math",
+      "kind": "notebook",
+      "source": {
+        "kind": "pdf",
+        "blob": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-10-15T00:00:00.000Z",
+      "pageCount": 2
+    },
+    "n-journal": {
+      "docUrl": "automerge:njournalPlaceholderDocUrl",
+      "title": "Journal",
+      "folderId": "f-uni",
+      "kind": "notebook",
+      "source": {
+        "kind": "none"
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-10-25T00:00:00.000Z",
+      "pageCount": 40,
+      "readPage": 39,
+      "readAt": "2026-10-25T00:00:00.000Z"
+    },
+    "q-1": {
+      "docUrl": "automerge:qPlaceholderDocUrl",
+      "title": "Quick page",
+      "folderId": "f-uni",
+      "kind": "quickPage",
+      "source": {
+        "kind": "none"
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-10-26T00:00:00.000Z",
+      "pageCount": 1
+    }
+  }
+}

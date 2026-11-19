@@ -131,7 +131,7 @@ function LoggedIn(props: { me: Me; repo: Repo; library: DocHandle<unknown>; offl
     for (const item of shared) uploads.add([item.file], null, () => item.remove())
   })
 
-  const session = { me: props.me, repo: props.repo, library, uploads, connected, image, logOut: props.onLoggedOut }
+  const session = { me: props.me, repo: props.repo, library, libraryHandle: props.library, uploads, connected, image, logOut: props.onLoggedOut }
   return (
     <SessionContext.Provider value={session}>
       <Router root={Shell}>

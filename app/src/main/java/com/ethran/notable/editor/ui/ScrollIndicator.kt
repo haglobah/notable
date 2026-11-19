@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import com.ethran.notable.ui.design.NotableTheme
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,7 +54,7 @@ fun ScrollIndicator(viewModel: EditorViewModel, page: PageView) {
                 .offset(
                     y = indicatorPositionDp.dp
                 )
-                .background(Color.Black)
+                .background(NotableTheme.colors.ink)
                 .height(indicatorSizeDp.dp)
         )
     }
@@ -93,7 +93,7 @@ fun HorizontalScrollIndicator(viewModel: EditorViewModel, page: PageView) {
                     .offset(
                         x = indicatorPositionDp.dp
                     )
-                    .background(Color.Black)
+                    .background(NotableTheme.colors.ink)
                     .width(indicatorSizeDp.dp)
             )
         }

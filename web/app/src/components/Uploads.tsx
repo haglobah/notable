@@ -8,6 +8,8 @@ type Job = {
   name: string
   stage: Stage | null
   error: string | null
+  /** Added, but with something worth saying (metadata that couldn't be read). Stays until dismissed. */
+  notice: string | null
   done: boolean
 }
 
@@ -25,17 +27,20 @@ export function createUploads(ctx: { repo: Repo; library: DocHandle<unknown>; ma
   const add = (files: Iterable<File>, folderId: string | null, after?: (file: File, ok: boolean) => Promise<void> | void) => {
     for (const file of files) {
       const id = next++
-      setJobs(list => [{ id, name: file.name, stage: null, error: null, done: false }, ...list])
+      setJobs(list => [{ id, name: file.name, stage: null, error: null, notice: null, done: false }, ...list])
       queue = queue.then(async () => {
         try {
-          await addDocument({
+          const added = await addDocument({
             file, folderId, repo: ctx.repo, library: ctx.library, transport, maxBlobBytes: ctx.maxBlobBytes,
             onStage: s => update(id, j => { j.stage = s }),
           })
-          update(id, j => { j.done = true })
+          update(id, j => {
+            j.done = true
+            if (added.metaError) j.notice = `Added under its file name: its title and author couldn't be read (${added.metaError}).`
+          })
           await after?.(file, true)
           // Finished uploads clear themselves; the new entry is now in the list below.
-          setTimeout(() => setJobs(list => list.filter(j => j.id !== id)), 2500)
+          if (!added.metaError) setTimeout(() => setJobs(list => list.filter(j => j.id !== id)), 2500)
         } catch (e) {
           const message = e instanceof UploadFailure ? e.message : `Adding ${file.name} failed: ${(e as Error).message}`
           update(id, j => { j.error = message })
@@ -84,7 +89,11 @@ export function UploadList(props: { uploads: Uploads }) {
                 <span class="upload-name">{j.name}</span>
                 <span class="upload-stage">{stageText(j)}</span>
               </div>
-              <Show when={j.error} fallback={<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(fraction(j) * 100)}><span style={{ width: `${fraction(j) * 100}%` }} /></div>}>
+              <Show when={j.notice}>
+                <p class="upload-notice">{j.notice}</p>
+                <button class="button text" type="button" onClick={() => props.uploads.dismiss(j.id)}>Dismiss</button>
+              </Show>
+              <Show when={j.error} fallback={<Show when={!j.notice}><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(fraction(j) * 100)}><span style={{ width: `${fraction(j) * 100}%` }} /></div></Show>}>
                 <p class="upload-error">{j.error}</p>
                 <button class="button text" type="button" onClick={() => props.uploads.dismiss(j.id)}>Dismiss</button>
               </Show>

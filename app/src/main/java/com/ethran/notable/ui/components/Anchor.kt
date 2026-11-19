@@ -4,19 +4,20 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.ethran.notable.ui.noRippleClickable
+import com.ethran.notable.ui.design.NIcon
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.inkClickable
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Anchor
 
@@ -30,7 +31,8 @@ fun Anchor(
     val screenHeightDp = configuration.screenHeightDp.dp
     val yOffset = screenHeightDp * verticalOffsetPercent
 
-    val circleDiameter: Dp = 40.dp
+    // The tab is as tall as a control, so it is a full 44 dp target.
+    val circleDiameter: Dp = NotableSize.control
     val extensionWidthDp: Dp = 10.dp
     val totalWidth = extensionWidthDp + circleDiameter / 2
 
@@ -39,9 +41,7 @@ fun Anchor(
             .offset(x = 0.dp, y = yOffset)
             .size(width = totalWidth, height = circleDiameter)
             .semantics { contentDescription = "Return to previous page" }
-            .noRippleClickable {
-                onClose()
-            },
+            .inkClickable(onClick = onClose),
         contentAlignment = Alignment.Center
     ) {
         DrawAnchorLabel(totalWidth, circleDiameter, extensionWidthDp)
@@ -50,6 +50,7 @@ fun Anchor(
 
 @Composable
 private fun DrawAnchorLabel(totalWidth: Dp, circleDiameter: Dp, extensionWidthDp: Dp) {
+    val c = NotableTheme.colors
     Canvas(modifier = Modifier.size(width = totalWidth, height = circleDiameter)) {
 
         val extW = extensionWidthDp.toPx()
@@ -82,17 +83,17 @@ private fun DrawAnchorLabel(totalWidth: Dp, circleDiameter: Dp, extensionWidthDp
 
         drawPath(
             path = path,
-            color = Color.Black
+            color = c.ink
         )
     }
 
     // Place anchor icon roughly centered over the semicircle portion (shift right a bit)
-    Icon(
-        imageVector = FeatherIcons.Anchor,
-        contentDescription = "Go back",
-        tint = Color.White,
+    NIcon(
+        FeatherIcons.Anchor,
+        contentDescription = null, // the tab carries the description
+        tint = c.paper,
+        size = circleDiameter * 0.4f,
         modifier = Modifier
             .offset(x = (extensionWidthDp / 2)) // nudge right so it’s visually centered in curved area
-            .size(circleDiameter * 0.4f)
     )
 }

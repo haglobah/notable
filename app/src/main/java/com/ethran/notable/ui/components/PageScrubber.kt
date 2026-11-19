@@ -1,6 +1,5 @@
 package com.ethran.notable.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -11,15 +10,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -29,16 +25,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.ethran.notable.editor.ui.toolbar.ToolbarButton
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
+import com.ethran.notable.ui.design.NIconButton
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.CornerUpLeft
 import kotlin.math.roundToInt
 
 /**
@@ -74,6 +74,7 @@ fun PageHorizontalSliderWithReturn(
     onReturnClick: () -> Unit = {},
 ) {
     val density = LocalDensity.current
+    val c = NotableTheme.colors
 
     // Internal index state resets when currentIndex or pageCount changes.
     var dragIndex by remember(currentIndex, pageCount) {
@@ -91,12 +92,9 @@ fun PageHorizontalSliderWithReturn(
     // Pixel offset for the thumb (left edge relative to start of track content).
     val thumbOffsetXPx: Float = (containerWidthPx - thumbWidthPx).coerceAtLeast(0f) * fraction
 
-    // Press state for color feedback
+    // Press state for color feedback: the thumb inks while held (no animation on e-ink).
     var isPressed by remember { mutableStateOf(false) }
-    val thumbColor by animateColorAsState(
-        targetValue = if (isPressed) Color.Black else Color.White,
-        label = "thumbColor"
-    )
+    val thumbColor = if (isPressed) c.ink else c.paper
 
     // Helper: quantize any raw page index
     val quantizeIndex: (Int) -> Int = { idx ->
@@ -119,10 +117,9 @@ fun PageHorizontalSliderWithReturn(
                 text = "${dragIndex + 1} / $pageCount",
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    .padding(bottom = 4.dp),
-                style = MaterialTheme.typography.body2,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black
+                    .padding(bottom = NotableSpace.xs),
+                style = NotableTheme.type.label,
+                color = c.ink
             )
         }
 
@@ -131,13 +128,11 @@ fun PageHorizontalSliderWithReturn(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Track + thumb + ticks/favorites
+            // Gestures take a full 44 dp of height; the drawn track sits in its middle.
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .height(trackHeight)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White)
-                    .border(1.dp, Color.Black, RoundedCornerShape(10.dp))
+                    .heightIn(min = NotableSize.control)
                     .onGloballyPositioned { coords -> containerWidthPx = coords.size.width }
                     .pointerInput(pageCount, currentIndex, quantization) {
                         if (pageCount <= 0) return@pointerInput
@@ -204,71 +199,82 @@ fun PageHorizontalSliderWithReturn(
                         }
                     }
 
-                    .autoEInkAnimationOnScroll()
+                    .autoEInkAnimationOnScroll(),
+                contentAlignment = Alignment.CenterStart,
             ) {
-                // Ticks: drawn beneath thumb (using simple Boxes for minimal overhead)
-                if (showTicks && pageCount > 1 && containerWidthPx > 0) {
-                    val usableWidth = (containerWidthPx - thumbWidthPx).coerceAtLeast(0f)
-                    for (i in 0 until pageCount) {
-                        val fracTick = i.toFloat() / (pageCount - 1)
-                        val xPx = (usableWidth * fracTick) + (thumbWidthPx / 2f)
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.CenterStart)
-                                .offset { IntOffset(xPx.roundToInt() - 1, -2) }
-                                .width(1.dp)
-                                .height(trackHeight / 3)
-                                .background(Color.Black)
-                        )
-                    }
-                }
-
-                // Favorites: rings centered vertically
-                if (favIndexes.isNotEmpty() && pageCount > 1 && containerWidthPx > 0) {
-                    val usableWidth = (containerWidthPx - thumbWidthPx).coerceAtLeast(0f)
-                    favIndexes.forEach { fav ->
-                        if (fav in 0 until pageCount) {
-                            val fracFav = fav.toFloat() / (pageCount - 1)
-                            val xPx = (usableWidth * fracFav) + (thumbWidthPx / 2f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(trackHeight)
+                        .clip(NotableShape.control)
+                        .background(c.paper, NotableShape.control)
+                        .border(NotableSize.hairline, c.ink, NotableShape.control)
+                ) {
+                    // Ticks: drawn beneath thumb (using simple Boxes for minimal overhead)
+                    if (showTicks && pageCount > 1 && containerWidthPx > 0) {
+                        val usableWidth = (containerWidthPx - thumbWidthPx).coerceAtLeast(0f)
+                        for (i in 0 until pageCount) {
+                            val fracTick = i.toFloat() / (pageCount - 1)
+                            val xPx = (usableWidth * fracTick) + (thumbWidthPx / 2f)
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.CenterStart)
-                                    .offset { IntOffset(xPx.roundToInt() - 12, 0) }
-                                    .size(10.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color.Black)
-                            ) {
+                                    .offset { IntOffset(xPx.roundToInt() - 1, -2) }
+                                    .width(1.dp)
+                                    .height(trackHeight / 3)
+                                    .background(c.rule)
+                            )
+                        }
+                    }
+
+                    // Favorites: rings centered vertically
+                    if (favIndexes.isNotEmpty() && pageCount > 1 && containerWidthPx > 0) {
+                        val usableWidth = (containerWidthPx - thumbWidthPx).coerceAtLeast(0f)
+                        favIndexes.forEach { fav ->
+                            if (fav in 0 until pageCount) {
+                                val fracFav = fav.toFloat() / (pageCount - 1)
+                                val xPx = (usableWidth * fracFav) + (thumbWidthPx / 2f)
                                 Box(
                                     modifier = Modifier
-                                        .matchParentSize()
-                                        .padding(2.dp)
-                                        .clip(RoundedCornerShape(50))
-                                        .background(Color.White)
-                                )
+                                        .align(Alignment.CenterStart)
+                                        .offset { IntOffset(xPx.roundToInt() - 12, 0) }
+                                        .size(10.dp)
+                                        .clip(NotableShape.pill)
+                                        .background(c.ink)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .padding(NotableSpace.xxs)
+                                            .clip(NotableShape.pill)
+                                            .background(c.paper)
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                // Thumb (snaps directly to quantized positions)
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(horizontal = 2.dp, vertical = 2.dp)
-                        .offset { IntOffset(thumbOffsetXPx.toInt(), 0) }
-                        .height(trackHeight - 4.dp)
-                        .width(thumbWidth)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(thumbColor)
-                        .border(1.dp, Color.Black, RoundedCornerShape(8.dp))
-                )
+                    // Thumb (snaps directly to quantized positions)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(horizontal = NotableSpace.xxs, vertical = NotableSpace.xxs)
+                            .offset { IntOffset(thumbOffsetXPx.toInt(), 0) }
+                            .height(trackHeight - 4.dp)
+                            .width(thumbWidth)
+                            .clip(NotableShape.control)
+                            .background(thumbColor)
+                            .border(NotableSize.hairline, c.ink, NotableShape.control)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(NotableSpace.md))
 
-            ToolbarButton(
-                imageVector = Icons.AutoMirrored.Filled.Undo,
-                onSelect = { onReturnClick() }
+            NIconButton(
+                icon = FeatherIcons.CornerUpLeft,
+                contentDescription = "Return to previous page",
+                onClick = onReturnClick,
             )
         }
     }

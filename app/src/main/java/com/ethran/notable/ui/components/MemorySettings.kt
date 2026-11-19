@@ -3,7 +3,6 @@ package com.ethran.notable.ui.components
 import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,8 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,11 +32,8 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -47,6 +41,18 @@ import com.ethran.notable.data.BackgroundMemoryRow
 import com.ethran.notable.data.MemorySnapshot
 import com.ethran.notable.data.PageDataManagerEntryPoint
 import com.ethran.notable.data.PageMemoryRow
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NControlSize
+import com.ethran.notable.ui.design.NIcon
+import com.ethran.notable.ui.design.NSettingRow
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.theme.InkaTheme
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.ChevronDown
+import compose.icons.feathericons.ChevronRight
 import dagger.hilt.EntryPoints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -57,12 +63,15 @@ import java.util.Locale
 private const val REFRESH_MS = 1000L
 private const val COPIED_HINT_MS = 2000L
 
-// Ink-friendly greys: these have to stay distinguishable on a 16-level e-paper panel, so the
-// segments of a single bar are spaced far apart rather than shaded finely.
-private val COLOR_COUNTED = Color(0xFF1B1B1B)
-private val COLOR_SECOND = Color(0xFF7A7A7A)
-private val COLOR_UNTRACKED = Color(0xFFC4C4C4)
-private val COLOR_OVER_BUDGET = Color(0xFF000000)
+/** Bar fills, from the tokens: three steps that stay apart on a 16-level e-paper panel. */
+private enum class Fill { Counted, Second, Untracked }
+
+@Composable
+private fun Fill.color(): Color = when (this) {
+    Fill.Counted -> NotableTheme.colors.ink
+    Fill.Second -> NotableTheme.colors.secondary
+    Fill.Untracked -> NotableTheme.colors.rule
+}
 
 /**
  * Debug-tab view of where the app's memory has gone.
@@ -149,44 +158,42 @@ private fun MemorySettingsContent(
     onRefresh: () -> Unit,
     onCopy: (MemorySnapshot) -> Unit,
 ) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(
-            text = if (expanded) "Memory usage ▾" else "Memory usage ▸",
-            style = MaterialTheme.typography.subtitle1,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onToggleExpanded() }
-        )
-        if (!expanded) {
-            Text(
-                text = "Tap to show the page-entry and background-pool budgets.",
-                style = MaterialTheme.typography.caption,
-                color = MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
+    Column {
+        NSettingRow(
+            title = "Memory usage",
+            description = "Page-entry and background-pool budgets",
+            onClick = onToggleExpanded,
+            divider = !expanded,
+        ) {
+            NIcon(
+                if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+                tint = NotableTheme.colors.secondary,
             )
-            return@Column
         }
+        if (!expanded) return@Column
 
         val snap = snapshot ?: run {
-            Text("Sampling…", style = MaterialTheme.typography.caption)
+            Caption("Sampling…")
             return@Column
         }
 
-        Spacer(Modifier.height(8.dp))
-        JavaHeapSection(snap)
-        Spacer(Modifier.height(10.dp))
-        NativeHeapSection(snap)
-        Spacer(Modifier.height(10.dp))
+        Column(Modifier.padding(bottom = NotableSpace.lg)) {
+            JavaHeapSection(snap)
+            Spacer(Modifier.height(NotableSpace.lg))
+            NativeHeapSection(snap)
+            Spacer(Modifier.height(NotableSpace.lg))
 
-        BreakdownTable(snap)
+            BreakdownTable(snap)
 
-        Spacer(Modifier.height(8.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(onClick = onRefresh) { Text("Refresh") }
-            Button(onClick = { onCopy(snap) }) { Text("Copy") }
-            if (showCopied) Text("Copied", style = MaterialTheme.typography.caption)
+            Row(
+                Modifier.padding(top = NotableSpace.md),
+                horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NButton("Refresh", onRefresh, size = NControlSize.Compact)
+                NButton("Copy", { onCopy(snap) }, size = NControlSize.Compact)
+                if (showCopied) Caption("Copied")
+            }
         }
     }
 }
@@ -201,8 +208,8 @@ private fun JavaHeapSection(snap: MemorySnapshot) {
     StackedBar(
         total = snap.maxHeapBytes,
         segments = listOf(
-            snap.entryBytes to COLOR_COUNTED,
-            snap.untrackedHeapBytes to COLOR_UNTRACKED,
+            snap.entryBytes to Fill.Counted,
+            snap.untrackedHeapBytes to Fill.Untracked,
         )
     )
     Caption("page entries ${mb(snap.entryBytes)} · other ${mb(snap.untrackedHeapBytes)}")
@@ -233,9 +240,9 @@ private fun NativeHeapSection(snap: MemorySnapshot) {
     StackedBar(
         total = snap.nativeHeapBytes,
         segments = listOf(
-            snap.backgroundBytes to COLOR_COUNTED,
-            snap.bitmapBytes to COLOR_SECOND,
-            snap.untrackedNativeBytes to COLOR_UNTRACKED,
+            snap.backgroundBytes to Fill.Counted,
+            snap.bitmapBytes to Fill.Second,
+            snap.untrackedNativeBytes to Fill.Untracked,
         )
     )
     Caption(
@@ -244,7 +251,7 @@ private fun NativeHeapSection(snap: MemorySnapshot) {
     )
     if (snap.nativeOverAccounted) {
         Caption(
-            "⚠ Counted bitmaps (${mb(snap.countedNativeBytes)}) exceed the measured native heap — " +
+            "Counted bitmaps (${mb(snap.countedNativeBytes)}) exceed the measured native heap — " +
                 "some are likely hardware/graphics-backed, which allocationByteCount reports but " +
                 "getNativeHeapAllocatedSize does not. The split above is unreliable."
         )
@@ -256,14 +263,14 @@ private fun NativeHeapSection(snap: MemorySnapshot) {
             "(heap ceiling − 2× page entries), so it moves even when no background changes."
     )
 
-    Spacer(Modifier.height(4.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(top = NotableSpace.sm), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "Windowed page bitmaps",
-            style = MaterialTheme.typography.caption,
+            style = NotableTheme.type.meta,
+            color = NotableTheme.colors.ink,
             modifier = Modifier.weight(1f)
         )
-        Text(mb(snap.bitmapBytes), style = MaterialTheme.typography.caption)
+        Text(mb(snap.bitmapBytes), style = NotableTheme.type.meta, color = NotableTheme.colors.ink)
     }
     Caption("No budget line: SoftReferences, reclaimed by ART under pressure rather than evicted.")
 }
@@ -274,16 +281,19 @@ private fun NativeHeapSection(snap: MemorySnapshot) {
  */
 @Composable
 private fun BreakdownTable(snap: MemorySnapshot) {
+    // NCodeBlock, but without wrapping: a private variant until the design system has one.
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = 240.dp)
+            .background(NotableTheme.colors.inset, NotableShape.surface)
             .verticalScroll(rememberScrollState())
+            .padding(NotableSpace.lg)
     ) {
         Text(
             text = breakdownText(snap),
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
-            color = MaterialTheme.colors.onSurface,
+            style = NotableTheme.type.mono,
+            color = NotableTheme.colors.ink,
             softWrap = false,
             modifier = Modifier.horizontalScroll(rememberScrollState())
         )
@@ -292,16 +302,20 @@ private fun BreakdownTable(snap: MemorySnapshot) {
 
 @Composable
 private fun SectionHeader(text: String) {
-    Text(text, style = MaterialTheme.typography.body2)
-    Spacer(Modifier.height(3.dp))
+    Text(
+        text,
+        style = NotableTheme.type.body,
+        color = NotableTheme.colors.ink,
+        modifier = Modifier.padding(bottom = NotableSpace.xs)
+    )
 }
 
 @Composable
 private fun Caption(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.caption,
-        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+        style = NotableTheme.type.meta,
+        color = NotableTheme.colors.secondary
     )
 }
 
@@ -309,16 +323,13 @@ private fun Caption(text: String) {
 @Composable
 private fun BudgetLine(label: String, used: Long, cap: Long) {
     val percent = if (cap > 0) (used * 100 / cap) else 0L
-    Column(modifier = Modifier.padding(top = 6.dp)) {
+    Column(modifier = Modifier.padding(top = NotableSpace.sm)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, style = MaterialTheme.typography.caption, modifier = Modifier.weight(1f))
-            Text("${mb(used)} / ${mb(cap)} ($percent%)", style = MaterialTheme.typography.caption)
+            Text(label, style = NotableTheme.type.meta, color = NotableTheme.colors.ink, modifier = Modifier.weight(1f))
+            Text("${mb(used)} / ${mb(cap)} ($percent%)", style = NotableTheme.type.meta, color = NotableTheme.colors.ink)
         }
-        StackedBar(
-            total = cap.coerceAtLeast(used),
-            // Over-budget reads as a solid black bar rather than silently clipping at 100%.
-            segments = listOf(used to if (used > cap) COLOR_OVER_BUDGET else COLOR_COUNTED)
-        )
+        // Over budget reads as a solid ink bar rather than silently clipping at 100%.
+        StackedBar(total = cap.coerceAtLeast(used), segments = listOf(used to Fill.Counted))
     }
 }
 
@@ -327,17 +338,18 @@ private fun BudgetLine(label: String, used: Long, cap: Long) {
  * stays as the (empty) track.
  */
 @Composable
-private fun StackedBar(total: Long, segments: List<Pair<Long, Color>>) {
+private fun StackedBar(total: Long, segments: List<Pair<Long, Fill>>) {
     Row(
         modifier = Modifier
+            .padding(vertical = NotableSpace.xs)
             .fillMaxWidth()
             .height(10.dp)
-            .border(1.dp, Color.Black)
-            .background(Color.White)
+            .background(NotableTheme.colors.paper)
+            .border(NotableSize.hairline, NotableTheme.colors.ink)
     ) {
         if (total <= 0) return@Row
         var remaining = total
-        for ((bytes, color) in segments) {
+        for ((bytes, fill) in segments) {
             val shown = bytes.coerceIn(0L, remaining)
             if (shown == 0L) continue
             remaining -= shown
@@ -346,7 +358,7 @@ private fun StackedBar(total: Long, segments: List<Pair<Long, Color>>) {
                 modifier = Modifier
                     .weight(weightOf(shown, total))
                     .fillMaxHeight()
-                    .background(color)
+                    .background(fill.color())
             )
         }
         if (remaining > 0) Spacer(Modifier.weight(weightOf(remaining, total)))
@@ -570,15 +582,17 @@ private fun PreviewFrame(
     expanded: Boolean = true,
     showCopied: Boolean = false,
 ) {
-    Box(Modifier.background(Color.White).padding(horizontal = 16.dp)) {
-        MemorySettingsContent(
-            expanded = expanded,
-            snapshot = snapshot,
-            showCopied = showCopied,
-            onToggleExpanded = {},
-            onRefresh = {},
-            onCopy = {},
-        )
+    InkaTheme {
+        Box(Modifier.background(NotableTheme.colors.paper).padding(horizontal = NotableSpace.lg)) {
+            MemorySettingsContent(
+                expanded = expanded,
+                snapshot = snapshot,
+                showCopied = showCopied,
+                onToggleExpanded = {},
+                onRefresh = {},
+                onCopy = {},
+            )
+        }
     }
 }
 
@@ -607,7 +621,7 @@ private fun MemorySettingsEmptyPreview() = PreviewFrame(
 /**
  * Both pools over their caps *and* both accounting checks tripped — the state the view exists to
  * make obvious. Entry bytes exceed the used heap and the counted bitmaps exceed the native heap, so
- * both ⚠ captions render and both budget bars go solid black.
+ * both warning captions render and both budget bars go solid ink.
  */
 @Preview(showBackground = true, widthDp = 600, heightDp = 800)
 @Composable

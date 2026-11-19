@@ -3,10 +3,8 @@ package com.ethran.notable.editor.ui.toolbar
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -39,6 +37,13 @@ import com.ethran.notable.data.datastore.BUTTON_SIZE
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.editor.utils.PenSetting
 import com.ethran.notable.ui.components.ScaledPopup
+import com.ethran.notable.ui.design.NSegmented
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.inkClickable
+import com.ethran.notable.ui.design.nSurface
 import kotlin.math.roundToInt
 
 
@@ -52,11 +57,6 @@ fun StrokeMenu(
 ) {
     val density = LocalDensity.current
 
-    val columnModifier =
-        if (GlobalAppSettings.current.continuousStrokeSlider) Modifier
-            .background(Color.White)
-            .border(1.dp, Color.Black)
-        else Modifier
     ScaledPopup(
         offset = with(density) { IntOffset(0, 43.dp.roundToPx()) },
         onDismissRequest = { onClose() },
@@ -65,13 +65,14 @@ fun StrokeMenu(
     ) {
 
         Column(
-            modifier = columnModifier
-                .width(IntrinsicSize.Min) // match the widest child (ColorPicker Row)
-                .padding(horizontal = 10.dp, vertical = 8.dp)
+            modifier = Modifier
                 .padding(bottom = (BUTTON_SIZE + 5).dp) // For toolbar is located at the button,
+                .width(IntrinsicSize.Min) // match the widest child (ColorPicker Row)
+                .nSurface(NotableTheme.colors)
+                .padding(NotableSpace.md)
         ) {
 
-            val widthOfPicker = (35 * colorOptions.size.coerceAtLeast(5))
+            val widthOfPicker = (ColorSwatch.value.toInt() * colorOptions.size.coerceAtLeast(5))
             val heightOfPicker = 40
 
             val isBottom =
@@ -87,7 +88,7 @@ fun StrokeMenu(
                     heightOfPicker = heightOfPicker
                 )
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(NotableSpace.sm))
 
                 ColorPicker(
                     value = value,
@@ -104,7 +105,7 @@ fun StrokeMenu(
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(NotableSpace.sm))
 
                 StrokeSizePicker(
                     value = value,
@@ -159,34 +160,26 @@ fun ColumnScope.StrokeSizePicker(
     }
 }
 
-
+/** One swatch per color the pen offers. The colors are pen ink (user data), not UI tokens. */
 @Composable
 private fun ColorPicker(
     value: PenSetting,
     onChange: (setting: PenSetting) -> Unit,
     colorOptions: List<Color>,
     modifier: Modifier = Modifier,
-    embedded: Boolean = false
 ) {
-    val rowModifier = if (embedded) {
-        modifier.height(IntrinsicSize.Max)
-    } else {
-        modifier
-            .background(Color.White)
-            .border(1.dp, Color.Black)
-            .height(IntrinsicSize.Max)
-    }
-
-    Row(rowModifier) {
-        colorOptions.map { color ->
+    val c = NotableTheme.colors
+    Row(modifier) {
+        colorOptions.forEach { color ->
+            val selected = color == Color(value.color)
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .background(color)
-                    .border(
-                        3.dp, if (color == Color(value.color)) Color.Black else Color.Transparent
+                    .size(ColorSwatch)
+                    .then(
+                        if (selected) Modifier.border(NotableSize.strong, c.ink, NotableShape.control)
+                        else Modifier
                     )
-                    .clickable {
+                    .inkClickable {
                         onChange(
                             PenSetting(
                                 strokeSize = value.strokeSize, color = android.graphics.Color.argb(
@@ -198,18 +191,15 @@ private fun ColorPicker(
                             )
                         )
                     }
-                    .padding(8.dp))
+                    .padding(NotableSpace.xs + NotableSpace.xxs)
+                    .background(color, NotableShape.control)
+                    .border(NotableSize.hairline, c.rule, NotableShape.control)
+            )
         }
     }
-
-    if (!embedded) {
-        Spacer(Modifier.height(4.dp))
-    }
-
 }
 
-// Old Picker
-@Suppress("unused")
+/** The size choice as a segmented control: one segment per size the pen offers. */
 @Composable
 private fun ThicknessPicker(
     value: PenSetting,
@@ -217,26 +207,21 @@ private fun ThicknessPicker(
     sizeOptions: List<Pair<String, Float>>,
     modifier: Modifier = Modifier
 ) {
-
-    Row(
-        modifier = modifier
-            .background(Color.White)
-            .border(1.dp, Color.Black),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        sizeOptions.forEach {
-            ToolbarButton(
-                text = it.first, isSelected = value.strokeSize == it.second, onSelect = {
-                    onChange(
-                        PenSetting(
-                            strokeSize = it.second, color = value.color
-                        )
-                    )
-                }, modifier = Modifier
+    NSegmented(
+        options = sizeOptions.indices.map { it to sizeOptions[it].first },
+        selected = sizeOptions.indexOfFirst { it.second == value.strokeSize },
+        onSelect = { i ->
+            onChange(
+                PenSetting(
+                    strokeSize = sizeOptions[i].second, color = value.color
+                )
             )
-        }
-    }
+        },
+        modifier = modifier,
+    )
 }
+
+private val ColorSwatch = 44.dp
 
 /**
  * Discrete slider:
@@ -254,6 +239,8 @@ private fun DiscreteThicknessSlider(
     modifier: Modifier = Modifier,
 ) {
     if (values.size < 2) return // Require at least two values to define a range
+    val ink = NotableTheme.colors.ink
+    val paper = NotableTheme.colors.paper
 
     // Use only sorted, distinct values
     val displayValues = values.distinct().sorted()
@@ -321,7 +308,7 @@ private fun DiscreteThicknessSlider(
             // Outline first (white halo), then fill, then crisp black outline
             drawPath(
                 path = trackPath,
-                color = Color.White,
+                color = paper,
                 style = Stroke(
                     width = 6f,
                     cap = StrokeCap.Butt,
@@ -330,12 +317,12 @@ private fun DiscreteThicknessSlider(
             )
             drawPath(
                 path = trackPath,
-                color = Color.Black,
+                color = ink,
                 style = Fill
             )
             drawPath(
                 path = trackPath,
-                color = Color.Black,
+                color = ink,
                 style = Stroke(
                     width = 2f,
                     cap = StrokeCap.Butt,
@@ -346,8 +333,8 @@ private fun DiscreteThicknessSlider(
             // Rounded end hints
             val leftR = minTrack / 4f
             val rightR = maxTrack / 4f
-            drawCircle(Color.Black, radius = leftR, center = Offset(2f, centerY))
-            drawCircle(Color.Black, radius = rightR, center = Offset(w - 3f, centerY - rightR))
+            drawCircle(ink, radius = leftR, center = Offset(2f, centerY))
+            drawCircle(ink, radius = rightR, center = Offset(w - 3f, centerY - rightR))
 
             // Ticks (indicators) along the top for the suggested values only
             val tickGap = 6f
@@ -359,7 +346,7 @@ private fun DiscreteThicknessSlider(
                 val startY = (topY - tickGap - tickHeight).coerceAtLeast(0f)
                 val endY = (topY - tickGap).coerceAtLeast(0f)
                 drawLine(
-                    color = Color.Black,
+                    color = ink,
                     start = Offset(x, startY),
                     end = Offset(x, endY),
                     strokeWidth = 3f,
@@ -378,7 +365,7 @@ private fun DiscreteThicknessSlider(
             val thumbOuterPadding = 3f
 
             drawRoundRect(
-                color = Color.White,
+                color = paper,
                 topLeft = Offset(
                     thumbX - thumbW / 2f - thumbOuterPadding, centerY - thumbH - thumbOuterPadding
                 ),
@@ -388,7 +375,7 @@ private fun DiscreteThicknessSlider(
                 cornerRadius = CornerRadius(thumbRadius, thumbRadius)
             )
             drawRoundRect(
-                color = Color.Black,
+                color = ink,
                 topLeft = Offset(thumbX - thumbW / 2f, centerY - thumbH),
                 size = Size(thumbW, thumbH),
                 cornerRadius = CornerRadius(thumbRadius, thumbRadius)
@@ -404,7 +391,7 @@ private fun DiscreteThicknessSlider(
                 lineTo(thumbX + arrowWidth / 2f, (tipY + arrowHeight).coerceAtMost(h))
                 close()
             }
-            drawPath(downArrow, color = Color.Black)
+            drawPath(downArrow, color = ink)
         }
     }
 }

@@ -42,4 +42,14 @@ class DocOutboxTest {
         box.release() // the session ended, e.g. at logout
         assertFalse(pending.contains("i1"))
     }
+
+    @Test
+    fun `reading state debts merge per notebook and survive a restart`() {
+        val file = File(tmp.newFolder(), "pending.json")
+        val box = DocOutbox(file, PendingLocalWrites())
+        box.record(LocalChange.NotebookRead("nb1", 1L))
+        box.record(LocalChange.NotebookFinished("nb1", null))
+        box.record(LocalChange.NotebookRenamed("nb1", "x"))
+        assertEquals(listOf(DocDebt.ReadingState("nb1"), DocDebt.NotebookRow("nb1")), DocOutbox(file, PendingLocalWrites()).debts())
+    }
 }

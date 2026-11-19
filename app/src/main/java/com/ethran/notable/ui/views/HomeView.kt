@@ -5,11 +5,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,8 +20,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -26,10 +29,6 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.Badge
-import androidx.compose.material.BadgedBox
-import androidx.compose.material.Icon
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,8 +39,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -52,31 +54,39 @@ import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.Notebook
+import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.editor.EditorDestination
-import com.ethran.notable.editor.ui.Topbar
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
 import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.navigation.NavigationDestination
+import com.ethran.notable.sync.automerge.LibrarySearch
 import com.ethran.notable.ui.LocalSnackContext
 import com.ethran.notable.ui.SnackConf
-import com.ethran.notable.ui.components.PaperAction
-import com.ethran.notable.ui.components.PaperIconAction
 import com.ethran.notable.ui.components.BreadCrumb
+import com.ethran.notable.ui.components.LibraryBar
 import com.ethran.notable.ui.components.NotebookCard
+import com.ethran.notable.ui.components.ResultsLine
 import com.ethran.notable.ui.components.ShowPagesRow
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NIcon
+import com.ethran.notable.ui.design.NIconButton
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.dialogs.EmptyBookWarningHandler
 import com.ethran.notable.ui.dialogs.FolderConfigDialog
 import com.ethran.notable.ui.dialogs.NotebookConfigDialog
-import com.ethran.notable.ui.theme.Ink
-import com.ethran.notable.ui.theme.Paper
-import com.ethran.notable.ui.theme.PaperInset
+import com.ethran.notable.ui.viewmodels.LibraryBrowse
 import com.ethran.notable.ui.viewmodels.LibraryUiState
 import com.ethran.notable.ui.viewmodels.LibraryViewModel
+import com.ethran.notable.ui.viewmodels.RecentNotebooks
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Plus
 import compose.icons.feathericons.FilePlus
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.FolderPlus
+import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Upload
 import io.shipbook.shipbooksdk.ShipBook
@@ -102,6 +112,9 @@ fun Library(
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val browse by viewModel.browse.collectAsStateWithLifecycle()
+    val quickNotebookId by viewModel.quickNotebookId.collectAsStateWithLifecycle()
     val newlyCreatedBookId by viewModel.newlyCreatedBookId.collectAsStateWithLifecycle()
 
     LaunchedEffect(folderId) {
@@ -126,13 +139,23 @@ fun Library(
         appRepository = viewModel.appRepository,
         exportEngine = viewModel.exportEngine,
         uiState = uiState,
+        query = query,
+        browse = browse,
+        quickNotebookId = quickNotebookId,
+        onToggleFilter = viewModel::toggleFilter,
+        onSort = viewModel::setSort,
+        onEverywhere = viewModel::setEverywhere,
+        onQueryChange = viewModel::setQuery,
         onNavigateToFolder = { id -> navController.navigate(LibraryDestination.createRoute(id)) },
         onNavigateToSettings = { navController.navigate("settings") },
         onNavigateToEditor = { pageId, bookId ->
             navController.navigate(EditorDestination.createRoute(pageId, bookId))
         },
         goToPage = goToPage,
-        onCreateNewQuickPage = { onCreateNewQuickPage(uiState.folderId) },
+        // One tap: a page at the end of the quick notebook, opened (round 5).
+        onCreateNewQuickPage = {
+            viewModel.openQuickPage { nb, page -> navController.navigate(EditorDestination.createRoute(page, nb)) }
+        },
         onCreateNewFolder = viewModel::createNewFolder,
         onDeleteEmptyBook = viewModel::deleteEmptyBook,
         onCreateNewNotebook = viewModel::onCreateNewNotebook,
@@ -150,6 +173,13 @@ fun LibraryContent(
     appRepository: AppRepository,
     exportEngine: ExportEngine,
     uiState: LibraryUiState,
+    query: String = "",
+    browse: LibraryBrowse = LibraryBrowse(),
+    quickNotebookId: String? = null,
+    onToggleFilter: (field: String, value: String) -> Unit = { _, _ -> },
+    onSort: (LibrarySearch.SortKey?, Boolean?) -> Unit = { _, _ -> },
+    onEverywhere: (Boolean) -> Unit = {},
+    onQueryChange: (String) -> Unit = {},
     onNavigateToFolder: (String?) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToEditor: (String, String) -> Unit,
@@ -162,70 +192,72 @@ fun LibraryContent(
     onImportXopp: (Uri) -> Unit,
     onPreviewMissing: (String) -> Unit
 ) {
-    Column(Modifier.fillMaxSize().background(Paper)) {
-        Topbar {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.h5,
-                    color = Ink,
-                    modifier = Modifier.weight(1f)
-                )
-                BadgedBox(badge = {
-                    if (!uiState.isLatestVersion) Badge(
-                        backgroundColor = Ink,
-                        modifier = Modifier.offset((-4).dp, 4.dp)
-                    )
-                }) {
-                    PaperIconAction(stringResource(R.string.settings_title), FeatherIcons.Settings,
-                        onClick = onNavigateToSettings)
-                }
-            }
-        }
+    Column(Modifier.fillMaxSize().background(NotableTheme.colors.paper)) {
+        val results = browse.results?.takeIf { query.isNotBlank() }
         NotebookGrid(
             appRepository = appRepository,
             exportEngine = exportEngine,
-            books = uiState.books,
+            books = results?.notebooks ?: browse.sortedBooks ?: uiState.books,
             isImporting = uiState.isImporting,
             onNavigateToEditor = onNavigateToEditor,
             onDeleteEmptyBook = onDeleteEmptyBook,
             onPreviewMissing = onPreviewMissing,
             modifier = Modifier.weight(1f),
+            // Search results come best first and from every folder; a folder lists oldest last.
+            newestFirst = results == null && browse.sortedBooks == null,
+            folderPaths = results?.folderPaths.orEmpty(),
+            // No headings over the library (round 5); searching shows the results line.
+            heading = null,
+            pinnedFirstId = if (results == null) quickNotebookId else null,
+            // Searching: "3 matches in Uni · Search everywhere" instead of the heading.
+            headingContent = if (results == null) null else ({
+                ResultsLine(
+                    count = results.notebooks.size + results.quickPages.size,
+                    folderTitle = if (browse.inFolder) uiState.breadcrumbFolders.lastOrNull()?.title else null,
+                    everywhere = browse.everywhere, onEverywhere = onEverywhere,
+                )
+            }),
+            emptyText = if (results != null && results.notebooks.isEmpty() && results.quickPages.isEmpty())
+                stringResource(R.string.library_search_none) else null,
             header = {
                 Column {
-                    BreadCrumb(
-                        folders = uiState.breadcrumbFolders,
-                        fontSize = 28,
-                        onSelectFolderId = onNavigateToFolder
-                    )
-                    Spacer(Modifier.height(20.dp))
-                    NotebookImportPanel(
-                        onCreateNewNotebook = onCreateNewNotebook,
-                        onCreateNewQuickPage = onCreateNewQuickPage,
-                        onCreateNewFolder = onCreateNewFolder,
-                        onImportPdf = onImportPdf,
-                        onImportXopp = onImportXopp
-                    )
-                    if (uiState.folders.isNotEmpty()) {
-                        Spacer(Modifier.height(28.dp))
-                        Text(stringResource(R.string.library_folders),
-                            style = MaterialTheme.typography.h6, color = Ink)
-                        Spacer(Modifier.height(12.dp))
-                        FolderList(appRepository, uiState.folders, onNavigateToFolder)
-                    }
-                    if (uiState.singlePages.isNotEmpty()) {
-                        Spacer(Modifier.height(28.dp))
-                        ShowPagesRow(
+                    LibraryBar(query = query, onQueryChange = onQueryChange, browse = browse,
+                        onToggleFilter = onToggleFilter, onSort = onSort,
+                        onOpenNotebook = { nb -> onNavigateToEditor(RecentNotebooks.pageOf(nb), nb.id) },
+                        // Navigation lives with the bar, at its far right; a dot marks an update.
+                        trailing = { SettingsButton(updateAvailable = !uiState.isLatestVersion, onClick = onNavigateToSettings) })
+                    Spacer(Modifier.height(NotableSpace.xl))
+                    if (results != null) {
+                        if (results.quickPages.isNotEmpty()) ShowPagesRow(
                             appRepository = appRepository,
-                            pages = uiState.singlePages,
+                            pages = results.quickPages,
                             currentPageId = null,
                             title = stringResource(R.string.home_quick_pages),
                             onSelectPage = goToPage,
                             onPreviewMissing = onPreviewMissing
                         )
+                        return@Column
+                    }
+                    // Inside a folder the breadcrumb stays (navigation); at the root nothing.
+                    if (uiState.folderId != null) {
+                        BreadCrumb(
+                            folders = uiState.breadcrumbFolders,
+                            fontSize = 24,
+                            onSelectFolderId = onNavigateToFolder
+                        )
+                        Spacer(Modifier.height(NotableSpace.lg))
+                    }
+                    NotebookImportPanel(
+                        onCreateNewNotebook = onCreateNewNotebook,
+                        onCreateNewQuickPage = onCreateNewQuickPage,
+                        onCreateNewFolder = onCreateNewFolder,
+                        onImportPdf = onImportPdf,
+                        onImportXopp = onImportXopp,
+                    )
+                    // Folders as a row above the cards, without a heading.
+                    if (uiState.folders.isNotEmpty()) {
+                        Spacer(Modifier.height(NotableSpace.sm))
+                        FolderList(appRepository, uiState.folders, onNavigateToFolder)
                     }
                 }
             }
@@ -233,6 +265,10 @@ fun LibraryContent(
     }
 }
 
+/** The settings gear; [updateAvailable] adds an ink dot at its corner. */
+@Composable
+private fun SettingsButton(updateAvailable: Boolean, onClick: () -> Unit) =
+    NIconButton(FeatherIcons.Settings, stringResource(R.string.settings_title), onClick, badge = updateAvailable)
 
 @Composable
 fun FolderList(
@@ -241,7 +277,7 @@ fun FolderList(
     onNavigateToFolder: (String) -> Unit
 ) {
     LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm),
         modifier = Modifier
             .fillMaxWidth()
             .autoEInkAnimationOnScroll()
@@ -257,27 +293,23 @@ fun FolderList(
                         log.i("Closing Directory Dialog")
                         isFolderSettingsOpen = false
                     })
-                Row(
-                    Modifier
-                        .combinedClickable(
-                            onClick = { onNavigateToFolder(folder.id) },
-                            onLongClick = { isFolderSettingsOpen = true })
-                        .background(PaperInset)
-                        .heightIn(min = 48.dp)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = FeatherIcons.Folder, contentDescription = null,
-                        Modifier.height(20.dp), tint = Ink
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(text = folder.title, color = Ink, style = MaterialTheme.typography.body2)
-                }
+                FolderButton(
+                    title = folder.title,
+                    onClick = { onNavigateToFolder(folder.id) },
+                    onLongClick = { isFolderSettingsOpen = true })
             }
         }
     }
 }
+
+/**
+ * A folder: a quiet [NButton] (folder icon, no border), so places read differently from the
+ * outlined actions above them. Long press opens the folder settings.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FolderButton(title: String, onClick: () -> Unit, onLongClick: () -> Unit) =
+    NButton(title, onClick, style = NButtonStyle.Quiet, icon = FeatherIcons.Folder, onLongClick = onLongClick)
 
 @Composable
 fun NotebookGrid(
@@ -289,26 +321,40 @@ fun NotebookGrid(
     onDeleteEmptyBook: (String) -> Unit,
     onPreviewMissing: (String) -> Unit,
     modifier: Modifier = Modifier,
+    newestFirst: Boolean = true,
+    folderPaths: Map<String, String> = emptyMap(),
+    heading: String? = null,
+    headingContent: (@Composable () -> Unit)? = null,
+    /** Shown first, before any order: the quick notebook (round 5). */
+    pinnedFirstId: String? = null,
+    emptyText: String? = null,
     header: @Composable () -> Unit = {}
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(180.dp),
-        contentPadding = PaddingValues(24.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        contentPadding = PaddingValues(horizontal = NotableSpace.gutter, vertical = NotableSpace.xl),
+        verticalArrangement = Arrangement.spacedBy(NotableSpace.xl),
+        horizontalArrangement = Arrangement.spacedBy(NotableSpace.xl),
         modifier = modifier.autoEInkAnimationOnScroll()
     ) {
         item(key = "library-header", span = { GridItemSpan(maxLineSpan) }) { header() }
-        item(key = "notebooks-heading", span = { GridItemSpan(maxLineSpan) }) {
-            Text(
-                text = stringResource(R.string.home_notebooks),
-                style = MaterialTheme.typography.h6,
-                color = Ink
+        if (heading != null || headingContent != null) item(key = "notebooks-heading", span = { GridItemSpan(maxLineSpan) }) {
+            if (headingContent != null) headingContent() else Text(
+                text = heading ?: stringResource(R.string.home_notebooks),
+                style = NotableTheme.type.heading,
+                color = NotableTheme.colors.ink
             )
+        }
+        if (emptyText != null) item(key = "notebooks-empty", span = { GridItemSpan(maxLineSpan) }) {
+            Text(emptyText, style = NotableTheme.type.body, color = NotableTheme.colors.secondary)
         }
 
         if (books.isNotEmpty()) {
-            items(books.reversed(), key = { "notebook-${it.id}" }) { book ->
+            val ordered = (if (newestFirst) books.reversed() else books).let { list ->
+                val pinned = list.firstOrNull { it.id == pinnedFirstId }
+                if (pinned == null) list else listOf(pinned) + (list - pinned)
+            }
+            items(ordered, key = { "notebook-${it.id}" }) { book ->
                 if (book.pageIds.isEmpty()) {
                     if (!isImporting) {
                         EmptyBookWarningHandler(
@@ -326,7 +372,12 @@ fun NotebookGrid(
                     openPageId = book.openPageId,
                     onOpen = { bookId, pageId -> onNavigateToEditor(pageId, bookId) },
                     onOpenSettings = { isSettingsOpen = true },
-                    onPreviewMissing = onPreviewMissing
+                    onPreviewMissing = onPreviewMissing,
+                    authors = book.bookMeta?.authors.orEmpty(),
+                    isBook = book.isBook,
+                    finished = book.finishedAt != null,
+                    folderPath = folderPaths[book.id],
+                    rating = book.rating,
                 )
 
                 if (isSettingsOpen) {
@@ -396,15 +447,15 @@ fun LibraryCreationActions(
     onImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        PaperAction(stringResource(R.string.library_new_notebook), onCreateNewNotebook,
-            icon = FeatherIcons.FilePlus, primary = true)
-        PaperAction(stringResource(R.string.library_new_quick_page), onCreateNewQuickPage,
+    FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm),
+        verticalArrangement = Arrangement.spacedBy(NotableSpace.sm)) {
+        NButton(stringResource(R.string.library_new_notebook), onCreateNewNotebook,
+            icon = FeatherIcons.FilePlus, style = NButtonStyle.Primary)
+        NButton(stringResource(R.string.library_new_quick_page), onCreateNewQuickPage,
             icon = FeatherIcons.Plus)
-        PaperAction(stringResource(R.string.library_new_folder), onCreateNewFolder,
+        NButton(stringResource(R.string.library_new_folder), onCreateNewFolder,
             icon = FeatherIcons.FolderPlus)
-        PaperAction(stringResource(R.string.library_import), onImport, icon = FeatherIcons.Upload)
+        NButton(stringResource(R.string.library_import), onImport, icon = FeatherIcons.Upload)
     }
 }
 
@@ -482,3 +533,10 @@ fun LibraryContentUpdatePreview() {
 //        onImportPdf = { _ -> },
 //        onImportXopp = {})
 }
+
+/** Made from a PDF or EPUB: imports give the notebook its book as the default background. */
+private val Notebook.isBook: Boolean
+    get() = when (BackgroundType.fromKey(defaultBackgroundType)) {
+        BackgroundType.AutoPdf, is BackgroundType.Pdf -> true
+        else -> false
+    }

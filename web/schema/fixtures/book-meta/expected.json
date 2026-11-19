@@ -1,0 +1,76 @@
+{
+  "comment": "Written by hand from docs/plans/ebook-features.md. title null: use the file name. meta null: write no meta.",
+  "files": {
+    "epub2-calibre.epub": {
+      "title": "The Left Hand of Darkness",
+      "meta": {
+        "authors": ["Ursula K. Le Guin", "Some Translator"],
+        "series": "Hainish Cycle",
+        "seriesIndex": 4,
+        "description": "A lone human envoy is sent to the planet Gethen & its “ice”.",
+        "publisher": "Ace Books",
+        "language": "en",
+        "isbn": "9780441478125",
+        "published": "1969-03-01",
+        "subjects": ["Science Fiction", "Gender"]
+      },
+      "pages": 9,
+      "outline": [
+        { "title": "A Parade in Erhenrang", "page": 0, "depth": 0 },
+        { "title": "Part Two", "page": 4, "depth": 0 },
+        { "title": "The Place Inside the Blizzard", "page": 4, "depth": 1 },
+        { "title": "The Mad King", "page": 7, "depth": 1 }
+      ],
+      "search": { "query": "gethen", "pages": [6, 8] }
+    },
+    "epub3-collection.epub": {
+      "title": "A Wizard of Earthsea",
+      "meta": {
+        "authors": ["Ursula K. Le Guin"],
+        "series": "Earthsea",
+        "seriesIndex": 1,
+        "description": null,
+        "publisher": null,
+        "language": "en-US",
+        "isbn": "039527653X",
+        "published": "1968",
+        "subjects": []
+      },
+      "pages": 1,
+      "outline": []
+    },
+    "epub-title-only.epub": {
+      "title": "Field Notes",
+      "meta": null,
+      "pages": 1,
+      "outline": []
+    },
+    "pdf-info.pdf": {
+      "title": "Paper: CRDTs",
+      "meta": {
+        "authors": ["Martin Kleppmann", "Annette Bieniusa", "Alastair R. Beresford", "Marc Shapiro"],
+        "series": null,
+        "seriesIndex": null,
+        "description": "Conflict-free replicated data types",
+        "publisher": null,
+        "language": null,
+        "isbn": null,
+        "published": null,
+        "subjects": ["crdt", "distributed systems"]
+      },
+      "pages": 3,
+      "outline": [
+        { "title": "Section 1: Conflict-free replic", "page": 0, "depth": 0 },
+        { "title": "Section 2: A local-first world", "page": 1, "depth": 0 },
+        { "title": "Section 3: Convergence of repli", "page": 2, "depth": 0 }
+      ],
+      "search": { "query": "replicas", "pages": [2] }
+    },
+    "pdf-bare.pdf": {
+      "title": null,
+      "meta": null,
+      "pages": 1,
+      "outline": []
+    }
+  }
+}

@@ -10,29 +10,25 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import com.ethran.notable.data.datastore.GlobalAppSettings
+import com.ethran.notable.ui.design.DarkNotableColors
+import com.ethran.notable.ui.design.DefaultNotableType
+import com.ethran.notable.ui.design.LightNotableColors
+import com.ethran.notable.ui.design.LocalNotableColors
+import com.ethran.notable.ui.design.LocalNotableType
+import com.ethran.notable.ui.design.NotableColors
 
-private val DarkColorPalette = darkColors(
-    primary = Paper,
-    primaryVariant = PaperLine,
-    secondary = Paper,
-    background = Ink,
-    surface = Ink,
-    onPrimary = Ink,
-    onSecondary = Ink,
-    onBackground = Paper,
-    onSurface = Paper
-)
-
-private val LightColorPalette = lightColors(
-    primary = Ink,
-    primaryVariant = SecondaryInk,
-    secondary = Ink,
-    background = Paper,
-    surface = Paper,
-    onPrimary = Paper,
-    onSecondary = Paper,
-    onBackground = Ink,
-    onSurface = Ink
+private fun materialColors(c: NotableColors) = (if (c.isDark) darkColors() else lightColors()).copy(
+    primary = c.ink,
+    primaryVariant = c.secondary,
+    secondary = c.ink,
+    secondaryVariant = c.secondary,
+    background = c.paper,
+    surface = c.paper,
+    onPrimary = c.paper,
+    onSecondary = c.paper,
+    onBackground = c.ink,
+    onSurface = c.ink,
+    isLight = !c.isDark,
 )
 
 @Composable
@@ -41,11 +37,15 @@ fun InkaTheme(
     scaleFactor: Float = GlobalAppSettings.current.uiScale,
     content: @Composable () -> Unit
 ) {
-    val colors = if (darkTheme) DarkColorPalette else LightColorPalette
+    val tokens = if (darkTheme) DarkNotableColors else LightNotableColors
 
-    CompositionLocalProvider(LocalDensity provides scaledDensity(scaleFactor)) {
+    CompositionLocalProvider(
+        LocalDensity provides scaledDensity(scaleFactor),
+        LocalNotableColors provides tokens,
+        LocalNotableType provides DefaultNotableType,
+    ) {
         MaterialTheme(
-            colors = colors,
+            colors = materialColors(tokens),
             typography = Typography,
             shapes = Shapes,
             content = content

@@ -74,6 +74,12 @@ class DocFirstMirror(
         return result
     }
 
+    override suspend fun quickNotebookId(): String? {
+        awaitLibrary()
+        val w = writer() ?: return null
+        return withContext(io) { w.quickNotebookId() }
+    }
+
     /** The open library's outbox; fails the write when no library is open. */
     private fun open(): DocOutbox = outbox() ?: throw java.io.IOException(NO_LIBRARY)
 

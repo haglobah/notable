@@ -22,6 +22,7 @@ import javax.inject.Inject
 
 data class PagesUiState(
     val bookId: String = "",
+    val bookTitle: String = "",
     val pageIds: List<String> = emptyList(),
     val openPageId: String? = null,
     val folderList: List<Folder> = emptyList(),
@@ -58,6 +59,7 @@ class PagesViewModel @Inject constructor(
                 val folderList = getFolderList(appRepository, book.parentFolderId)
                 _uiState.update { it.copy(
                     bookId = bookId,
+                    bookTitle = book.title,
                     pageIds = book.pageIds,
                     openPageId = book.openPageId,
                     folderList = folderList,

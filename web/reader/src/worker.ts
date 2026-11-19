@@ -6,6 +6,7 @@
  * read before stay readable and downloadable offline).
  */
 import { docKeyId, entryFromWire, type DocKey, type WorkerRequest, type WorkerResponse } from "./pdfProtocol.ts"
+import { outlineOf, searchDoc } from "./bookText.ts"
 
 // mupdf.js initializes its WASM with top-level await. Importing it statically would keep this
 // module from finishing evaluation, and messages that arrive before onmessage is set are dropped,
@@ -102,6 +103,11 @@ async function answer(req: WorkerRequest, post: (m: WorkerResponse, transfer?: T
     else if (req.type === "render") {
       const bitmap = await render(req.key, req.index, req.width)
       post({ id: req.id, type: "render", bitmap }, [bitmap])
+    } else if (req.type === "outline") {
+      post({ id: req.id, type: "outline", outline: outlineOf(await document(req.key)) })
+    } else if (req.type === "search") {
+      const hits = searchDoc(await document(req.key), req.query, (done, total) => post({ id: req.id, type: "progress", done, total }))
+      post({ id: req.id, type: "search", hits })
     } else if (req.type === "project") {
       // Automerge's WASM is only needed for downloads; reading pages shouldn't wait for it.
       const [A, { project }] = await Promise.all([import("@automerge/automerge"), import("./project.ts")])

@@ -18,7 +18,10 @@ import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.di.ApplicationScope
 import com.ethran.notable.editor.EditorViewModel.Companion.DEFAULT_PEN_SETTINGS
 import com.ethran.notable.editor.canvas.CanvasEventBus
+import com.ethran.notable.data.db.Notebook
+import com.ethran.notable.data.db.Page
 import com.ethran.notable.editor.state.ClipboardStore
+import com.ethran.notable.ui.viewmodels.RecentNotebooks
 import com.ethran.notable.editor.state.History
 import com.ethran.notable.editor.state.Mode
 import com.ethran.notable.editor.state.SelectionState
@@ -103,6 +106,17 @@ data class ToolbarUiState(
 
     /** Menu commands: built-ins and the live code image's (ADR-002). */
     val commands: List<ImageCommand> = emptyList(),
+
+    // Reading (docs/plans/ebook-features.md)
+    /** The notebook was made from a PDF or EPUB: the menu offers contents and search. */
+    val isBook: Boolean = false,
+    val isFinished: Boolean = false,
+    /** 1 to 10, or null. */
+    val rating: Int? = null,
+    /** A contents or search dialog is open over the page. */
+    val isBookPanelOpen: Boolean = false,
+    /** A panel opened by an edge swipe: recent notebooks (left) or the pages (right). */
+    val edgePanel: EdgePanel = EdgePanel.None,
 ) {
     /** The active preset's setting — what the drawing pipeline draws with. The fallback
      * only triggers if the active preset was deleted mid-session. */
@@ -111,8 +125,19 @@ data class ToolbarUiState(
 
     val isDrawingAllowed: Boolean
         get() = !isSelectionActive &&
-                !(isMenuOpen || isStrokeSelectionOpen || isBackgroundSelectorModalOpen)
+                !(isMenuOpen || isStrokeSelectionOpen || isBackgroundSelectorModalOpen || isBookPanelOpen)
+                && edgePanel == EdgePanel.None
                 && !isQuickNavOpen
+}
+
+
+/** The panels an edge swipe opens over the page, after reMarkable's drawer and quick browse. */
+enum class EdgePanel {
+    None,
+    /** Swipe in from the upper left edge: the notebooks opened last, and favorite pages. */
+    Recents,
+    /** Swipe in from the right edge: every page of the notebook, to flip through and open. */
+    QuickBrowse,
 }
 
 
@@ -151,7 +176,18 @@ sealed class ToolbarAction {
     object NavigateToPages : ToolbarAction()
     object NavigateToHome : ToolbarAction()
 
+    object OpenContents : ToolbarAction()
+    object OpenBookSearch : ToolbarAction()
+    /** Mark as finished ([finished]) or as unread. */
+    data class SetFinished(val finished: Boolean) : ToolbarAction()
+    /** 1 to 10, or null for Clear. */
+    data class SetRating(val rating: Int?) : ToolbarAction()
+    object CloseBookPanel : ToolbarAction()
+    /** A contents entry or search result was tapped: show notebook page [pageId]. */
+    data class JumpToPage(val pageId: String) : ToolbarAction()
+
     object CloseAllMenus : ToolbarAction()
+    data class OpenEdgePanel(val panel: EdgePanel) : ToolbarAction()
     data class UpdateQuickNavOpen(val isOpen: Boolean) : ToolbarAction()
 }
 
@@ -228,6 +264,9 @@ class EditorViewModel @Inject constructor(
                 }
         }
     }
+
+    /** Contents, search and reading state for a notebook made from a book. */
+    val bookReading = BookReading(appRepository, viewModelScope) { showHint(it, 3000) }
 
     // ---- One-Time Events (Channels) ----
     private val uiEventChannel = Channel<EditorUiEvent>(Channel.BUFFERED)
@@ -360,7 +399,21 @@ class EditorViewModel @Inject constructor(
             ToolbarAction.NavigateToPages -> handleNavigateToPages()
             ToolbarAction.NavigateToHome -> sendUiEvent(EditorUiEvent.NavigateToLibrary(null))
 
+            ToolbarAction.OpenContents -> openBookPanel { bookReading.openContents() }
+            ToolbarAction.OpenBookSearch -> openBookPanel { bookReading.openSearch() }
+            ToolbarAction.CloseBookPanel -> closeBookPanel()
+            is ToolbarAction.JumpToPage -> {
+                closeBookPanel()
+                if (action.pageId != currentPageId) changePage(action.pageId)
+            }
+            is ToolbarAction.SetFinished -> viewModelScope.launch(Dispatchers.IO) {
+                bookReading.setFinished(action.finished)?.let { f -> _toolbarState.update { it.copy(isFinished = f) } }
+            }
+            is ToolbarAction.SetRating -> viewModelScope.launch(Dispatchers.IO) {
+                if (bookReading.setRating(action.rating)) _toolbarState.update { it.copy(rating = action.rating) }
+            }
             ToolbarAction.CloseAllMenus -> handleCloseAllMenus()
+            is ToolbarAction.OpenEdgePanel -> openEdgePanel(action.panel)
             is ToolbarAction.UpdateQuickNavOpen -> {
                 _toolbarState.update { it.copy(isQuickNavOpen = action.isOpen) }
                 updateDrawingState()
@@ -419,13 +472,26 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    private fun openBookPanel(open: () -> Unit) {
+        _toolbarState.update { it.copy(isMenuOpen = false, isBookPanelOpen = true) }
+        updateDrawingState()
+        open()
+    }
+
+    private fun closeBookPanel() {
+        bookReading.close()
+        _toolbarState.update { it.copy(isBookPanelOpen = false) }
+        updateDrawingState()
+    }
+
     private fun handleCloseAllMenus() {
         log.d("Closing all menus in EditorViewModel")
         _toolbarState.update {
             it.copy(
                 isMenuOpen = false,
                 isStrokeSelectionOpen = false,
-                isBackgroundSelectorModalOpen = false
+                isBackgroundSelectorModalOpen = false,
+                edgePanel = EdgePanel.None,
             )
         }
         updateDrawingState()
@@ -576,6 +642,11 @@ class EditorViewModel @Inject constructor(
         }
 
         editorImage.openPage = OpenPage(pageId, bookId, pageIndex, totalPages)
+        if (book != null) viewModelScope.launch(Dispatchers.IO) {
+            val isBook = bookReading.sourceOf(book) != null
+            _toolbarState.update { it.copy(isBook = isBook, isFinished = book.finishedAt != null, rating = book.rating) }
+            bookReading.opened(book.id)
+        }
         _toolbarState.update {
             it.copy(
                 notebookId = bookId,
@@ -588,6 +659,47 @@ class EditorViewModel @Inject constructor(
                 backgroundPageNumber = bgPageNumber
             )
         }
+    }
+
+    // --------------------------------------------------------
+    // Edge panels: recents (upper left) and quick browse (right)
+    // --------------------------------------------------------
+
+    private val _recentNotebooks = MutableStateFlow<List<Notebook>>(emptyList())
+    /** The notebooks opened last, for the recents panel. */
+    val recentNotebooks: StateFlow<List<Notebook>> = _recentNotebooks.asStateFlow()
+
+    private val _favoritePages = MutableStateFlow<List<Page>>(emptyList())
+    /** Favorite pages (QuickNav's), for the recents panel's second tab. */
+    val favoritePages: StateFlow<List<Page>> = _favoritePages.asStateFlow()
+
+    private val _bookPageIds = MutableStateFlow<List<String>>(emptyList())
+    /** Every page of the open notebook, for quick browse. */
+    val bookPageIds: StateFlow<List<String>> = _bookPageIds.asStateFlow()
+
+    private fun openEdgePanel(panel: EdgePanel) {
+        // A loose page has nothing to browse.
+        if (panel == EdgePanel.QuickBrowse && bookId == null) return
+        _toolbarState.update { it.copy(edgePanel = panel, isMenuOpen = false, isStrokeSelectionOpen = false) }
+        updateDrawingState()
+        viewModelScope.launch(Dispatchers.IO) {
+            when (panel) {
+                EdgePanel.Recents -> {
+                    _recentNotebooks.value = RecentNotebooks.of(appRepository.bookRepository.getAll())
+                    _favoritePages.value =
+                        appRepository.pageRepository.getByIds(GlobalAppSettings.current.quickNavPages)
+                }
+                EdgePanel.QuickBrowse ->
+                    _bookPageIds.value = bookId?.let { appRepository.bookRepository.getById(it)?.pageIds }.orEmpty()
+                EdgePanel.None -> {}
+            }
+        }
+    }
+
+    /** Opens [pageId] of this notebook from quick browse. */
+    fun openPageFromPanel(pageId: String) {
+        onToolbarAction(ToolbarAction.OpenEdgePanel(EdgePanel.None))
+        if (pageId != currentPageId) changePage(pageId)
     }
 
     private fun saveToolbarState() {

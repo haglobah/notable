@@ -2,30 +2,37 @@ package com.ethran.notable.ui.components
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.Icon
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ethran.notable.R
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.Page
-import com.ethran.notable.ui.noRippleClickable
-import com.ethran.notable.ui.theme.Ink
+import com.ethran.notable.ui.design.NIcon
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.inkClickable
 import com.ethran.notable.ui.theme.InkaTheme
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.ChevronRight
 
+/**
+ * Where you are: Library › Folder › Folder. Ancestors are secondary, the current place is ink;
+ * every crumb is a 44 dp target. [fontSize] picks the type role (kept for callers): 22 and up is
+ * the screen title, 18 and up a heading, smaller is body text (e.g. "Location" in a dialog).
+ */
 @Composable
 fun BreadCrumb(
     modifier: Modifier = Modifier,
@@ -33,37 +40,33 @@ fun BreadCrumb(
     fontSize: Int = 20,
     onSelectFolderId: (String?) -> Unit
 ) {
+    val t = NotableTheme.type
+    val style = when {
+        fontSize >= 22 -> t.title
+        fontSize >= 18 -> t.heading
+        else -> t.body
+    }
     Row(
         modifier = modifier.horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(NotableSpace.xs)
     ) {
-        Text(
-            text = stringResource(R.string.home_view_name),
-            fontSize = fontSize.sp,
-            fontFamily = FontFamily.Serif,
-            color = Ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .noRippleClickable { onSelectFolderId(null) }
-                .padding(vertical = 10.dp, horizontal = 2.dp))
-
-        folders.forEach { f ->
-            Icon(
-                imageVector = Icons.Filled.ChevronRight, contentDescription = null, tint = Ink,
-                modifier = Modifier.padding(horizontal = 2.dp)
-            )
-            Text(
-                text = f.title,
-                fontSize = fontSize.sp,
-                fontFamily = FontFamily.Serif,
-                color = Ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.noRippleClickable { onSelectFolderId(f.id) }
-                    .padding(vertical = 10.dp, horizontal = 2.dp))
+        Crumb(stringResource(R.string.home_view_name), style, current = folders.isEmpty()) { onSelectFolderId(null) }
+        folders.forEachIndexed { i, f ->
+            NIcon(FeatherIcons.ChevronRight, tint = NotableTheme.colors.secondary)
+            Crumb(f.title, style, current = i == folders.lastIndex) { onSelectFolderId(f.id) }
         }
+    }
+}
+
+@Composable
+private fun Crumb(text: String, style: TextStyle, current: Boolean, onClick: () -> Unit) {
+    val c = NotableTheme.colors
+    Box(
+        Modifier.heightIn(min = NotableSize.control).inkClickable(onClick = onClick).padding(horizontal = NotableSpace.xxs),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = style, color = if (current) c.ink else c.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

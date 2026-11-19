@@ -106,6 +106,9 @@ interface PageDao {
 class PageRepository @Inject constructor(
     private val db: PageDao
 ) {
+    /** Pages with no notebook, in every folder. */
+    suspend fun getAllQuickPages(): List<Page> = db.getAllQuickPages()
+
     suspend fun create(page: Page): Long {
         return db.create(page)
     }

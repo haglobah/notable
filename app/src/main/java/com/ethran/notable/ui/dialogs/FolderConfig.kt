@@ -1,19 +1,10 @@
 package com.ethran.notable.ui.dialogs
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,22 +14,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.ethran.notable.R
 import com.ethran.notable.data.LibraryEdits
 import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.FolderRepository
-import com.ethran.notable.ui.components.ScaledDialog
-import com.ethran.notable.ui.noRippleClickable
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NDialog
+import com.ethran.notable.ui.design.NDivider
+import com.ethran.notable.ui.design.NField
+import com.ethran.notable.ui.design.NTextField
+import com.ethran.notable.ui.design.NotableSpace
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Trash2
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -68,101 +63,62 @@ fun FolderConfigDialog(folderRepository: FolderRepository,
 
     if (folder == null) return
 
-    ScaledDialog(
-        onDismissRequest = {
-            log.i("Closing Directory Dialog - upstream")
-            onClose()
-        }
+    val focusManager = LocalFocusManager.current
+    val nameLabel = stringResource(R.string.details_name)
+    val close = {
+        log.i("Closing Directory Dialog - upstream")
+        // Losing focus saves a changed name (see onFocusChanged below).
+        focusManager.clearFocus()
+        onClose()
+    }
+
+    NDialog(
+        title = stringResource(R.string.folder_heading),
+        onDismiss = close,
+        maxWidth = 480.dp,
+        titleAction = { NButton(stringResource(R.string.details_done), close, style = NButtonStyle.Primary) },
     ) {
-        val focusManager = LocalFocusManager.current
-
-        Column(
-            modifier = Modifier
-                .background(Color.White)
-                .fillMaxWidth()
-                .border(2.dp, Color.Black, RectangleShape)
-        ) {
-            Column(
-                Modifier.padding(20.dp, 10.dp)
-            ) {
-                Text(text = "Folder Setting", fontWeight = FontWeight.Bold)
-            }
-            Box(
-                Modifier
-                    .height(1.dp)
+        NField(nameLabel) {
+            NTextField(
+                value = folderTitle,
+                onValueChange = { folderTitle = it },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = {
+                    focusManager.clearFocus()
+                }),
+                modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Black)
-            )
-
-            Column(
-                Modifier.padding(20.dp, 10.dp)
-            ) {
-
-                Row {
-                    Text(
-                        text = "Folder Title",
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    BasicTextField(
-                        value = folderTitle,
-                        textStyle = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Light,
-                            fontSize = 16.sp
-                        ),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Text,
-                            imeAction = ImeAction.Done
-                        ),
-                        onValueChange = { folderTitle = it },
-                        keyboardActions = KeyboardActions(onDone = {
-                            focusManager.clearFocus()
-                        }),
-                        modifier = Modifier
-                            .background(Color(230, 230, 230, 255))
-                            .padding(10.dp, 0.dp)
-                            .onFocusChanged { focusState ->
-                                if (!focusState.isFocused) {
-                                    val currentFolder = folder
-                                    if (currentFolder != null && currentFolder.title != folderTitle) {
-                                        val title = folderTitle
-                                        scope.launch(Dispatchers.IO) {
-                                            edits.renameFolder(currentFolder.id, title)
-                                        }
-                                    }
+                    .semantics { contentDescription = nameLabel }
+                    .onFocusChanged { focusState ->
+                        if (!focusState.isFocused) {
+                            val currentFolder = folder
+                            if (currentFolder != null && currentFolder.title != folderTitle) {
+                                val title = folderTitle
+                                scope.launch(Dispatchers.IO) {
+                                    edits.renameFolder(currentFolder.id, title)
                                 }
                             }
-
-
-                    )
-
-                }
-            }
-
-            Box(
-                Modifier
-                    .padding(20.dp, 0.dp)
-                    .height(0.5.dp)
-                    .fillMaxWidth()
-                    .background(Color.Black)
-            )
-
-            Column(
-                Modifier.padding(20.dp, 10.dp)
-            ) {
-                Text(
-                    text = "Delete Folder",
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.noRippleClickable {
-                        scope.launch {
-                            withContext(Dispatchers.IO) { edits.deleteFolder(folderId) }
-                            onClose()
                         }
-                    })
-            }
+                    }
+            )
         }
-
+        Spacer(Modifier.height(NotableSpace.xl))
+        NDivider()
+        Spacer(Modifier.height(NotableSpace.xl))
+        NButton(
+            stringResource(R.string.folder_delete),
+            onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { edits.deleteFolder(folderId) }
+                    onClose()
+                }
+            },
+            style = NButtonStyle.Danger,
+            icon = FeatherIcons.Trash2,
+        )
     }
 }

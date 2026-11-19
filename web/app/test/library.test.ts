@@ -1,7 +1,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import type { Folder, Library, NotebookEntry } from "@notable/schema"
-import { childFolders, countIn, edited, entriesIn, folderPath, kindOf } from "../src/lib/library.ts"
+import { readFileSync } from "node:fs"
+import { libraryFromJson, type Folder, type Library, type NotebookEntry } from "@notable/schema"
+import { bylineOf, quickFirst } from "../src/lib/books.ts"
+import { childFolders, countIn, edited, entriesIn, folderPath, kindOf, openedAgo, recentEntries } from "../src/lib/library.ts"
 
 const d = (iso: string) => new Date(iso)
 const folder = (id: string, title: string, parentId: string | null): Folder => ({ id, title, parentId, createdAt: d("2026-01-01"), updatedAt: d("2026-01-01") })
@@ -48,4 +50,45 @@ test("edit dates read as today, yesterday, a date, or a date with year", () => {
   assert.equal(edited(d("2026-10-10T22:00:00"), now), "yesterday")
   assert.doesNotMatch(edited(d("2026-03-04T12:00:00"), now), /2026/)
   assert.match(edited(d("2025-03-04T12:00:00"), now), /2025/)
+})
+
+const books = libraryFromJson(JSON.parse(readFileSync(new URL("../../schema/fixtures/library-books-v1.json", import.meta.url), "utf8")))
+
+test("bylines name the authors and the series with its number", () => {
+  assert.equal(bylineOf(books.notebooks["b-lhod"]), "Ursula K. Le Guin · Hainish Cycle 4")
+  assert.equal(bylineOf(books.notebooks["p-crdt"]), "Martin Kleppmann and Annette Bieniusa")
+  assert.equal(bylineOf({ ...books.notebooks["p-crdt"], meta: { ...books.notebooks["p-crdt"].meta!, authors: ["A", "B", "C"] } }), "A and others")
+  assert.equal(bylineOf(books.notebooks["p-anal"]), null)
+})
+
+test("the quick-pages notebook comes first, the rest keep their order", () => {
+  const es = [books.notebooks["b-dune"], books.notebooks["b-fr"], books.notebooks["n-journal"], books.notebooks["q-1"]]
+  assert.deepEqual(quickFirst(books, es).map(e => e.id), ["n-journal", "b-dune", "b-fr", "q-1"])
+  assert.deepEqual(quickFirst({ ...books, quickNotebookId: undefined }, es).map(e => e.id), ["b-dune", "b-fr", "n-journal", "q-1"])
+  assert.deepEqual(quickFirst(books, es.slice(0, 2)).map(e => e.id), ["b-dune", "b-fr"])
+})
+
+test("recent: opened entries, most recently opened first, capped; never-opened and empty ones left out", () => {
+  const at = (e: NotebookEntry, readAt: string | undefined, pageCount?: number): NotebookEntry => ({ ...e, readAt: readAt ? d(readAt) : undefined, pageCount })
+  const recentLib: Library = {
+    folders: {},
+    notebooks: {
+      a: at(entry("a", null, "2026-01-01"), "2026-03-01"),
+      b: at(entry("b", "x", "2026-01-01"), "2026-03-03"),
+      never: at(entry("never", null, "2026-04-01"), undefined),
+      empty: at(entry("empty", null, "2026-01-01"), "2026-03-04", 0),
+      c: at(entry("c", null, "2026-01-01"), "2026-03-02", 5),
+    },
+  }
+  assert.deepEqual(recentEntries(recentLib).map(e => e.id), ["b", "c", "a"])
+  assert.deepEqual(recentEntries(recentLib, 2).map(e => e.id), ["b", "c"])
+})
+
+test("recent: how long ago, then a date", () => {
+  const now = d("2026-11-16T12:00:00")
+  assert.equal(openedAgo(d("2026-11-16T11:59:40"), now), "just now")
+  assert.match(openedAgo(d("2026-11-16T11:55:00"), now), /5/)
+  assert.match(openedAgo(d("2026-11-16T09:00:00"), now), /3/)
+  assert.match(openedAgo(d("2026-11-13T12:00:00"), now), /3/)
+  assert.doesNotMatch(openedAgo(d("2026-10-01T12:00:00"), now), /ago/)
 })

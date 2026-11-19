@@ -11,6 +11,7 @@ import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Upsert
 import com.ethran.notable.data.model.BackgroundType
+import com.ethran.notable.data.model.BookMeta
 import io.shipbook.shipbooksdk.ShipBook
 import java.util.Date
 import java.util.UUID
@@ -42,7 +43,21 @@ data class Notebook(
     // File that its linked to:
     val linkedExternalUri: String? = null,
     val createdAt: Date = Date(),
-    val updatedAt: Date = Date()
+    val updatedAt: Date = Date(),
+
+    /** The library entry's `meta`: read from the book at import (docs/plans/ebook-features.md). JSON. */
+    val bookMeta: BookMeta? = null,
+    /** The last time the editor opened it; null when never. */
+    val readAt: Date? = null,
+    /** Set by "Mark as finished", cleared by "Mark as unread". */
+    val finishedAt: Date? = null,
+    /** 1 to 10; null when not rated (or cleared). */
+    val rating: Int? = null,
+    /**
+     * The library entry's `pageCount` as last written or projected. When it differs from
+     * [pageIds]' size, the entry is due a backfill ([com.ethran.notable.data.LibraryEdits.backfillPageCounts]).
+     */
+    val pageCount: Int? = null,
 )
 
 // DAO
@@ -81,6 +96,19 @@ interface NotebookDao {
 
     @Query("UPDATE notebook SET defaultBackgroundType=:type, defaultBackground=:value, updatedAt=:updatedAt WHERE id=:id")
     suspend fun setDefaultBackground(id: String, type: String, value: String, updatedAt: Date): Int
+
+    /** Reading state; neither is an edit, so updatedAt stays. */
+    @Query("UPDATE notebook SET readAt=:at WHERE id=:id")
+    suspend fun setReadAt(id: String, at: Date): Int
+
+    @Query("UPDATE notebook SET finishedAt=:at WHERE id=:id")
+    suspend fun setFinishedAt(id: String, at: Date?): Int
+
+    @Query("UPDATE notebook SET rating=:rating WHERE id=:id")
+    suspend fun setRating(id: String, rating: Int?): Int
+
+    @Query("UPDATE notebook SET pageCount=:count WHERE id=:id")
+    suspend fun setPageCount(id: String, count: Int): Int
 
     /** Device-local: the docs don't hold it, so it's written to Room alone. */
     @Query("UPDATE notebook SET linkedExternalUri=:uri WHERE id=:id")
@@ -190,6 +218,11 @@ class BookRepository @Inject constructor(
         exists(notebookDao.setDefaultBackground(id, type, value, Date()))
     suspend fun setLinkedExternalUri(id: String, uri: String?) =
         exists(notebookDao.setLinkedExternalUri(id, uri))
+    suspend fun setReadAt(id: String, at: Date) = exists(notebookDao.setReadAt(id, at))
+    suspend fun setFinishedAt(id: String, at: Date?) = exists(notebookDao.setFinishedAt(id, at))
+    suspend fun setRating(id: String, rating: Int?) = exists(notebookDao.setRating(id, rating))
+    /** Returns false when the notebook is gone (a backfill skips it). */
+    suspend fun setPageCount(id: String, count: Int) = notebookDao.setPageCount(id, count) == 1
 
     private fun exists(rowsChanged: Int) = check(rowsChanged == 1) { "Notebook no longer exists" }
 

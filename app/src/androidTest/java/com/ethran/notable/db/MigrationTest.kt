@@ -10,12 +10,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ethran.notable.data.db.AppDatabase
 import com.ethran.notable.data.db.MIGRATION_32_33
 import com.ethran.notable.data.db.MIGRATION_37_38
+import com.ethran.notable.data.model.BookMeta
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.IOException
+import java.util.Date
 
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
@@ -195,5 +197,106 @@ class MigrationTest {
             assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0))
         }
         db.close()
+    }
+
+    /**
+     * 38 -> 39 adds the book columns `bookMeta` (JSON), `readAt` and `finishedAt` to `Notebook`
+     * (docs/plans/ebook-features.md). Existing rows keep their data and read as no metadata,
+     * never opened, not finished; the new columns then store and read back through Room.
+     */
+    @Test(timeout = 60000)
+    @Throws(IOException::class)
+    fun migrate38To39_addsBookColumns() {
+        val dbName = "migration-test-39"
+        val oldDb = helper.createDatabase(dbName, 38)
+        oldDb.execSQL("INSERT INTO Folder (id, title, createdAt, updatedAt) VALUES ('f1', 'Folder', 1, 1)")
+        oldDb.execSQL(
+            """
+            INSERT INTO Notebook (id, title, openPageId, pageIds, parentFolderId, defaultBackground,
+                defaultBackgroundType, createdAt, updatedAt)
+            VALUES ('nb1', 'Book', 'p1', '["p1"]', 'f1', '/b/book.pdf', 'autoPdf', 1, 2)
+            """.trimIndent()
+        )
+        oldDb.execSQL(
+            """
+            INSERT INTO Page (id, scroll, notebookId, background, backgroundType, createdAt, updatedAt)
+            VALUES ('p1', 0, 'nb1', '/b/book.pdf', 'autoPdf', 1, 2)
+            """.trimIndent()
+        )
+        oldDb.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 39, true)
+        db.query("SELECT title, openPageId, pageIds, defaultBackground, bookMeta, readAt, finishedAt FROM Notebook WHERE id = 'nb1'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("Book", it.getString(0))
+            assertEquals("p1", it.getString(1))
+            assertEquals("[\"p1\"]", it.getString(2))
+            assertEquals("/b/book.pdf", it.getString(3))
+            assertTrue(it.isNull(4)); assertTrue(it.isNull(5)); assertTrue(it.isNull(6))
+        }
+        db.query("SELECT count(*) FROM Page WHERE notebookId = 'nb1'").use {
+            assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0))
+        }
+        db.close()
+
+        val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(MIGRATION_32_33, MIGRATION_37_38).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                val dao = roomDb.notebookDao()
+                val nb = dao.getById("nb1")!!
+                assertEquals(null, nb.bookMeta); assertEquals(null, nb.readAt); assertEquals(null, nb.finishedAt)
+                val meta = BookMeta(authors = listOf("Ursula K. Le Guin"), seriesIndex = 4.0, subjects = listOf("Gender"))
+                dao.upsert(nb.copy(bookMeta = meta))
+                assertEquals(1, dao.setReadAt("nb1", Date(5)))
+                assertEquals(1, dao.setFinishedAt("nb1", Date(6)))
+                val back = dao.getById("nb1")!!
+                assertEquals(meta, back.bookMeta)
+                assertEquals(Date(5), back.readAt)
+                assertEquals(Date(6), back.finishedAt)
+                assertEquals(Date(2), back.updatedAt)
+                assertEquals(1, dao.setFinishedAt("nb1", null))
+                assertEquals(null, dao.getById("nb1")!!.finishedAt)
+            }
+        } finally {
+            roomDb.close()
+        }
+    }
+
+    /** 39 -> 40 adds `rating` and `pageCount` to `Notebook`; rows keep their book fields, both read as null. */
+    @Test(timeout = 60000)
+    @Throws(IOException::class)
+    fun migrate39To40_addsRatingAndPageCount() {
+        val dbName = "migration-test-40"
+        val oldDb = helper.createDatabase(dbName, 39)
+        oldDb.execSQL(
+            """
+            INSERT INTO Notebook (id, title, openPageId, pageIds, defaultBackground, defaultBackgroundType,
+                createdAt, updatedAt, bookMeta, readAt, finishedAt)
+            VALUES ('nb1', 'Book', 'p1', '["p1"]', 'blank', 'native', 1, 2, '{"authors":["A"]}', 3, 4)
+            """.trimIndent()
+        )
+        oldDb.close()
+        val db = helper.runMigrationsAndValidate(dbName, 40, true)
+        db.query("SELECT bookMeta, readAt, finishedAt, rating, pageCount FROM Notebook WHERE id = 'nb1'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("{\"authors\":[\"A\"]}", it.getString(0))
+            assertEquals(3L, it.getLong(1)); assertEquals(4L, it.getLong(2))
+            assertTrue(it.isNull(3)); assertTrue(it.isNull(4))
+        }
+        db.close()
+        val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(MIGRATION_32_33, MIGRATION_37_38).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                val dao = roomDb.notebookDao()
+                assertEquals(1, dao.setRating("nb1", 8))
+                assertEquals(1, dao.setPageCount("nb1", 1))
+                val nb = dao.getById("nb1")!!
+                assertEquals(8, nb.rating); assertEquals(1, nb.pageCount); assertEquals(Date(2), nb.updatedAt)
+            }
+        } finally {
+            roomDb.close()
+        }
     }
 }

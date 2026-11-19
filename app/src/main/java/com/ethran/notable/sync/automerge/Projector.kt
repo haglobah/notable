@@ -318,7 +318,11 @@ class AutomergeProjector(
         when (e.kind) {
             AmEntryKind.NOTEBOOK -> {
                 val nb = sink.notebook(e.id) ?: return
-                val next = nb.copy(title = e.title, parentFolderId = folder, createdAt = e.createdAt, updatedAt = e.updatedAt)
+                val next = nb.copy(
+                    title = e.title, parentFolderId = folder, createdAt = e.createdAt, updatedAt = e.updatedAt,
+                    bookMeta = e.meta, readAt = e.readAt, finishedAt = e.finishedAt,
+                    rating = e.rating, pageCount = e.pageCount,
+                )
                 if (next != nb) sink.upsertNotebook(next)
             }
             AmEntryKind.QUICK_PAGE -> {
@@ -521,6 +525,8 @@ class AutomergeProjector(
             defaultBackground = bg.second, defaultBackgroundType = bg.first,
             linkedExternalUri = existing?.linkedExternalUri,
             createdAt = e.createdAt, updatedAt = e.updatedAt,
+            bookMeta = e.meta, readAt = e.readAt, finishedAt = e.finishedAt,
+            rating = e.rating, pageCount = e.pageCount,
         )
     }
 

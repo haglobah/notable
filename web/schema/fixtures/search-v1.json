@@ -1,0 +1,975 @@
+{
+  "library": {
+    "quickNotebookId": "n-journal",
+    "folders": {
+      "f-uni": {
+        "title": "Uni",
+        "parentId": null,
+        "createdAt": "2026-01-02T03:04:05.006Z",
+        "updatedAt": "2026-02-03T04:05:06.007Z"
+      },
+      "f-math": {
+        "title": "Mathe – Übung 🙂",
+        "parentId": "f-uni",
+        "createdAt": "2026-01-03T00:00:00.000Z",
+        "updatedAt": "2026-01-03T00:00:00.001Z"
+      },
+      "f-fic": {
+        "title": "Fiction",
+        "parentId": null,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-01T00:00:00.000Z"
+      }
+    },
+    "notebooks": {
+      "b-lhod": {
+        "docUrl": "automerge:blhodPlaceholderDocUrl",
+        "title": "The Left Hand of Darkness",
+        "folderId": "f-fic",
+        "kind": "notebook",
+        "source": {
+          "kind": "epub",
+          "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+          "layout": {
+            "w": 446,
+            "h": 595,
+            "em": 12
+          }
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-10-05T00:00:00.000Z",
+        "pageCount": 320,
+        "readPage": 319,
+        "rating": 9,
+        "meta": {
+          "authors": [
+            "Ursula K. Le Guin"
+          ],
+          "series": "Hainish Cycle",
+          "seriesIndex": 4,
+          "description": "A lone human ambassador is sent to the planet Gethen.",
+          "publisher": "Ace",
+          "language": "en",
+          "isbn": "9780441478125",
+          "published": "1969",
+          "subjects": [
+            "Science Fiction",
+            "Gender"
+          ]
+        },
+        "readAt": "2026-10-01T00:00:00.000Z",
+        "finishedAt": "2026-10-05T00:00:00.000Z"
+      },
+      "b-earth": {
+        "docUrl": "automerge:bearthPlaceholderDocUrl",
+        "title": "A Wizard of Earthsea",
+        "folderId": "f-fic",
+        "kind": "notebook",
+        "source": {
+          "kind": "epub",
+          "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+          "layout": {
+            "w": 446,
+            "h": 595,
+            "em": 12
+          }
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-10-20T00:00:00.000Z",
+        "pageCount": 180,
+        "readPage": 45,
+        "rating": 8,
+        "meta": {
+          "authors": [
+            "Ursula K. Le Guin"
+          ],
+          "series": "Earthsea",
+          "seriesIndex": 1,
+          "description": null,
+          "publisher": "Parnassus",
+          "language": "en",
+          "isbn": null,
+          "published": null,
+          "subjects": [
+            "Fantasy"
+          ]
+        },
+        "readAt": "2026-10-20T00:00:00.000Z",
+        "finishedAt": null
+      },
+      "b-dune": {
+        "docUrl": "automerge:bdunePlaceholderDocUrl",
+        "title": "Dune",
+        "folderId": null,
+        "kind": "notebook",
+        "source": {
+          "kind": "epub",
+          "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+          "layout": {
+            "w": 446,
+            "h": 595,
+            "em": 12
+          }
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-09-01T00:00:00.000Z",
+        "pageCount": 612,
+        "meta": {
+          "authors": [
+            "Frank Herbert"
+          ],
+          "series": "Dune",
+          "seriesIndex": 1,
+          "description": "Set on the desert world Arrakis.",
+          "publisher": null,
+          "language": "en",
+          "isbn": null,
+          "published": null,
+          "subjects": [
+            "Science Fiction"
+          ]
+        }
+      },
+      "b-fr": {
+        "docUrl": "automerge:bfrPlaceholderDocUrl",
+        "title": "L'Étranger",
+        "folderId": null,
+        "kind": "notebook",
+        "source": {
+          "kind": "epub",
+          "blob": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+          "layout": {
+            "w": 446,
+            "h": 595,
+            "em": 12
+          }
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-08-01T00:00:00.000Z",
+        "rating": null,
+        "meta": {
+          "authors": [
+            "Albert Camus"
+          ],
+          "series": null,
+          "seriesIndex": 0.5,
+          "description": null,
+          "publisher": null,
+          "language": "fr",
+          "isbn": null,
+          "published": null,
+          "subjects": [
+            "Roman"
+          ]
+        }
+      },
+      "p-crdt": {
+        "docUrl": "automerge:pcrdtPlaceholderDocUrl",
+        "title": "Paper: CRDTs",
+        "folderId": "f-math",
+        "kind": "notebook",
+        "source": {
+          "kind": "pdf",
+          "blob": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-10-10T00:00:00.000Z",
+        "pageCount": 14,
+        "readPage": 3,
+        "rating": 7,
+        "meta": {
+          "authors": [
+            "Martin Kleppmann",
+            "Annette Bieniusa"
+          ],
+          "series": null,
+          "seriesIndex": null,
+          "description": "Conflict-free replicated data types",
+          "publisher": null,
+          "language": null,
+          "isbn": null,
+          "published": null,
+          "subjects": [
+            "distributed systems",
+            "crdt"
+          ]
+        },
+        "readAt": "2026-10-10T00:00:00.000Z"
+      },
+      "p-anal": {
+        "docUrl": "automerge:panalPlaceholderDocUrl",
+        "title": "Analysis I Übungsblatt",
+        "folderId": "f-math",
+        "kind": "notebook",
+        "source": {
+          "kind": "pdf",
+          "blob": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-10-15T00:00:00.000Z",
+        "pageCount": 2
+      },
+      "n-journal": {
+        "docUrl": "automerge:njournalPlaceholderDocUrl",
+        "title": "Journal",
+        "folderId": "f-uni",
+        "kind": "notebook",
+        "source": {
+          "kind": "none"
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-10-25T00:00:00.000Z",
+        "pageCount": 40,
+        "readPage": 39,
+        "readAt": "2026-10-25T00:00:00.000Z"
+      },
+      "q-1": {
+        "docUrl": "automerge:qPlaceholderDocUrl",
+        "title": "Quick page",
+        "folderId": "f-uni",
+        "kind": "quickPage",
+        "source": {
+          "kind": "none"
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-10-26T00:00:00.000Z",
+        "pageCount": 1
+      }
+    }
+  },
+  "cases": [
+    {
+      "query": "le guin",
+      "ids": [
+        "b-lhod",
+        "b-earth"
+      ]
+    },
+    {
+      "query": "author:\"le guin\"",
+      "ids": [
+        "b-earth",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "AUTHOR:camus",
+      "ids": [
+        "b-fr"
+      ]
+    },
+    {
+      "query": "ubung",
+      "ids": [
+        "p-anal",
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "fiction",
+      "ids": [
+        "b-lhod",
+        "b-dune",
+        "b-earth"
+      ]
+    },
+    {
+      "query": "science fiction -is:finished",
+      "ids": [
+        "b-dune"
+      ]
+    },
+    {
+      "query": "kind:pdf",
+      "ids": [
+        "p-crdt",
+        "p-anal"
+      ]
+    },
+    {
+      "query": "kind:notebook",
+      "ids": [
+        "n-journal"
+      ]
+    },
+    {
+      "query": "kind:quickpage",
+      "ids": [
+        "q-1"
+      ]
+    },
+    {
+      "query": "kind:book",
+      "ids": []
+    },
+    {
+      "query": "is:reading",
+      "ids": [
+        "n-journal",
+        "b-earth",
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "is:unread",
+      "ids": [
+        "q-1",
+        "p-anal",
+        "b-dune",
+        "b-fr"
+      ]
+    },
+    {
+      "query": "is:finished",
+      "ids": [
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "etranger",
+      "ids": [
+        "b-fr"
+      ]
+    },
+    {
+      "query": "sea",
+      "ids": [
+        "b-earth"
+      ]
+    },
+    {
+      "query": "series:dune",
+      "ids": [
+        "b-dune"
+      ]
+    },
+    {
+      "query": "lang:fr",
+      "ids": [
+        "b-fr"
+      ]
+    },
+    {
+      "query": "tag:crdt",
+      "ids": [
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "subject:fantasy",
+      "ids": [
+        "b-earth"
+      ]
+    },
+    {
+      "query": "isbn:978044",
+      "ids": [
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "desc:replicated",
+      "ids": [
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "publisher:ace",
+      "ids": [
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "folder:uni",
+      "ids": [
+        "n-journal",
+        "p-crdt",
+        "q-1",
+        "p-anal"
+      ]
+    },
+    {
+      "query": "\"left hand\"",
+      "ids": [
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "kleppmann -guin",
+      "ids": [
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "frobnicate:x",
+      "ids": []
+    },
+    {
+      "query": "constructor:x",
+      "ids": []
+    },
+    {
+      "query": "tostring:dune",
+      "ids": []
+    },
+    {
+      "query": "author:",
+      "ids": []
+    },
+    {
+      "query": "",
+      "ids": []
+    },
+    {
+      "query": "   ",
+      "ids": []
+    }
+  ],
+  "browse": [
+    {
+      "query": "",
+      "sort": "title",
+      "ids": [
+        "b-earth",
+        "p-anal",
+        "b-dune",
+        "n-journal",
+        "b-fr",
+        "p-crdt",
+        "q-1",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "title",
+      "descending": true,
+      "ids": [
+        "b-lhod",
+        "q-1",
+        "p-crdt",
+        "b-fr",
+        "n-journal",
+        "b-dune",
+        "p-anal",
+        "b-earth"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "author",
+      "ids": [
+        "b-fr",
+        "b-dune",
+        "p-crdt",
+        "b-earth",
+        "b-lhod",
+        "p-anal",
+        "n-journal",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "author",
+      "descending": true,
+      "ids": [
+        "b-earth",
+        "b-lhod",
+        "p-crdt",
+        "b-dune",
+        "b-fr",
+        "p-anal",
+        "n-journal",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "series",
+      "ids": [
+        "b-dune",
+        "b-earth",
+        "b-lhod",
+        "p-anal",
+        "n-journal",
+        "b-fr",
+        "p-crdt",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "read",
+      "ids": [
+        "n-journal",
+        "b-earth",
+        "p-crdt",
+        "b-lhod",
+        "p-anal",
+        "b-dune",
+        "b-fr",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "edited",
+      "descending": false,
+      "ids": [
+        "b-fr",
+        "b-dune",
+        "b-lhod",
+        "p-crdt",
+        "p-anal",
+        "b-earth",
+        "n-journal",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "added",
+      "ids": [
+        "b-earth",
+        "p-anal",
+        "b-dune",
+        "n-journal",
+        "b-fr",
+        "p-crdt",
+        "q-1",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "finished",
+      "ids": [
+        "b-lhod",
+        "b-earth",
+        "p-anal",
+        "b-dune",
+        "n-journal",
+        "b-fr",
+        "p-crdt",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "published",
+      "ids": [
+        "b-lhod",
+        "b-earth",
+        "p-anal",
+        "b-dune",
+        "n-journal",
+        "b-fr",
+        "p-crdt",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "title",
+      "folderId": null,
+      "ids": [
+        "b-dune",
+        "b-fr"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "title",
+      "folderId": "f-uni",
+      "ids": [
+        "n-journal",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "title",
+      "folderId": "f-uni",
+      "subfolders": true,
+      "ids": [
+        "p-anal",
+        "n-journal",
+        "p-crdt",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "title",
+      "folderId": null,
+      "subfolders": true,
+      "ids": [
+        "b-earth",
+        "p-anal",
+        "b-dune",
+        "n-journal",
+        "b-fr",
+        "p-crdt",
+        "q-1",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "le guin",
+      "folderId": "f-fic",
+      "ids": [
+        "b-lhod",
+        "b-earth"
+      ]
+    },
+    {
+      "query": "kind:pdf,epub",
+      "sort": "title",
+      "ids": [
+        "b-earth",
+        "p-anal",
+        "b-dune",
+        "b-fr",
+        "p-crdt",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "-kind:pdf,epub",
+      "sort": "title",
+      "ids": [
+        "n-journal",
+        "q-1"
+      ]
+    },
+    {
+      "query": "has:series",
+      "sort": "series",
+      "ids": [
+        "b-dune",
+        "b-earth",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "-has:meta",
+      "sort": "title",
+      "ids": [
+        "p-anal",
+        "n-journal",
+        "q-1"
+      ]
+    },
+    {
+      "query": "has:bogus",
+      "sort": "title",
+      "ids": []
+    },
+    {
+      "query": "read:2026-10-2",
+      "sort": "read",
+      "ids": [
+        "n-journal",
+        "b-earth"
+      ]
+    },
+    {
+      "query": "finished:2026",
+      "sort": "title",
+      "ids": [
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "edited:2026-10",
+      "sort": "edited",
+      "ids": [
+        "q-1",
+        "n-journal",
+        "b-earth",
+        "p-anal",
+        "p-crdt",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "published:196",
+      "sort": "title",
+      "ids": [
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "is:reading,finished",
+      "sort": "title",
+      "ids": [
+        "b-earth",
+        "n-journal",
+        "p-crdt",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "author:\"le guin, ursula\",camus",
+      "ids": [
+        "b-fr"
+      ]
+    },
+    {
+      "query": "kind:,",
+      "ids": [
+        "n-journal",
+        "b-earth",
+        "p-crdt",
+        "b-lhod",
+        "q-1",
+        "p-anal",
+        "b-dune",
+        "b-fr"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "length",
+      "ids": [
+        "q-1",
+        "p-anal",
+        "p-crdt",
+        "n-journal",
+        "b-earth",
+        "b-lhod",
+        "b-dune",
+        "b-fr"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "length",
+      "descending": true,
+      "ids": [
+        "b-dune",
+        "b-lhod",
+        "b-earth",
+        "n-journal",
+        "p-crdt",
+        "p-anal",
+        "q-1",
+        "b-fr"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "rating",
+      "ids": [
+        "b-lhod",
+        "b-earth",
+        "p-crdt",
+        "p-anal",
+        "b-dune",
+        "n-journal",
+        "b-fr",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "rating",
+      "descending": false,
+      "ids": [
+        "p-crdt",
+        "b-earth",
+        "b-lhod",
+        "p-anal",
+        "b-dune",
+        "n-journal",
+        "b-fr",
+        "q-1"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "progress",
+      "ids": [
+        "n-journal",
+        "b-lhod",
+        "b-earth",
+        "p-crdt",
+        "p-anal",
+        "b-dune",
+        "q-1",
+        "b-fr"
+      ]
+    },
+    {
+      "query": "",
+      "sort": "progress",
+      "descending": false,
+      "ids": [
+        "p-anal",
+        "b-dune",
+        "q-1",
+        "p-crdt",
+        "b-earth",
+        "n-journal",
+        "b-lhod",
+        "b-fr"
+      ]
+    },
+    {
+      "query": "rating:>=8",
+      "sort": "rating",
+      "ids": [
+        "b-lhod",
+        "b-earth"
+      ]
+    },
+    {
+      "query": "rating:7,9",
+      "sort": "title",
+      "ids": [
+        "p-crdt",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "rating:7-8",
+      "sort": "title",
+      "ids": [
+        "b-earth",
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "has:rating",
+      "sort": "title",
+      "ids": [
+        "b-earth",
+        "p-crdt",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "-has:rating",
+      "sort": "title",
+      "ids": [
+        "p-anal",
+        "b-dune",
+        "n-journal",
+        "b-fr",
+        "q-1"
+      ]
+    },
+    {
+      "query": "pages:<20",
+      "sort": "length",
+      "ids": [
+        "q-1",
+        "p-anal",
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "pages:>=180",
+      "sort": "length",
+      "ids": [
+        "b-earth",
+        "b-lhod",
+        "b-dune"
+      ]
+    },
+    {
+      "query": "-has:pages",
+      "ids": [
+        "b-fr"
+      ]
+    },
+    {
+      "query": "progress:>0",
+      "sort": "progress",
+      "ids": [
+        "n-journal",
+        "b-lhod",
+        "b-earth",
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "is:reading progress:<50",
+      "sort": "title",
+      "ids": [
+        "b-earth",
+        "p-crdt"
+      ]
+    },
+    {
+      "query": "progress:100",
+      "sort": "title",
+      "ids": [
+        "n-journal",
+        "b-lhod"
+      ]
+    },
+    {
+      "query": "progress:25.1-25.2",
+      "ids": [
+        "b-earth"
+      ]
+    },
+    {
+      "query": "rating:abc",
+      "ids": []
+    },
+    {
+      "query": "rating:>x",
+      "ids": []
+    }
+  ],
+  "natural": [
+    [
+      "book 2",
+      "book 10",
+      -1
+    ],
+    [
+      "book 10",
+      "book 2",
+      1
+    ],
+    [
+      "a1",
+      "a01",
+      -1
+    ],
+    [
+      "a01",
+      "a01",
+      0
+    ],
+    [
+      "vol. 9b",
+      "vol. 9a",
+      1
+    ],
+    [
+      "2",
+      "a",
+      -1
+    ],
+    [
+      "abc",
+      "ab",
+      1
+    ],
+    [
+      "",
+      "a",
+      -1
+    ],
+    [
+      "x00012",
+      "x12",
+      1
+    ]
+  ]
+}

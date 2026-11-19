@@ -7,7 +7,7 @@ import { isImmutableString } from "@automerge/automerge"
 import { isPageDeleted } from "./write.ts"
 import {
   CODE_SCHEMA, CODE_VERSION, LIBRARY_SCHEMA, NOTEBOOK_SCHEMA, SCHEMA_VERSION,
-  type Background, type CodeDef, type CodeImage, type EntryKind, type Library, type Notebook, type Page, type Source,
+  type Background, type BookMeta, type CodeDef, type CodeImage, type EntryKind, type Library, type Notebook, type NotebookEntry, type Page, type Source,
 } from "./model.ts"
 
 export class SchemaError extends Error {}
@@ -87,8 +87,10 @@ export function readLibrary(doc: unknown): Library {
   const notebooks = map(d, "notebooks", "")
   // Optional (ADR-002): absent until the first definition is written.
   const codeDocUrl = "codeDocUrl" in d && d.codeDocUrl !== undefined ? scalar(d.codeDocUrl, "codeDocUrl") : undefined
+  const quickNotebookId = "quickNotebookId" in d && d.quickNotebookId !== undefined ? scalar(d.quickNotebookId, "quickNotebookId") : undefined
   return {
     ...(codeDocUrl === undefined ? {} : { codeDocUrl }),
+    ...(quickNotebookId === undefined ? {} : { quickNotebookId }),
     folders: Object.fromEntries(Object.keys(folders).map(id => {
       const p = `folders.${id}`
       const o = map(folders, id, "folders")
@@ -108,8 +110,52 @@ export function readLibrary(doc: unknown): Library {
         source: readSource(map(o, "source", p), `${p}.source`),
         createdAt: date(o, "createdAt", p),
         updatedAt: date(o, "updatedAt", p),
+        ...readBookFields(o, p),
       }]
     })),
+  }
+}
+
+/** The optional book keys of an entry (meta, readAt, finishedAt); absent keys stay absent. */
+type BookFields = Pick<NotebookEntry, "meta" | "readAt" | "finishedAt" | "pageCount" | "readPage" | "rating">
+
+function readBookFields(o: Obj, p: string): BookFields {
+  const has = (k: string) => k in o && o[k] !== undefined
+  const out: BookFields = {}
+  if (has("meta")) out.meta = readMeta(map(o, "meta", p), `${p}.meta`)
+  if (has("readAt")) out.readAt = date(o, "readAt", p)
+  if (has("finishedAt")) out.finishedAt = o.finishedAt === null ? null : date(o, "finishedAt", p)
+  const count = (k: "pageCount" | "readPage") => {
+    const v = int(o[k], `${p}.${k}`)
+    if (v < 0) throw new SchemaError(`${p}.${k}: expected 0 or more, got ${v}`)
+    return v
+  }
+  if (has("pageCount")) out.pageCount = count("pageCount")
+  if (has("readPage")) out.readPage = count("readPage")
+  if (has("rating")) {
+    if (o.rating === null) out.rating = null
+    else {
+      const r = int(o.rating, `${p}.rating`)
+      if (r < 1 || r > 10) throw new SchemaError(`${p}.rating: expected 1 to 10, got ${r}`)
+      out.rating = r
+    }
+  }
+  return out
+}
+
+function readMeta(o: Obj, p: string): BookMeta {
+  const strs = (k: string) => list(o, k, p).map((v, i) => scalar(v, `${p}.${k}[${i}]`))
+  const index = field(o, "seriesIndex", p)
+  return {
+    authors: strs("authors"),
+    series: strOrNull(o, "series", p),
+    seriesIndex: index === null ? null : num(index, `${p}.seriesIndex`),
+    description: strOrNull(o, "description", p),
+    publisher: strOrNull(o, "publisher", p),
+    language: strOrNull(o, "language", p),
+    isbn: strOrNull(o, "isbn", p),
+    published: strOrNull(o, "published", p),
+    subjects: strs("subjects"),
   }
 }
 

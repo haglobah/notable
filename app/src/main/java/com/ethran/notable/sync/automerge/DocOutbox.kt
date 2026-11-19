@@ -48,6 +48,21 @@ sealed interface DocDebt {
         override val key get() = "folder/$id"
     }
 
+    /** The library's quickNotebookId, set to [id]. */
+    data class QuickNotebook(val id: String) : DocDebt {
+        override val key get() = "quick"
+    }
+
+    /** Old quick page [pageId] moving into notebook [notebookId]. */
+    data class QuickPageMove(val pageId: String, val notebookId: String) : DocDebt {
+        override val key get() = "qmove/$pageId"
+    }
+
+    /** A notebook's readAt, finishedAt, rating, and its entry's pageCount and readPage. */
+    data class ReadingState(val id: String) : DocDebt {
+        override val key get() = "reading/$id"
+    }
+
     companion object {
         fun of(change: LocalChange): DocDebt = when (change) {
             is LocalChange.StrokesUpserted -> Strokes(change.pageId, change.strokes.map { it.id }.toSet())
@@ -72,6 +87,12 @@ sealed interface DocDebt {
             is LocalChange.PageBackgroundChanged -> PageRow(change.pageId, change.notebookId)
             is LocalChange.FolderRenamed -> FolderRow(change.id)
             is LocalChange.FolderMoved -> FolderRow(change.id)
+            is LocalChange.NotebookRead -> ReadingState(change.id)
+            is LocalChange.NotebookFinished -> ReadingState(change.id)
+            is LocalChange.NotebookRated -> ReadingState(change.id)
+            is LocalChange.ReadingSynced -> ReadingState(change.id)
+            is LocalChange.QuickNotebookSet -> QuickNotebook(change.id)
+            is LocalChange.QuickPageMoved -> QuickPageMove(change.pageId, change.notebookId)
         }
     }
 }
@@ -179,6 +200,9 @@ class DocOutbox(
                 "notebook" -> DocDebt.NotebookRow(str("id"))
                 "open" -> DocDebt.OpenPage(str("id"))
                 "folder" -> DocDebt.FolderRow(str("id"))
+                "reading" -> DocDebt.ReadingState(str("id"))
+                "quick" -> DocDebt.QuickNotebook(str("id"))
+                "qmove" -> DocDebt.QuickPageMove(str("page"), str("id"))
                 else -> throw IOException("${file.path}: unknown entry type '$t'")
             }
         }
@@ -200,6 +224,9 @@ class DocOutbox(
                 is DocDebt.NotebookRow -> obj("t" to "notebook", "id" to d.id)
                 is DocDebt.OpenPage -> obj("t" to "open", "id" to d.notebookId)
                 is DocDebt.FolderRow -> obj("t" to "folder", "id" to d.id)
+                is DocDebt.ReadingState -> obj("t" to "reading", "id" to d.id)
+                is DocDebt.QuickNotebook -> obj("t" to "quick", "id" to d.id)
+                is DocDebt.QuickPageMove -> obj("t" to "qmove", "page" to d.pageId, "id" to d.notebookId)
             }
         })
         writeDurably(file, json.toString().toByteArray())

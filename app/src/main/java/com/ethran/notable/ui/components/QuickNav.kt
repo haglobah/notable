@@ -1,27 +1,22 @@
 package com.ethran.notable.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -29,16 +24,22 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.db.Folder
 import com.ethran.notable.data.db.Page
-import com.ethran.notable.editor.ui.toolbar.ToolbarButton
 import com.ethran.notable.io.ThumbnailBackfillQueue
 import com.ethran.notable.ui.SnackDispatcher
-import com.ethran.notable.ui.noRippleClickable
+import com.ethran.notable.ui.design.NDivider
+import com.ethran.notable.ui.design.NIconButton
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.inkClickable
 import com.ethran.notable.ui.viewmodels.QuickNavUiState
 import com.ethran.notable.ui.viewmodels.QuickNavViewModel
 import dagger.hilt.EntryPoint
 import dagger.hilt.EntryPoints
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Heart
+import compose.icons.feathericons.Image
 import io.shipbook.shipbooksdk.ShipBook
 
 private val logQuickNav = ShipBook.getLogger("QuickNav")
@@ -129,22 +130,17 @@ fun QuickNavContent(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .noRippleClickable(onClick = onClose)
+                .inkClickable(role = null, onClick = onClose)
         )
 
         // Top divider above the sheet
-        Box(
-            modifier = Modifier
-                .height(1.dp)
-                .fillMaxWidth()
-                .background(Color.Black)
-        )
+        NDivider(strong = true)
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color.White)
-                .padding(10.dp)
+                .background(NotableTheme.colors.paper)
+                .padding(horizontal = NotableSpace.lg, vertical = NotableSpace.md)
         ) {
 
             // Header row: Breadcrumb on the left, Favorite toggle on the right
@@ -170,7 +166,7 @@ fun QuickNavContent(
 
             // Scrubber block only renders if we have a valid book
             if (uiState.bookPageCount >= 2) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(NotableSpace.md))
 
                 Row(modifier = Modifier.fillMaxWidth()) {
                     PageHorizontalSliderWithReturn(
@@ -198,16 +194,18 @@ private fun QuickNavHeaderRow(
     onToggleFavorite: () -> Unit,
     onGenerateBookPreviews: () -> Unit
 ) {
-    Row(modifier = Modifier.fillMaxWidth()) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         BreadCrumb(
+            modifier = Modifier.weight(1f),
             folders = folders, fontSize = 16, onSelectFolderId = onNavigateBreadcrumb
         )
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        ToolbarButton(
-            imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-            onSelect = {
+        // A favorite page is a tool that is on: the heart button is filled with ink.
+        NIconButton(
+            icon = FeatherIcons.Heart,
+            contentDescription = if (isFavorite) "Remove from favorite pages" else "Add to favorite pages",
+            selected = isFavorite,
+            onClick = {
                 if (canToggleFavorite) {
                     onToggleFavorite()
                 } else {
@@ -215,9 +213,12 @@ private fun QuickNavHeaderRow(
                 }
             })
 
-        ToolbarButton(
-            imageVector = Icons.Filled.Image,
-            onSelect = {
+        Spacer(modifier = Modifier.width(NotableSpace.xs))
+
+        NIconButton(
+            icon = FeatherIcons.Image,
+            contentDescription = "Generate page previews",
+            onClick = {
                 if (canGeneratePreviews) {
                     onGenerateBookPreviews()
                 } else {

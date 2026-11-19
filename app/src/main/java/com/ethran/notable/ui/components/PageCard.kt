@@ -2,35 +2,30 @@ package com.ethran.notable.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Icon
-import androidx.compose.material.Text
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import com.ethran.notable.ui.theme.PaperLine
+import androidx.compose.ui.res.stringResource
+import com.ethran.notable.R
+import com.ethran.notable.ui.design.NBadge
+import com.ethran.notable.ui.design.NControlSize
+import com.ethran.notable.ui.design.NIconButton
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.inkClickable
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Copy
-import compose.icons.feathericons.PlusCircle
-import compose.icons.feathericons.Trash
+import compose.icons.feathericons.FilePlus
+import compose.icons.feathericons.Trash2
 
 @Composable
 fun PageCard(
@@ -46,92 +41,65 @@ fun PageCard(
     touchModifier: Modifier = Modifier,
     isReorderDragging: Boolean = false,
 ) {
+    val c = NotableTheme.colors
     Box(modifier = modifier) {
+        // Paper: square corners, a hairline edge; the open page gets the 2 dp ink outline.
         PagePreview(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .border(if (isOpen) 2.dp else 1.dp, if (isOpen) Color.Black else PaperLine, RectangleShape)
-                .clickable(
-                    enabled = isReorderDragging,
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onOpen() }
+                .border(
+                    if (isOpen) NotableSize.strong else NotableSize.hairline,
+                    if (isOpen) c.ink else c.rule,
+                    NotableShape.paper
+                )
+                .inkClickable(enabled = isReorderDragging) { onOpen() }
                 .then(touchModifier), pageId
         )
 
-        // Current page header styling
-        if (isOpen) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    .background(Color.Black)
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Spacer(modifier = Modifier.weight(1f))
-                Text(text = (pageIndex + 1).toString(), color = Color.White)
-            }
-        } else {
-            Text(
-                text = (pageIndex + 1).toString(),
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .background(Color.White)
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                color = Color.Black
-            )
-        }
+        // The page number; filled (inverted) on the open page.
+        NBadge(
+            text = (pageIndex + 1).toString(),
+            filled = isOpen,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(NotableSpace.sm)
+        )
+
         if (isEditMode) {
             // Bottom-right actions
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    .padding(NotableSpace.xs),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconPill(icon = FeatherIcons.Trash, contentDesc = "Delete page") {
-                    onDelete()
-                }
-                IconPill(icon = FeatherIcons.Copy, contentDesc = "Duplicate page") {
-                    onDuplicate()
-                }
-                IconPill(
-                    icon = FeatherIcons.PlusCircle, contentDesc = "Add page after"
-                ) {
-                    onAddAfter()
-                }
+                PaperIconButton(FeatherIcons.Trash2, stringResource(R.string.page_menu_delete), onDelete)
+                PaperIconButton(FeatherIcons.Copy, stringResource(R.string.page_menu_duplicate), onDuplicate)
+                PaperIconButton(FeatherIcons.FilePlus, stringResource(R.string.page_menu_add_after), onAddAfter)
             }
         }
     }
 }
 
 /**
- * Small e‑ink-friendly icon pill button.
+ * A compact outlined [NIconButton] on an opaque paper plate, so it reads over the page preview
+ * it sits on. Drawn 36 dp, hit area 44 dp.
  */
 @Composable
-private fun IconPill(
-    icon: ImageVector, contentDesc: String, onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .width(40.dp)
-            .height(40.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(Color(0xFFFFFFFF))
-            .border(1.dp, Color.Black, RoundedCornerShape(2.dp))
-            .then(Modifier.sizeIn(minWidth = 40.dp, minHeight = 40.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() }, indication = null
-            ) { onClick() }
-            .padding(8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon, contentDescription = contentDesc, tint = Color.Black
+private fun PaperIconButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
+    Box(contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(NotableSize.compact)
+                .background(NotableTheme.colors.paper, NotableShape.control)
+        )
+        NIconButton(
+            icon = icon,
+            contentDescription = contentDescription,
+            onClick = onClick,
+            outlined = true,
+            size = NControlSize.Compact,
         )
     }
 }

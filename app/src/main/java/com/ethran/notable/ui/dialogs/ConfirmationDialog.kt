@@ -1,47 +1,45 @@
 package com.ethran.notable.ui.dialogs
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.ethran.notable.R
 import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.io.ExportFormat
 import com.ethran.notable.io.ExportOptions
 import com.ethran.notable.io.ExportTarget
 import com.ethran.notable.ui.SnackState
-import com.ethran.notable.ui.components.ScaledDialog
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NDialog
+import com.ethran.notable.ui.design.NotableTheme
 import kotlinx.coroutines.launch
 
+/**
+ * A question with a message, Cancel and one confirming verb. Pass a verb as [confirmButtonText]
+ * ("Delete", not "Confirm") and [destructive] for deletes.
+ */
 @Composable
 fun ShowSimpleConfirmationDialog(
     title: String,
     message: String,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
-    confirmButtonText: String = "Confirm",
-    cancelButtonText: String = "Cancel"
+    confirmButtonText: String = stringResource(R.string.dialog_confirm),
+    cancelButtonText: String = stringResource(R.string.dialog_cancel),
+    destructive: Boolean = false,
 ) {
     ShowConfirmationDialog(
         title = title,
-        content = { Text(text = message, fontSize = 16.sp) },
+        content = { Text(text = message, style = NotableTheme.type.body, color = NotableTheme.colors.ink) },
         onConfirm = onConfirm,
         onCancel = onCancel,
         onDismiss = onCancel,
         confirmButtonText = confirmButtonText,
-        cancelButtonText = cancelButtonText
+        cancelButtonText = cancelButtonText,
+        destructive = destructive,
     )
 }
 
@@ -53,30 +51,20 @@ fun ShowConfirmationDialog(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     onDismiss: () -> Unit = onCancel,
-    confirmButtonText: String = "Confirm",
-    cancelButtonText: String = "Cancel"
+    confirmButtonText: String = stringResource(R.string.dialog_confirm),
+    cancelButtonText: String = stringResource(R.string.dialog_cancel),
+    destructive: Boolean = false,
 ) {
-    ScaledDialog(onDismissRequest = { onDismiss() }) {
-        Column(
-            modifier = Modifier
-                .background(Color.White)
-                .border(1.dp, Color.Black, RectangleShape)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(text = title, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            content()
-            Row(
-                horizontalArrangement = Arrangement.SpaceAround,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
-            ) {
-                ActionButton(text = cancelButtonText, onClick = onCancel)
-                ActionButton(text = confirmButtonText, onClick = onConfirm)
-            }
-        }
+    NDialog(
+        title = title,
+        onDismiss = onDismiss,
+        maxWidth = 480.dp,
+        actions = {
+            NButton(cancelButtonText, onCancel, style = NButtonStyle.Quiet)
+            NButton(confirmButtonText, onConfirm, style = if (destructive) NButtonStyle.Danger else NButtonStyle.Primary)
+        },
+    ) {
+        content()
     }
 }
 
@@ -89,64 +77,45 @@ fun ShowExportDialog(
     onCancel: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    ScaledDialog(onDismissRequest = { onCancel() }) {
-        Column(
-            modifier = Modifier
-                .background(Color.White)
-                .border(1.dp, Color.Black, RectangleShape)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(text = "Choose Export Format", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Text(
-                text = "Select the format in which you want to export the book:\n" + "- Xopp: Preserves all data and can be imported. " + "However, if opened and saved by Xournal++, tool-specific information will be lost, " + "and all strokes will be interpreted as ballpoint pen.\n" + "- PDF: A standard format for document sharing.",
-                fontSize = 16.sp
-            )
-            Row(
-                horizontalArrangement = Arrangement.SpaceAround,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
-            ) {
-                ActionButton(
-                    text = "Cancel", onClick = onCancel
-                )
-                ActionButton(
-                    text = "Export as PDF", onClick = {
-                        scope.launch {
-                            snackManager.runWithSnack(
-                                "Exporting book to PDF.."
-                            ) {
-                                exportEngine.export(
-                                    target = ExportTarget.Book(bookId = bookId),
-                                    format = ExportFormat.PDF,
-                                    options = ExportOptions(
-                                        copyToClipboard = false,
-                                    )
-                                )
-
-                            }
-
-                        }
-                        onConfirm()
-                    })
-                ActionButton(
-                    text = "Export as Xopp", onClick = {
-                        scope.launch {
-                            snackManager.runWithSnack(
-                                "Exporting the book to xopp..."
-                            ) {
-                               exportEngine.export(
-                                    target = ExportTarget.Book(bookId = bookId),
-                                    format = ExportFormat.XOPP,
-                                )
-                            }
-                        }
-
-                        onConfirm()
-                    })
-            }
-        }
+    val exportingPdf = stringResource(R.string.exporting_the_book_to, "PDF")
+    val exportingXopp = stringResource(R.string.exporting_the_book_to, "Xopp")
+    NDialog(
+        title = stringResource(R.string.export_heading),
+        onDismiss = onCancel,
+        maxWidth = 480.dp,
+        actions = {
+            NButton(stringResource(R.string.dialog_cancel), onCancel, style = NButtonStyle.Quiet)
+            NButton("Xopp", onClick = {
+                scope.launch {
+                    snackManager.runWithSnack(exportingXopp) {
+                        exportEngine.export(
+                            target = ExportTarget.Book(bookId = bookId),
+                            format = ExportFormat.XOPP,
+                        )
+                    }
+                }
+                onConfirm()
+            }, style = NButtonStyle.Secondary)
+            NButton(stringResource(R.string.bg_mode_pdf), onClick = {
+                scope.launch {
+                    snackManager.runWithSnack(exportingPdf) {
+                        exportEngine.export(
+                            target = ExportTarget.Book(bookId = bookId),
+                            format = ExportFormat.PDF,
+                            options = ExportOptions(
+                                copyToClipboard = false,
+                            )
+                        )
+                    }
+                }
+                onConfirm()
+            }, style = NButtonStyle.Primary)
+        },
+    ) {
+        Text(
+            stringResource(R.string.export_message),
+            style = NotableTheme.type.body,
+            color = NotableTheme.colors.secondary,
+        )
     }
 }

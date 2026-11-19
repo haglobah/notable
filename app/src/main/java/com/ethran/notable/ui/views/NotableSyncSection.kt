@@ -1,21 +1,12 @@
 package com.ethran.notable.ui.views
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,14 +15,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.ethran.notable.R
@@ -43,6 +31,18 @@ import com.ethran.notable.sync.automerge.MigrationState
 import com.ethran.notable.sync.automerge.ProjectionStatus
 import com.ethran.notable.sync.automerge.NotableSyncClient
 import com.ethran.notable.sync.automerge.SyncStatus
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NField
+import com.ethran.notable.ui.design.NNotice
+import com.ethran.notable.ui.design.NSection
+import com.ethran.notable.ui.design.NSettingRow
+import com.ethran.notable.ui.design.NTextField
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.AlertTriangle
+import compose.icons.feathericons.LogOut
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -75,106 +75,112 @@ fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
     var logoutBlocked by remember { mutableStateOf<LogoutResult.StillPending?>(null) }
     val keptText: (PendingSync) -> String = { k -> context.getString(R.string.nsync_logout_kept, k.writes, k.files) }
 
-    EInkSection(title = stringResource(R.string.nsync_title), icon = Icons.Default.CloudSync) {
-        Text(stringResource(R.string.nsync_intro), style = MaterialTheme.typography.body2)
-        Spacer(Modifier.height(12.dp))
+    NSection(
+        title = stringResource(R.string.nsync_title),
+        description = stringResource(R.string.nsync_intro),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(NotableSpace.md)) {
+            local.openError?.let { Warning(stringResource(R.string.nsync_local_error, it)) }
 
-        local.openError?.let {
-            Notice(stringResource(R.string.nsync_local_error, it))
-            Spacer(Modifier.height(12.dp))
-        }
+            when (val s = status) {
+                SyncStatus.SignedOut, is SyncStatus.AccountUnreadable -> {
+                    if (s is SyncStatus.AccountUnreadable) Warning(stringResource(R.string.nsync_status_unreadable, s.reason))
+                    val owner = local.owner
+                    if (owner == null) Body(stringResource(R.string.nsync_local_own))
+                    else NNotice(stringResource(R.string.nsync_local_owned, owner.username, owner.serverUrl))
+                    MigrationBlock(migration, enabled = local.openError == null, onMigrate = client::migrate)
+                    Column(
+                        Modifier.widthIn(max = 480.dp).padding(top = NotableSpace.sm),
+                        verticalArrangement = Arrangement.spacedBy(NotableSpace.lg),
+                    ) {
+                        NField(stringResource(R.string.nsync_server)) {
+                            NTextField(
+                                server, { server = it }, Modifier.fillMaxWidth(),
+                                textStyle = NotableTheme.type.mono,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            )
+                        }
+                        NField(stringResource(R.string.nsync_username)) {
+                            NTextField(username, { username = it }, Modifier.fillMaxWidth())
+                        }
+                        NField(stringResource(R.string.nsync_password)) {
+                            NTextField(
+                                password, { password = it }, Modifier.fillMaxWidth(),
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            )
+                        }
+                        NButton(
+                            stringResource(if (busy) R.string.nsync_logging_in else R.string.nsync_log_in),
+                            onClick = {
+                                busy = true
+                                error = null
+                                scope.launch {
+                                    error = runCatching { client.login(server, username, password) }.exceptionOrNull()?.message
+                                    if (error == null) password = ""
+                                    busy = false
+                                }
+                            },
+                            style = NButtonStyle.Primary,
+                            enabled = !busy && server.isNotBlank() && username.isNotBlank() && password.isNotEmpty(),
+                        )
+                    }
+                }
 
-        when (val s = status) {
-            SyncStatus.SignedOut, is SyncStatus.AccountUnreadable -> {
-                if (s is SyncStatus.AccountUnreadable) Notice(stringResource(R.string.nsync_status_unreadable, s.reason))
-                val owner = local.owner
-                if (owner == null) Text(stringResource(R.string.nsync_local_own), style = MaterialTheme.typography.body2)
-                else Notice(stringResource(R.string.nsync_local_owned, owner.username, owner.serverUrl))
-                Spacer(Modifier.height(12.dp))
-                MigrationBlock(migration, enabled = local.openError == null, onMigrate = client::migrate)
-                Spacer(Modifier.height(12.dp))
-                EInkTextField(stringResource(R.string.nsync_server), server, { server = it })
-                Spacer(Modifier.height(8.dp))
-                EInkTextField(stringResource(R.string.nsync_username), username, { username = it })
-                Spacer(Modifier.height(8.dp))
-                PasswordField(stringResource(R.string.nsync_password), password) { password = it }
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = {
+                else -> {
+                    Text(statusText(s), style = NotableTheme.type.body, color = NotableTheme.colors.ink)
+                    ProjectionBlock(projection, enabled = s is SyncStatus.Connected, onRebuild = client::rebuildFromServer)
+                    MigrationBlock(migration, enabled = s is SyncStatus.Connected, onMigrate = client::migrate)
+                    val logOut: (LogoutChoice) -> Unit = { choice ->
                         busy = true
                         error = null
                         scope.launch {
-                            error = runCatching { client.login(server, username, password) }.exceptionOrNull()?.message
-                            if (error == null) password = ""
+                            when (val r = client.logout(choice)) {
+                                is LogoutResult.StillPending -> logoutBlocked = r
+                                is LogoutResult.LoggedOut -> {
+                                    logoutBlocked = null
+                                    error = listOfNotNull(
+                                        r.serverWarning,
+                                        if (r.kept.isEmpty) null else keptText(r.kept),
+                                    ).joinToString("\n").ifEmpty { null }
+                                }
+                            }
                             busy = false
                         }
-                    },
-                    enabled = !busy && server.isNotBlank() && username.isNotBlank() && password.isNotEmpty(),
-                    colors = eInkButtonColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(if (busy) R.string.nsync_logging_in else R.string.nsync_log_in)) }
-            }
-
-            else -> {
-                Text(statusText(s), fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(12.dp))
-                ProjectionBlock(projection, enabled = s is SyncStatus.Connected, onRebuild = client::rebuildFromServer)
-                Spacer(Modifier.height(12.dp))
-                MigrationBlock(migration, enabled = s is SyncStatus.Connected, onMigrate = client::migrate)
-                Spacer(Modifier.height(12.dp))
-                val logOut: (LogoutChoice) -> Unit = { choice ->
-                    busy = true
-                    error = null
-                    scope.launch {
-                        when (val r = client.logout(choice)) {
-                            is LogoutResult.StillPending -> logoutBlocked = r
-                            is LogoutResult.LoggedOut -> {
-                                logoutBlocked = null
-                                error = listOfNotNull(
-                                    r.serverWarning,
-                                    if (r.kept.isEmpty) null else keptText(r.kept),
-                                ).joinToString("\n").ifEmpty { null }
-                            }
-                        }
-                        busy = false
                     }
-                }
-                logoutBlocked?.let { b ->
-                    Notice(
-                        stringResource(R.string.nsync_logout_pending, b.pending.writes, b.pending.files) +
-                            (b.reason?.let { "\n" + stringResource(R.string.nsync_logout_pending_reason, it) } ?: "")
+                    logoutBlocked?.let { b ->
+                        NNotice(
+                            text = stringResource(R.string.nsync_logout_pending, b.pending.writes, b.pending.files) +
+                                (b.reason?.let { "\n" + stringResource(R.string.nsync_logout_pending_reason, it) } ?: ""),
+                            icon = FeatherIcons.AlertTriangle,
+                            actions = {
+                                NButton(
+                                    stringResource(if (busy) R.string.nsync_logout_waiting else R.string.nsync_logout_wait),
+                                    onClick = { logOut(LogoutChoice.WaitForSync) },
+                                    style = NButtonStyle.Primary,
+                                    enabled = !busy,
+                                )
+                                NButton(
+                                    stringResource(R.string.nsync_logout_anyway),
+                                    onClick = { logOut(LogoutChoice.Anyway) },
+                                    style = NButtonStyle.Danger,
+                                    enabled = !busy,
+                                )
+                            },
+                        )
+                    } ?: NButton(
+                        stringResource(R.string.nsync_log_out),
+                        onClick = { logOut(LogoutChoice.IfNothingPending) },
+                        modifier = Modifier.padding(top = NotableSpace.sm),
+                        icon = FeatherIcons.LogOut,
+                        enabled = !busy && migration !is MigrationState.Running,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = { logOut(LogoutChoice.WaitForSync) },
-                        enabled = !busy,
-                        colors = eInkButtonColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(if (busy) R.string.nsync_logout_waiting else R.string.nsync_logout_wait)) }
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = { logOut(LogoutChoice.Anyway) },
-                        enabled = !busy,
-                        colors = eInkButtonColors(isSecondary = true),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.nsync_logout_anyway)) }
-                } ?: Button(
-                    onClick = { logOut(LogoutChoice.IfNothingPending) },
-                    enabled = !busy && migration !is MigrationState.Running,
-                    colors = eInkButtonColors(isSecondary = true),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(R.string.nsync_log_out)) }
+                }
             }
-        }
 
-        error?.let {
-            Spacer(Modifier.height(8.dp))
-            Notice(it)
-        }
+            error?.let { Warning(it) }
 
-        healthText(health)?.let {
-            Spacer(Modifier.height(12.dp))
-            Notice(it)
+            healthText(health)?.let { Warning(it) }
         }
     }
 }
@@ -182,65 +188,71 @@ fun NotableSyncSection(viewModel: NotableSyncViewModel = hiltViewModel()) {
 /** Server → this device. The rebuild is a debug action: it re-applies every doc (upsert only). */
 @Composable
 private fun ProjectionBlock(state: ProjectionStatus, enabled: Boolean, onRebuild: () -> Unit) {
-    Text(stringResource(R.string.nsync_receive_title), fontWeight = FontWeight.Bold)
-    Text(stringResource(R.string.nsync_receive_body), style = MaterialTheme.typography.body2)
-    Spacer(Modifier.height(4.dp))
-    val last = state.lastAppliedAt?.let {
-        java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it))
-    }
-    Text(
-        when {
-            state.running -> stringResource(R.string.nsync_receive_running, state.docs)
-            last != null -> stringResource(R.string.nsync_receive_done, state.docs, last)
-            else -> stringResource(R.string.nsync_receive_waiting)
+    Column(verticalArrangement = Arrangement.spacedBy(NotableSpace.sm)) {
+        NSettingRow(
+            title = stringResource(R.string.nsync_receive_title),
+            description = stringResource(R.string.nsync_receive_body),
+            divider = false,
+        )
+        val last = state.lastAppliedAt?.let {
+            java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it))
         }
-    )
-    state.errors.forEach { (doc, why) -> Notice(stringResource(R.string.nsync_receive_error, doc, why)) }
-    state.warnings.takeLast(3).forEach { Notice(it) }
-    state.writeError?.let { Notice(stringResource(R.string.nsync_write_error, it)) }
-    if (state.pendingWrites > 0) Notice(stringResource(R.string.nsync_pending_writes, state.pendingWrites))
-    if (state.pendingBlobs > 0) Text(stringResource(R.string.nsync_pending_blobs, state.pendingBlobs), style = MaterialTheme.typography.body2)
-    state.blobError?.let { Notice(stringResource(R.string.nsync_blob_error, it)) }
-    state.commitLatency?.let {
-        Text(stringResource(R.string.nsync_commit_latency, it.p50Ms, it.maxMs, it.count), style = MaterialTheme.typography.body2)
+        Body(
+            when {
+                state.running -> stringResource(R.string.nsync_receive_running, state.docs)
+                last != null -> stringResource(R.string.nsync_receive_done, state.docs, last)
+                else -> stringResource(R.string.nsync_receive_waiting)
+            }
+        )
+        state.errors.forEach { (doc, why) -> Warning(stringResource(R.string.nsync_receive_error, doc, why)) }
+        state.warnings.takeLast(3).forEach { Warning(it) }
+        state.writeError?.let { Warning(stringResource(R.string.nsync_write_error, it)) }
+        if (state.pendingWrites > 0) NNotice(stringResource(R.string.nsync_pending_writes, state.pendingWrites))
+        if (state.pendingBlobs > 0) Meta(stringResource(R.string.nsync_pending_blobs, state.pendingBlobs))
+        state.blobError?.let { Warning(stringResource(R.string.nsync_blob_error, it)) }
+        state.commitLatency?.let {
+            Meta(stringResource(R.string.nsync_commit_latency, it.p50Ms, it.maxMs, it.count))
+        }
+        NButton(
+            stringResource(R.string.nsync_rebuild),
+            onClick = onRebuild,
+            style = NButtonStyle.Secondary,
+            enabled = enabled && !state.running,
+        )
     }
-    Spacer(Modifier.height(8.dp))
-    Button(
-        onClick = onRebuild,
-        enabled = enabled && !state.running,
-        colors = eInkButtonColors(isSecondary = true),
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text(stringResource(R.string.nsync_rebuild)) }
 }
 
 @Composable
 private fun MigrationBlock(state: MigrationState, enabled: Boolean, onMigrate: () -> Unit) {
-    Text(stringResource(R.string.nsync_migrate_title), fontWeight = FontWeight.Bold)
-    Text(stringResource(R.string.nsync_migrate_body), style = MaterialTheme.typography.body2)
-    Spacer(Modifier.height(8.dp))
-    when (state) {
-        is MigrationState.Running -> Text(
-            stringResource(R.string.nsync_migrating, state.progress.done + 1, state.progress.total, state.progress.current ?: "")
-        )
-
-        is MigrationState.Done -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val r = state.report
-            Text(stringResource(R.string.nsync_migrate_done, r.migrated.size, r.alreadyDone.size, r.failed.size))
-            if (r.merged.isNotEmpty()) Text(stringResource(R.string.nsync_migrate_merged, r.merged.size))
-            r.failed.forEach { Notice(stringResource(R.string.nsync_migrate_failed_item, it.title, it.reason)) }
-            r.warnings.forEach { Notice(stringResource(R.string.nsync_migrate_missing_pages, it.id, it.missingPages.size)) }
+    Column(verticalArrangement = Arrangement.spacedBy(NotableSpace.sm)) {
+        NSettingRow(
+            title = stringResource(R.string.nsync_migrate_title),
+            description = stringResource(R.string.nsync_migrate_body),
+            divider = false,
+        ) {
+            NButton(
+                stringResource(R.string.nsync_migrate),
+                onClick = onMigrate,
+                enabled = enabled && state !is MigrationState.Running,
+            )
         }
+        when (state) {
+            is MigrationState.Running -> Body(
+                stringResource(R.string.nsync_migrating, state.progress.done + 1, state.progress.total, state.progress.current ?: "")
+            )
 
-        is MigrationState.Failed -> Notice(stringResource(R.string.nsync_migrate_error, state.message))
-        MigrationState.Idle -> Unit
+            is MigrationState.Done -> {
+                val r = state.report
+                Body(stringResource(R.string.nsync_migrate_done, r.migrated.size, r.alreadyDone.size, r.failed.size))
+                if (r.merged.isNotEmpty()) Meta(stringResource(R.string.nsync_migrate_merged, r.merged.size))
+                r.failed.forEach { Warning(stringResource(R.string.nsync_migrate_failed_item, it.title, it.reason)) }
+                r.warnings.forEach { Warning(stringResource(R.string.nsync_migrate_missing_pages, it.id, it.missingPages.size)) }
+            }
+
+            is MigrationState.Failed -> Warning(stringResource(R.string.nsync_migrate_error, state.message))
+            MigrationState.Idle -> Unit
+        }
     }
-    Spacer(Modifier.height(8.dp))
-    Button(
-        onClick = onMigrate,
-        enabled = enabled && state !is MigrationState.Running,
-        colors = eInkButtonColors(),
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text(stringResource(R.string.nsync_migrate)) }
 }
 
 @Composable
@@ -262,37 +274,12 @@ private fun healthText(h: BackgroundHealth): String? = when (h) {
     BackgroundHealth.BatteryOptimized -> stringResource(R.string.nsync_bg_battery)
 }
 
-/** A bordered message, so warnings stand out on e-ink without color. */
+/** Something that needs attention: a notice with the warning mark, so it reads without color. */
 @Composable
-private fun Notice(text: String) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colors.onSurface, RoundedCornerShape(4.dp))
-            .padding(10.dp)
-    ) { Text(text, style = MaterialTheme.typography.body2) }
-}
+private fun Warning(text: String) = NNotice(text, icon = FeatherIcons.AlertTriangle)
 
 @Composable
-private fun PasswordField(label: String, value: String, onValueChange: (String) -> Unit) {
-    Column {
-        Text(label, style = MaterialTheme.typography.caption, fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onSurface)
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colors.surface, RoundedCornerShape(4.dp))
-                .border(1.dp, MaterialTheme.colors.onSurface, RoundedCornerShape(4.dp))
-                .padding(12.dp)
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                textStyle = TextStyle(fontSize = 14.sp, color = MaterialTheme.colors.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colors.onSurface),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
+private fun Body(text: String) = Text(text, style = NotableTheme.type.body, color = NotableTheme.colors.ink)
+
+@Composable
+private fun Meta(text: String) = Text(text, style = NotableTheme.type.meta, color = NotableTheme.colors.secondary)

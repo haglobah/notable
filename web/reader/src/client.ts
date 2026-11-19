@@ -5,6 +5,7 @@
 import type { NotebookEntry } from "@notable/schema"
 import { entryToWire, type DocKey, type WorkerRequest, type WorkerResponse } from "./pdfProtocol.ts"
 import type { BlobUrl } from "./worker.ts"
+import type { OutlineEntry, SearchHit } from "./bookText.ts"
 
 export type ReaderOptions = {
   /** Starts the app's worker entry, which calls servePdfWorker (`new Worker(new URL(…), {type: "module"})`). */
@@ -20,6 +21,10 @@ export type Reader = {
   renderPage(key: DocKey, index: number, width: number): Promise<ImageBitmap>
   /** Download-as-PDF; `doc` is Automerge save() bytes of the notebook doc. */
   projectPdf(doc: Uint8Array, entry: NotebookEntry, progress?: (done: number, total: number) => void): Promise<Uint8Array>
+  /** The document's table of contents, flattened (bookText.ts outlineOf). */
+  outline(key: DocKey): Promise<OutlineEntry[]>
+  /** Every document page with a hit; [progress] counts pages searched. */
+  search(key: DocKey, query: string, progress?: (done: number, total: number) => void): Promise<SearchHit[]>
   /** An image blob (page images, image backgrounds); the last few are kept. */
   loadImage(hash: string): Promise<ImageBitmap>
 }
@@ -79,6 +84,16 @@ export function createReader(opts: ReaderOptions): Reader {
       const r = await call({ type: "project", doc, entry: entryToWire(entry) }, [doc.buffer], progress)
       if (r.type !== "project") throw new Error("unexpected worker reply")
       return r.pdf
+    },
+    async outline(key) {
+      const r = await call({ type: "outline", key })
+      if (r.type !== "outline") throw new Error("unexpected worker reply")
+      return r.outline
+    },
+    async search(key, query, progress) {
+      const r = await call({ type: "search", key, query }, [], progress)
+      if (r.type !== "search") throw new Error("unexpected worker reply")
+      return r.hits
     },
     loadImage(hash) {
       let p = images.get(hash)

@@ -38,6 +38,7 @@ object AutomergeSchema {
             set(ObjectId.ROOT, "schema", NewValue.str(LIBRARY))
             set(ObjectId.ROOT, "version", VERSION.toInt())
             library.codeDocUrl?.let { set(ObjectId.ROOT, "codeDocUrl", NewValue.str(it)) }
+            library.quickNotebookId?.let { set(ObjectId.ROOT, "quickNotebookId", NewValue.str(it)) }
             val folders = set(ObjectId.ROOT, "folders", ObjectType.MAP)
             library.folders.values.forEach { putFolder(this, folders, it) }
             val notebooks = set(ObjectId.ROOT, "notebooks", ObjectType.MAP)
@@ -100,6 +101,9 @@ object AutomergeSchema {
         return if (r.has(ObjectId.ROOT, "codeDocUrl")) r.str(ObjectId.ROOT, "codeDocUrl", "") else null
     }
 
+    /** The notebook "+ Quick page" appends to (round 5). */
+    fun setQuickNotebookId(tx: Transaction, id: String) = tx.set(ObjectId.ROOT, "quickNotebookId", NewValue.str(id))
+
     /** Points the library at its code doc (set once, on first use; see ADR-002). */
     fun setCodeDocUrl(tx: Transaction, url: String) = tx.set(ObjectId.ROOT, "codeDocUrl", NewValue.str(url))
 
@@ -135,6 +139,60 @@ object AutomergeSchema {
         }
         tx.set(o, "createdAt", n.createdAt)
         tx.set(o, "updatedAt", n.updatedAt)
+        n.meta?.let { putBookMeta(tx, o, it) }
+        n.readAt?.let { tx.set(o, "readAt", it) }
+        if (n.hasFinishedAt) setFinishedAt(tx, o, n.finishedAt)
+        n.pageCount?.let { tx.set(o, "pageCount", it) }
+        n.readPage?.let { tx.set(o, "readPage", it) }
+        if (n.hasRating) setRating(tx, o, n.rating)
+    }
+
+    /** An entry's `meta`, written whole (once, at import; docs/plans/ebook-features.md). */
+    fun putBookMeta(tx: Transaction, entry: ObjectId, m: AmBookMeta) {
+        val o = tx.set(entry, "meta", ObjectType.MAP)
+        val authors = tx.set(o, "authors", ObjectType.LIST)
+        m.authors.forEachIndexed { i, a -> tx.insert(authors, i.toLong(), NewValue.str(a)) }
+        setStrOrNull(tx, o, "series", m.series)
+        if (m.seriesIndex == null) tx.setNull(o, "seriesIndex") else tx.set(o, "seriesIndex", NewValue.f64(m.seriesIndex))
+        setStrOrNull(tx, o, "description", m.description)
+        setStrOrNull(tx, o, "publisher", m.publisher)
+        setStrOrNull(tx, o, "language", m.language)
+        setStrOrNull(tx, o, "isbn", m.isbn)
+        setStrOrNull(tx, o, "published", m.published)
+        val subjects = tx.set(o, "subjects", ObjectType.LIST)
+        m.subjects.forEachIndexed { i, a -> tx.insert(subjects, i.toLong(), NewValue.str(a)) }
+    }
+
+    /* Reading state: each sets one field of an entry, so concurrent edits of the others merge. */
+
+    /** A reader opened the entry at [at]. */
+    fun setReadAt(tx: Transaction, entry: ObjectId, at: Date) = tx.set(entry, "readAt", at)
+
+    /** 1 to 10, or null to clear it. */
+    fun setRating(tx: Transaction, entry: ObjectId, rating: Int?) {
+        if (rating == null) tx.setNull(entry, "rating")
+        else {
+            require(rating in 1..10) { "rating must be 1 to 10, got $rating" }
+            tx.set(entry, "rating", rating)
+        }
+    }
+
+    /**
+     * The entry's page count and open page index (null: leave it). Writes only what changed:
+     * Automerge records a put of an unchanged value too, and page turns would grow the library.
+     * Same as TS `setReading`. Returns whether it wrote anything.
+     */
+    fun setReading(doc: Document, tx: Transaction, entry: ObjectId, pageCount: Int?, readPage: Int?): Boolean {
+        fun current(key: String) = (doc.get(entry, key).orElse(null) as? AmValue.Int)?.value
+        var wrote = false
+        if (pageCount != null && current("pageCount") != pageCount.toLong()) { tx.set(entry, "pageCount", pageCount); wrote = true }
+        if (readPage != null && current("readPage") != readPage.toLong()) { tx.set(entry, "readPage", readPage); wrote = true }
+        return wrote
+    }
+
+    /** [at] marks the entry finished; null marks it unread again. */
+    fun setFinishedAt(tx: Transaction, entry: ObjectId, at: Date?) {
+        if (at == null) tx.setNull(entry, "finishedAt") else tx.set(entry, "finishedAt", at)
     }
 
     fun putPage(tx: Transaction, pages: ObjectId, p: AmPage) {
@@ -199,6 +257,7 @@ object AutomergeSchema {
         return AmLibrary(
             // Optional (ADR-002): absent until the first definition is written.
             codeDocUrl = if (r.has(ObjectId.ROOT, "codeDocUrl")) r.str(ObjectId.ROOT, "codeDocUrl", "") else null,
+            quickNotebookId = if (r.has(ObjectId.ROOT, "quickNotebookId")) r.str(ObjectId.ROOT, "quickNotebookId", "") else null,
             folders = r.keys(folders).associateWith { id ->
                 val p = "folders.$id"
                 val o = r.map(folders, id, p)
@@ -218,8 +277,43 @@ object AutomergeSchema {
                     source = readSource(r, r.map(o, "source", "$p.source"), "$p.source"),
                     createdAt = r.date(o, "createdAt", p),
                     updatedAt = r.date(o, "updatedAt", p),
+                    // Optional book keys (docs/plans/ebook-features.md); absent stays absent.
+                    meta = if (r.has(o, "meta")) readBookMeta(r, r.map(o, "meta", "$p.meta"), "$p.meta") else null,
+                    readAt = if (r.has(o, "readAt")) r.date(o, "readAt", p) else null,
+                    finishedAt = if (r.has(o, "finishedAt") && r.get(o, "finishedAt", p) !is AmValue.Null) r.date(o, "finishedAt", p) else null,
+                    hasFinishedAt = r.has(o, "finishedAt"),
+                    pageCount = if (r.has(o, "pageCount")) count(r, o, "pageCount", p) else null,
+                    readPage = if (r.has(o, "readPage")) count(r, o, "readPage", p) else null,
+                    rating = if (r.has(o, "rating") && r.get(o, "rating", p) !is AmValue.Null) {
+                        r.int(o, "rating", p).also { if (it < 1 || it > 10) throw SchemaException("$p.rating: expected 1 to 10, got $it") }.toInt()
+                    } else null,
+                    hasRating = r.has(o, "rating"),
                 )
             },
+        )
+    }
+
+    private fun count(r: Reader, o: ObjectId, key: String, p: String): Int {
+        val v = r.int(o, key, p)
+        if (v < 0) throw SchemaException("$p.$key: expected 0 or more, got $v")
+        if (v > Int.MAX_VALUE) throw SchemaException("$p.$key: too large, got $v")
+        return v.toInt()
+    }
+
+    /** Every key must be there: a meta is written whole. */
+    private fun readBookMeta(r: Reader, o: ObjectId, p: String): AmBookMeta {
+        fun strs(k: String) = r.list(o, k, p).mapIndexed { i, v -> r.scalar(v, "$p.$k[$i]") }
+        val index = r.get(o, "seriesIndex", p)
+        return AmBookMeta(
+            authors = strs("authors"),
+            series = r.strOrNull(o, "series", p),
+            seriesIndex = if (index is AmValue.Null) null else r.numValue(index, "$p.seriesIndex"),
+            description = r.strOrNull(o, "description", p),
+            publisher = r.strOrNull(o, "publisher", p),
+            language = r.strOrNull(o, "language", p),
+            isbn = r.strOrNull(o, "isbn", p),
+            published = r.strOrNull(o, "published", p),
+            subjects = strs("subjects"),
         )
     }
 

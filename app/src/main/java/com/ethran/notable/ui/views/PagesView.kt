@@ -4,28 +4,19 @@ import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,26 +27,33 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.ethran.notable.editor.ui.Topbar
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
 import com.ethran.notable.editor.utils.EpdRefreshArbiter
+import com.ethran.notable.R
 import com.ethran.notable.navigation.NavigationDestination
-import com.ethran.notable.ui.components.BreadCrumb
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NConfirmDialog
+import com.ethran.notable.ui.design.NTopBar
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSize
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Edit2
+import compose.icons.feathericons.Image
 import com.ethran.notable.ui.components.FastScroller
 import com.ethran.notable.ui.components.PageCard
 import com.ethran.notable.ui.components.PagePreview
-import com.ethran.notable.ui.dialogs.ShowSimpleConfirmationDialog
 import com.ethran.notable.ui.viewmodels.PagesUiState
 import com.ethran.notable.ui.viewmodels.PagesViewModel
 import com.ethran.notable.utils.InsertionSlot
@@ -144,51 +142,59 @@ fun PagesContent(
     var pendingDeletePageId by rememberSaveable { mutableStateOf<String?>(null) }
 
     pendingDeletePageId?.let { id ->
-        ShowSimpleConfirmationDialog(
-            title = "Confirm Deletion",
-            message = "Are you sure you want to delete this page?",
+        NConfirmDialog(
+            title = stringResource(R.string.pages_delete_title),
+            message = stringResource(R.string.pages_delete_message),
+            confirmText = stringResource(R.string.page_menu_delete),
+            cancelText = stringResource(R.string.dialog_cancel),
+            destructive = true,
             onConfirm = {
                 onDeletePage(id)
                 pendingDeletePageId = null
             },
-            onCancel = {
+            onDismiss = {
                 pendingDeletePageId = null
             })
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Topbar {
-            Row(
-                Modifier
-                    .padding(10.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.weight(1f)) {
-                    BreadCrumb(folders = state.folderList) { onBack(it) }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GenerateThumbsSwitch(onClick = onGenerateThumbnails)
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    EditModeSwitch(isEditMode = isEditMode, onToggle = { isEditMode = it })
-
-                    if (state.openPageId != null) {
-                        Spacer(modifier = Modifier.width(12.dp))
-                        JumpToCurrentPill {
-                            val idx = state.pageIds.indexOf(state.openPageId)
-                            if (idx >= 0) scope.launch { gridState.scrollToItem(idx) }
-                        }
-                    }
-                }
+    val c = NotableTheme.colors
+    Column(Modifier.fillMaxSize().background(c.paper)) {
+        // Back goes to the folder that holds the notebook (the library at the root).
+        val parent = state.folderList.lastOrNull()
+        val parentTitle = parent?.title ?: stringResource(R.string.home_view_name)
+        NTopBar(
+            title = state.bookTitle.ifBlank { stringResource(R.string.pages_title) },
+            meta = parentTitle,
+            onBack = { onBack(parent?.id) },
+            backDescription = stringResource(R.string.pages_back_to, parentTitle),
+        ) {
+            NButton(
+                stringResource(R.string.pages_generate_previews),
+                onClick = onGenerateThumbnails,
+                style = NButtonStyle.Quiet,
+                icon = FeatherIcons.Image,
+            )
+            NButton(
+                stringResource(R.string.pages_edit_mode),
+                onClick = { isEditMode = !isEditMode },
+                icon = FeatherIcons.Edit2,
+                selected = isEditMode,
+            )
+            if (state.openPageId != null) {
+                NButton(
+                    stringResource(R.string.pages_jump_to_current),
+                    onClick = {
+                        val idx = state.pageIds.indexOf(state.openPageId)
+                        if (idx >= 0) scope.launch { gridState.scrollToItem(idx) }
+                    },
+                    style = NButtonStyle.Primary,
+                )
             }
         }
 
         Box(
             Modifier
-                .padding(10.dp)
+                .padding(horizontal = NotableSpace.xl)
                 .fillMaxSize()
                 .onGloballyPositioned { coords ->
                     val r = coords.boundsInRoot()
@@ -198,9 +204,10 @@ fun PagesContent(
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Adaptive(148.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
-                contentPadding = PaddingValues(end = 40.dp),
+                verticalArrangement = Arrangement.spacedBy(NotableSpace.xl),
+                horizontalArrangement = Arrangement.spacedBy(NotableSpace.xl),
+                // Room for the fast scroller on the right.
+                contentPadding = PaddingValues(top = NotableSpace.xl, bottom = NotableSpace.xl, end = NotableSpace.xxxl),
                 modifier = Modifier
                     .onGloballyPositioned { coords ->
                         val r = coords.boundsInRoot()
@@ -262,7 +269,7 @@ fun PagesContent(
                 Box(modifier = Modifier
                     .offset { localOffset }
                     .size(width = slotWidthDp, height = slotHeightDp)
-                    .background(Color.DarkGray))
+                    .background(c.ink))
             }
 
             // Drag proxy overlay — match on-screen size
@@ -285,15 +292,15 @@ fun PagesContent(
                     Box(modifier = Modifier
                         .offset { IntOffset(localStartX, localStartY) }
                         .size(width = wDp, height = hDp)
-                        .background(Color.White)) {
+                        .background(c.paper)) {
                         // PagePreview fills the proxy without adding extra outer borders
                         PagePreview(
                             modifier = Modifier
                                 .matchParentSize()
                                 .border(
-                                    if (isDraggingPageOpen) 2.dp else 1.dp,
-                                    Color.Black,
-                                    RectangleShape
+                                    if (isDraggingPageOpen) NotableSize.strong else NotableSize.hairline,
+                                    if (isDraggingPageOpen) c.ink else c.rule,
+                                    NotableShape.paper
                                 ), pageId = draggingId
                         )
                     }
@@ -333,66 +340,6 @@ fun PagesContent(
         }
     }
 }
-
-@Composable
-private fun GenerateThumbsSwitch(onClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color.Black, RoundedCornerShape(16.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 14.dp, vertical = 8.dp)) {
-        Text("Generate previews", color = Color.Black)
-    }
-}
-
-/**
- * Top-right persistent jump pill.
- */
-@Composable
-private fun JumpToCurrentPill(onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF111111))
-            .border(1.dp, Color.Black, RoundedCornerShape(16.dp))
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() }, indication = null
-            ) { onClick() }) {
-        Text("Jump to current", color = Color.White)
-    }
-}
-
-/**
- * A simple switch for toggling edit mode.
- */
-@Composable
-private fun EditModeSwitch(
-    isEditMode: Boolean, onToggle: (Boolean) -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (isEditMode) Color.Black else Color.White)
-            .border(1.dp, Color.Black, RoundedCornerShape(16.dp))
-            .clickable { onToggle(!isEditMode) }
-            .padding(horizontal = 14.dp, vertical = 8.dp)) {
-        Text("Edit Mode", color = if (isEditMode) Color.White else Color.Black)
-        Spacer(Modifier.width(8.dp))
-        // Simple visual indicator for the switch state
-        Box(
-            Modifier
-                .size(16.dp)
-                .background(Color.White, CircleShape)
-                .border(1.dp, Color.Black, CircleShape)
-        )
-    }
-}
-
 
 @Preview(showBackground = true)
 @Composable

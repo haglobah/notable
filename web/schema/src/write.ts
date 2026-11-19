@@ -12,7 +12,7 @@
 import { ImmutableString, getConflicts } from "@automerge/automerge"
 import {
   BASE_VERSION, CODE_SCHEMA, CODE_VERSION, DELETED_PAGES_VERSION, LIBRARY_SCHEMA, NOTEBOOK_SCHEMA, isDefName,
-  type Background, type CodeDef, type CodeImage, type Folder, type Image, type Library, type Notebook, type NotebookEntry,
+  type Background, type BookMeta, type CodeDef, type CodeImage, type Folder, type Image, type Library, type Notebook, type NotebookEntry,
   type Page, type Source, type Stroke,
 } from "./model.ts"
 
@@ -36,15 +36,85 @@ const sourceValue = (x: Source) =>
     : x.kind === "pdf" ? { kind: s("pdf"), blob: s(x.blob) }
       : { kind: s("epub"), blob: s(x.blob), layout: { w: f(x.layout.w), h: f(x.layout.h), em: f(x.layout.em) } }
 
+export const bookMetaValue = (x: BookMeta) => ({
+  authors: x.authors.map(s),
+  series: sOrNull(x.series),
+  seriesIndex: x.seriesIndex === null ? null : f(x.seriesIndex),
+  description: sOrNull(x.description),
+  publisher: sOrNull(x.publisher),
+  language: sOrNull(x.language),
+  isbn: sOrNull(x.isbn),
+  published: sOrNull(x.published),
+  subjects: x.subjects.map(s),
+})
+
 export const notebookEntryValue = (x: NotebookEntry) => ({
   docUrl: s(x.docUrl), title: s(x.title), folderId: sOrNull(x.folderId), kind: s(x.kind),
   source: sourceValue(x.source), createdAt: x.createdAt, updatedAt: x.updatedAt,
+  ...(x.meta === undefined ? {} : { meta: bookMetaValue(x.meta) }),
+  ...(x.readAt === undefined ? {} : { readAt: x.readAt }),
+  ...(x.finishedAt === undefined ? {} : { finishedAt: x.finishedAt }),
+  ...(x.pageCount === undefined ? {} : { pageCount: int(x.pageCount) }),
+  ...(x.readPage === undefined ? {} : { readPage: int(x.readPage) }),
+  ...(x.rating === undefined ? {} : { rating: x.rating === null ? null : checkRating(x.rating) }),
 })
+
+const checkRating = (r: number) => {
+  if (!Number.isInteger(r) || r < 1 || r > 10) throw new TypeError(`a rating is 1 to 10, got ${r}`)
+  return r
+}
+
+/*
+ * Reading state (docs/plans/ebook-features.md). Call inside `A.change` on the library doc; each
+ * sets one field of the entry, so concurrent edits of other fields survive.
+ */
+
+/** A reader opened entry [id]. */
+export function markRead(d: Record<string, any>, id: string, at: Date) {
+  const e = d.notebooks[id]
+  if (e === undefined) throw new Error(`no notebook ${id}`)
+  e.readAt = at
+}
+
+/** Call inside `A.change` on a notebook doc: the page a reader shows, so every device reopens there. */
+export function setOpenPage(d: Record<string, any>, pageId: string) {
+  if (d.pages[pageId] === undefined) throw new Error(`no page ${pageId}`)
+  d.openPageId = s(pageId)
+}
+
+const entryOf = (d: Record<string, any>, id: string) => {
+  const e = d.notebooks[id]
+  if (e === undefined) throw new Error(`no notebook ${id}`)
+  return e
+}
+
+/** [rating] 1 to 10 for entry [id]; null clears it. */
+export function setRating(d: Record<string, any>, id: string, rating: number | null) {
+  entryOf(d, id).rating = rating === null ? null : checkRating(rating)
+}
+
+/**
+ * The entry's page count and open page index, from its notebook doc. Writes only what changed:
+ * Automerge records a put of an unchanged value too, and page turns would grow the library.
+ */
+export function setReading(d: Record<string, any>, id: string, r: { pageCount?: number; readPage?: number }) {
+  const e = entryOf(d, id)
+  if (r.pageCount !== undefined && e.pageCount !== int(r.pageCount)) e.pageCount = r.pageCount
+  if (r.readPage !== undefined && e.readPage !== int(r.readPage)) e.readPage = r.readPage
+}
+
+/** [at] marks entry [id] finished; null marks it unread again. */
+export function setFinished(d: Record<string, any>, id: string, at: Date | null) {
+  const e = d.notebooks[id]
+  if (e === undefined) throw new Error(`no notebook ${id}`)
+  e.finishedAt = at
+}
 
 export const libraryValue = (x: Library) => ({
   schema: s(LIBRARY_SCHEMA),
   version: BASE_VERSION,
   ...(x.codeDocUrl === undefined ? {} : { codeDocUrl: s(x.codeDocUrl) }),
+  ...(x.quickNotebookId === undefined ? {} : { quickNotebookId: s(x.quickNotebookId) }),
   folders: Object.fromEntries(Object.values(x.folders).map(v => [v.id, folderValue(v)])),
   notebooks: Object.fromEntries(Object.values(x.notebooks).map(v => [v.id, notebookEntryValue(v)])),
 })

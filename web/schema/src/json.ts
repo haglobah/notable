@@ -2,7 +2,7 @@
  * The expected-content JSON stored next to each golden fixture: dates as ISO-8601, bytes as
  * base64, everything else as in the model. Kotlin reads the same files (FixtureJson.kt).
  */
-import type { CodeImage, Library, Notebook, Page, Source } from "./model.ts"
+import type { BookMeta, CodeImage, Library, Notebook, NotebookEntry, Page, Source } from "./model.ts"
 
 type J = any
 
@@ -12,12 +12,31 @@ const b64 = (v: string) => Uint8Array.from(Buffer.from(v, "base64"))
 export function libraryFromJson(j: J): Library {
   return {
     ...(j.codeDocUrl === undefined ? {} : { codeDocUrl: j.codeDocUrl }),
+    ...(j.quickNotebookId === undefined ? {} : { quickNotebookId: j.quickNotebookId }),
     folders: Object.fromEntries(Object.entries<J>(j.folders).map(([id, f]) =>
       [id, { id, title: f.title, parentId: f.parentId, createdAt: d(f.createdAt), updatedAt: d(f.updatedAt) }])),
     notebooks: Object.fromEntries(Object.entries<J>(j.notebooks).map(([id, n]) =>
-      [id, { id, docUrl: n.docUrl, title: n.title, folderId: n.folderId, kind: n.kind, source: n.source as Source, createdAt: d(n.createdAt), updatedAt: d(n.updatedAt) }])),
+      [id, { id, docUrl: n.docUrl, title: n.title, folderId: n.folderId, kind: n.kind, source: n.source as Source, createdAt: d(n.createdAt), updatedAt: d(n.updatedAt), ...bookFieldsFromJson(n) }])),
   }
 }
+
+const bookFieldsFromJson = (n: J): Pick<NotebookEntry, "meta" | "readAt" | "finishedAt" | "pageCount" | "readPage" | "rating"> => ({
+  ...(n.pageCount === undefined ? {} : { pageCount: n.pageCount }),
+  ...(n.readPage === undefined ? {} : { readPage: n.readPage }),
+  ...(n.rating === undefined ? {} : { rating: n.rating }),
+  ...(n.meta === undefined ? {} : { meta: n.meta as BookMeta }),
+  ...(n.readAt === undefined ? {} : { readAt: d(n.readAt) }),
+  ...(n.finishedAt === undefined ? {} : { finishedAt: n.finishedAt === null ? null : d(n.finishedAt) }),
+})
+
+const bookFieldsToJson = (n: NotebookEntry): J => ({
+  ...(n.pageCount === undefined ? {} : { pageCount: n.pageCount }),
+  ...(n.readPage === undefined ? {} : { readPage: n.readPage }),
+  ...(n.rating === undefined ? {} : { rating: n.rating }),
+  ...(n.meta === undefined ? {} : { meta: n.meta }),
+  ...(n.readAt === undefined ? {} : { readAt: n.readAt.toISOString() }),
+  ...(n.finishedAt === undefined ? {} : { finishedAt: n.finishedAt === null ? null : n.finishedAt.toISOString() }),
+})
 
 export function notebookFromJson(j: J): Notebook {
   return {
@@ -47,10 +66,11 @@ export function notebookFromJson(j: J): Notebook {
 export function libraryToJson(l: Library): J {
   return {
     ...(l.codeDocUrl === undefined ? {} : { codeDocUrl: l.codeDocUrl }),
+    ...(l.quickNotebookId === undefined ? {} : { quickNotebookId: l.quickNotebookId }),
     folders: Object.fromEntries(Object.values(l.folders).map(f =>
       [f.id, { title: f.title, parentId: f.parentId, createdAt: f.createdAt.toISOString(), updatedAt: f.updatedAt.toISOString() }])),
     notebooks: Object.fromEntries(Object.values(l.notebooks).map(n =>
-      [n.id, { docUrl: n.docUrl, title: n.title, folderId: n.folderId, kind: n.kind, source: n.source, createdAt: n.createdAt.toISOString(), updatedAt: n.updatedAt.toISOString() }])),
+      [n.id, { docUrl: n.docUrl, title: n.title, folderId: n.folderId, kind: n.kind, source: n.source, createdAt: n.createdAt.toISOString(), updatedAt: n.updatedAt.toISOString(), ...bookFieldsToJson(n) }])),
   }
 }
 

@@ -105,7 +105,7 @@ class LocalDocWriter(
                 if (open == shell.openPageId) return@commit false
                 AutomergeSchema.setOpenPageId(tx, open)
                 true
-            }
+            } + syncReading(change.notebookId) // readPage goes with openPageId
         } ?: NONE
         is LocalChange.FolderUpserted -> upsertFolder(change.folder)
         is LocalChange.FolderDeleted -> deleteFolder(change.id)
@@ -126,6 +126,14 @@ class LocalDocWriter(
         is LocalChange.FolderMoved -> editFolder(change.id) { f, tx ->
             AutomergeSchema.setFolderFields(tx, f, null, change.parentId, true, Date(change.at))
         }
+        is LocalChange.NotebookRead -> readingState(change.id, Date(change.at), null, setFinished = false)
+        is LocalChange.NotebookFinished -> readingState(change.id, null, change.at?.let(::Date), setFinished = true)
+        is LocalChange.NotebookRated -> rate(change.id, change.rating, cleared = change.rating == null)
+        is LocalChange.ReadingSynced -> syncReading(change.id)
+        is LocalChange.QuickNotebookSet -> editLibrary { doc, tx ->
+            if (AutomergeSchema.readLibrary(doc).quickNotebookId != change.id) AutomergeSchema.setQuickNotebookId(tx, change.id)
+        }
+        is LocalChange.QuickPageMoved -> moveQuickPage(change.pageId, change.notebookId)
     }
 
     /**
@@ -151,6 +159,51 @@ class LocalDocWriter(
         is DocDebt.OpenPage -> local.notebook(debt.notebookId)?.let { write(LocalChange.OpenPageChanged(it.id, it.openPageId)) } ?: NONE
         is DocDebt.FolderRow -> local.folders().firstOrNull { it.id == debt.id }?.let { write(LocalChange.FolderUpserted(it)) }
             ?: write(LocalChange.FolderDeleted(debt.id))
+        // Room has the last local reading state; a notebook gone from Room has nothing to write.
+        is DocDebt.QuickNotebook -> write(LocalChange.QuickNotebookSet(debt.id))
+        // Room moved the page already; the doc copy reads the old entry's doc, else Room.
+        is DocDebt.QuickPageMove -> moveQuickPage(debt.pageId, debt.notebookId)
+        is DocDebt.ReadingState -> local.notebook(debt.id)?.let { nb ->
+            readingState(nb.id, nb.readAt, nb.finishedAt, setFinished = true) +
+                rate(nb.id, nb.rating, cleared = false) + syncReading(nb.id)
+        } ?: NONE
+    }
+
+    /** The library's quickNotebookId, when it names a live entry. */
+    fun quickNotebookId(): String? = docs.edit(docs.libraryUrl()) { doc ->
+        AutomergeSchema.readLibrary(doc).let { lib -> lib.quickNotebookId?.takeIf { it in lib.notebooks } }
+    }
+
+    /**
+     * Old quick page [pageId] (a `quickPage` entry with its own doc) becomes the last page of
+     * [notebookId] (docs/plans/ebook-features.md, round 5). Copy before delete: the page goes into
+     * the notebook's doc under the same id in one commit, and only then is the old entry deleted
+     * in another. A page id the notebook already has is not copied again, so a repeat (after a
+     * crash between the two, or a replay) or a second device doing the same neither duplicates
+     * nor loses ink. The old doc is left unreferenced; the repo has no delete.
+     */
+    private fun moveQuickPage(pageId: String, notebookId: String): WriteReceipt {
+        val (url, migrated) = ensureDoc(notebookId)
+        if (url == null) return migrated
+        val oldUrl = docs.edit(docs.libraryUrl()) { doc ->
+            AutomergeSchema.readLibrary(doc).notebooks[pageId]?.takeIf { it.kind == AmEntryKind.QUICK_PAGE }?.docUrl
+        }
+        // The page as its own doc has it, in that doc's stroke units; null: copy from Room.
+        val source = oldUrl?.let { u ->
+            docs.edit(u) { d -> AutomergeSchema.readPage(d, pageId)?.let { it to (AutomergeSchema.canvasWidthOf(d) ?: AutomergeProjector.DEFAULT_CANVAS_WIDTH) } }
+        }
+        val copy = commit(url) { doc, tx ->
+            if (AutomergeSchema.pageObjOrNull(doc, pageId) != null) return@commit false // already there
+            if (source != null) {
+                val k = (AutomergeSchema.canvasWidthOf(doc) ?: AutomergeProjector.DEFAULT_CANVAS_WIDTH) / source.second
+                AutomergeSchema.putPage(tx, AutomergeSchema.pagesOf(doc), source.first.scaled(k))
+            } else if (!putFullPage(doc, tx, pageId)) return@commit false
+            val last = AutomergeSchema.rawPageOrder(doc).second.lastOrNull { it != pageId }
+            AutomergeSchema.placeInPageOrder(doc, tx, pageId, last)
+            true
+        }
+        val gone = if (oldUrl != null) deleteEntry(pageId) else NONE
+        return migrated + copy + gone + bumpedIf(copy, notebookId) + syncReading(notebookId)
     }
 
     /** Copies everything in Room that has no doc yet; see [RoomToAutomergeMigration.run]. */
@@ -304,7 +357,7 @@ class LocalDocWriter(
             else AutomergeSchema.removeFromPageOrder(doc, tx, page.id)
             true
         }
-        return r + bumpedIf(r, page.notebookId)
+        return r + bumpedIf(r, page.notebookId) + syncReading(page.notebookId)
     }
 
     /**
@@ -320,7 +373,7 @@ class LocalDocWriter(
             AutomergeSchema.placeInPageOrder(doc, tx, pageId, after)
             true
         }
-        return migrated + c + bumpedIf(c, notebookId)
+        return migrated + c + bumpedIf(c, notebookId) + syncReading(notebookId)
     }
 
     private fun pageBackground(c: LocalChange.PageBackgroundChanged): WriteReceipt {
@@ -360,6 +413,64 @@ class LocalDocWriter(
                 AutomergeSchema.setEntryFields(tx, e, null, null, false, Date(now()))
                 entryBumped[id] = now()
             }
+        }
+    }
+
+    /**
+     * Sets entry [id]'s readAt to [readAt] when that is later than the doc's (null: leave it), and
+     * with [setFinished] its finishedAt to [finishedAt]. Single fields, no updatedAt bump: opening
+     * or finishing a book is not an edit of it. Unchanged values make no commit.
+     */
+    private fun readingState(id: String, readAt: Date?, finishedAt: Date?, setFinished: Boolean): WriteReceipt {
+        val (url, migrated) = ensureDoc(id)
+        if (url == null) return migrated
+        return migrated + commit(docs.libraryUrl()) { doc, tx ->
+            val e = AutomergeSchema.entryObjOrNull(doc, id) ?: return@commit false
+            val cur = AutomergeSchema.readLibrary(doc).notebooks.getValue(id)
+            var changed = false
+            if (readAt != null && (cur.readAt == null || readAt.after(cur.readAt))) {
+                AutomergeSchema.setReadAt(tx, e, readAt)
+                changed = true
+            }
+            if (setFinished && (cur.finishedAt != finishedAt || (finishedAt == null && !cur.hasFinishedAt))) {
+                // "Unread" on a never-finished entry still writes null: it is what the user chose.
+                AutomergeSchema.setFinishedAt(tx, e, finishedAt)
+                changed = true
+            }
+            changed
+        }
+    }
+
+    /**
+     * Entry [id]'s rating, when it differs. [cleared]: a null [rating] writes null even on an entry
+     * never rated (the user chose "Clear"); otherwise a null leaves a never-rated entry alone.
+     */
+    private fun rate(id: String, rating: Int?, cleared: Boolean): WriteReceipt {
+        val (url, migrated) = ensureDoc(id)
+        if (url == null) return migrated
+        return migrated + commit(docs.libraryUrl()) { doc, tx ->
+            val e = AutomergeSchema.entryObjOrNull(doc, id) ?: return@commit false
+            val cur = AutomergeSchema.readLibrary(doc).notebooks.getValue(id)
+            if (cur.rating == rating && (rating != null || cur.hasRating || !cleared)) return@commit false
+            AutomergeSchema.setRating(tx, e, rating)
+            true
+        }
+    }
+
+    /**
+     * The notebook doc's page count and open page index into its library entry, where they differ
+     * (docs/plans/ebook-features.md, round 3). Written with every page-order and open-page change,
+     * and as a backfill. A put of an unchanged value would still grow the library, so there is none.
+     */
+    private fun syncReading(id: String): WriteReceipt {
+        val url = docUrlOf(id) ?: return NONE
+        val (count, page) = docs.edit(url) { doc ->
+            val shell = AutomergeSchema.readNotebookShell(doc)
+            shell.pageOrder.size to shell.openPageId?.let { shell.pageOrder.indexOf(it) }?.takeIf { it >= 0 }
+        }
+        return commit(docs.libraryUrl()) { doc, tx ->
+            val e = AutomergeSchema.entryObjOrNull(doc, id) ?: return@commit false
+            AutomergeSchema.setReading(doc, tx, e, count, page)
         }
     }
 
@@ -428,7 +539,7 @@ class LocalDocWriter(
             )
             if (bump) entryBumped[nb.id] = now()
         }
-        return doc + entry
+        return doc + entry + syncReading(nb.id)
     }
 
     /** Room deletes a folder's subfolders, notebooks and quick pages with it (FK cascade); so do the docs. */

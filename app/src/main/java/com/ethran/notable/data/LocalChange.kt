@@ -45,6 +45,30 @@ sealed interface LocalChange {
     data class PageBackgroundChanged(val pageId: String, val notebookId: String?, val type: String, val value: String, val at: Long) : LocalChange
     data class FolderRenamed(val id: String, val title: String, val at: Long) : LocalChange
     data class FolderMoved(val id: String, val parentId: String?, val at: Long) : LocalChange
+
+    /* Reading state (docs/plans/ebook-features.md). Not edits: the entry's updatedAt stays. */
+
+    /** The editor opened notebook [id] at [at]. */
+    data class NotebookRead(val id: String, val at: Long) : LocalChange
+    /** "Mark as finished" at [at]; null is "Mark as unread". */
+    data class NotebookFinished(val id: String, val at: Long?) : LocalChange
+    /** Rated 1 to 10; null clears it. */
+    data class NotebookRated(val id: String, val rating: Int?) : LocalChange
+    /**
+     * The entry's `pageCount` and `readPage` may be behind the notebook doc (written before they
+     * existed, or by an older device): write them where they differ.
+     */
+    data class ReadingSynced(val id: String) : LocalChange
+
+    /* Quick pages (docs/plans/ebook-features.md, round 5). */
+
+    /** Notebook [id] is the one "+ Quick page" appends to. */
+    data class QuickNotebookSet(val id: String) : LocalChange
+    /**
+     * Old quick page [pageId] (its own library entry) becomes the last page of notebook
+     * [notebookId]: content copied under the same id first, then the old entry deleted.
+     */
+    data class QuickPageMoved(val pageId: String, val notebookId: String) : LocalChange
 }
 
 /**
@@ -65,6 +89,9 @@ interface ContentMirror {
     /** [queuedAtNanos]: when the edit was made (`System.nanoTime`), for the pen-up → commit latency. */
     suspend fun <T> write(change: LocalChange, queuedAtNanos: Long? = null, room: suspend () -> T): T
     suspend fun <T> create(change: LocalChange, room: suspend () -> T): T
+
+    /** The library's `quickNotebookId` as the docs have it now; null when unset or unknown. */
+    suspend fun quickNotebookId(): String? = null
 
     /** Room only. For tests and for code that must not touch the docs. */
     object None : ContentMirror {

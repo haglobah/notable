@@ -18,11 +18,17 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.editor.state.ClipboardStore
+import com.ethran.notable.editor.ui.BookPanelDialog
 import com.ethran.notable.editor.ui.EditorSurface
 import com.ethran.notable.editor.ui.HorizontalScrollIndicator
 import com.ethran.notable.editor.ui.ScrollIndicator
 import com.ethran.notable.editor.ui.SelectedBitmap
+import com.ethran.notable.editor.ui.QuickBrowsePanel
+import com.ethran.notable.editor.ui.RecentsPanel
 import com.ethran.notable.editor.ui.toolbar.PositionedToolbar
+import com.ethran.notable.gestures.EdgeSwipe
+import com.ethran.notable.gestures.edgeSwipeGestures
+import com.ethran.notable.ui.viewmodels.RecentNotebooks
 import com.ethran.notable.gestures.EditorGestureReceiver
 import com.ethran.notable.navigation.NavigationDestination
 import com.ethran.notable.ui.LocalSnackContext
@@ -65,6 +71,8 @@ fun EditorView(
     goToLibrary: (folderId: String?) -> Unit,
     goToPages: (bookId: String) -> Unit,
     goToBugReport: () -> Unit,
+    /** Opens another notebook (or loose page) from the recents panel. */
+    goToEditor: (pageId: String, bookId: String?) -> Unit,
 
     viewModel: EditorViewModel = hiltViewModel()
 ) {
@@ -85,7 +93,20 @@ fun EditorView(
     }
 
 
-    BoxWithConstraints {
+    val edgeState by viewModel.toolbarState.collectAsStateWithLifecycle()
+    BoxWithConstraints(
+        // Swipe in from the upper left edge for recents, from the lower left edge back to the
+        // library, from the right edge for quick browse.
+        Modifier.edgeSwipeGestures(enabled = edgeState.edgePanel == EdgePanel.None) { edge ->
+            viewModel.onToolbarAction(
+                when (edge) {
+                    EdgeSwipe.LeftUpper -> ToolbarAction.OpenEdgePanel(EdgePanel.Recents)
+                    EdgeSwipe.LeftLower -> ToolbarAction.NavigateToLibrary
+                    EdgeSwipe.Right -> ToolbarAction.OpenEdgePanel(EdgePanel.QuickBrowse)
+                }
+            )
+        }
+    ) {
         val height = convertDpToPixel(this.maxHeight, context).toInt()
         val width = convertDpToPixel(this.maxWidth, context).toInt()
 
@@ -258,6 +279,52 @@ fun EditorView(
             PositionedToolbar(
                 viewModel = viewModel, onDrawingStateCheck = { viewModel.updateDrawingState() })
             HorizontalScrollIndicator(viewModel = viewModel, page = page)
+            val closePanel = { viewModel.onToolbarAction(ToolbarAction.OpenEdgePanel(EdgePanel.None)) }
+            when (toolbarState.edgePanel) {
+                EdgePanel.Recents -> {
+                    val recent by viewModel.recentNotebooks.collectAsStateWithLifecycle()
+                    val favorites by viewModel.favoritePages.collectAsStateWithLifecycle()
+                    RecentsPanel(
+                        recent = recent,
+                        favorites = favorites,
+                        currentBookId = toolbarState.notebookId,
+                        currentPageId = toolbarState.pageId,
+                        onOpenNotebook = { nb ->
+                            closePanel()
+                            if (nb.id != toolbarState.notebookId) goToEditor(RecentNotebooks.pageOf(nb), nb.id)
+                        },
+                        onOpenPage = { p ->
+                            closePanel()
+                            if (p.notebookId != null && p.notebookId == toolbarState.notebookId)
+                                viewModel.openPageFromPanel(p.id)
+                            else if (p.id != toolbarState.pageId) goToEditor(p.id, p.notebookId)
+                        },
+                        onClose = closePanel,
+                    )
+                }
+
+                EdgePanel.QuickBrowse -> {
+                    val pageIds by viewModel.bookPageIds.collectAsStateWithLifecycle()
+                    QuickBrowsePanel(
+                        pageIds = pageIds,
+                        currentPageId = toolbarState.pageId,
+                        onOpenPage = viewModel::openPageFromPanel,
+                        onClose = closePanel,
+                    )
+                }
+
+                EdgePanel.None -> {}
+            }
+            // Contents and search of the book this notebook was made from.
+            val bookPanel by viewModel.bookReading.panel.collectAsStateWithLifecycle()
+            bookPanel?.let { panel ->
+                BookPanelDialog(
+                    panel = panel,
+                    onSearch = { viewModel.bookReading.search(it) },
+                    onJump = { viewModel.onToolbarAction(ToolbarAction.JumpToPage(it)) },
+                    onClose = { viewModel.onToolbarAction(ToolbarAction.CloseBookPanel) },
+                )
+            }
         }
     }
 }

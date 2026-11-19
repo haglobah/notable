@@ -1,14 +1,11 @@
 package com.ethran.notable.editor.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import com.ethran.notable.ui.theme.PaperLine
+import com.ethran.notable.ui.design.NDivider
 
 @Composable
 fun Topbar(content: @Composable () -> Unit) {
@@ -18,11 +15,6 @@ fun Topbar(content: @Composable () -> Unit) {
         Box {
             content()
         }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(PaperLine)
-        )
+        NDivider()
     }
 }

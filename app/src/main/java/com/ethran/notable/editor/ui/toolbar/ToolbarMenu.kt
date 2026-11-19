@@ -1,21 +1,21 @@
 package com.ethran.notable.editor.ui.toolbar
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.Text
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -30,8 +30,27 @@ import com.ethran.notable.editor.state.Mode
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarPen
 import com.ethran.notable.editor.utils.Pen
 import com.ethran.notable.io.ExportFormat
+import com.ethran.notable.ui.components.RatingPicker
 import com.ethran.notable.ui.components.ScaledPopup
-import com.ethran.notable.ui.noRippleClickable
+import com.ethran.notable.ui.design.NMenuDivider
+import com.ethran.notable.ui.design.NMenuHeader
+import com.ethran.notable.ui.design.NMenuItem
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.design.nSurface
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.CheckCircle
+import compose.icons.feathericons.Circle
+import compose.icons.feathericons.Download
+import compose.icons.feathericons.Flag
+import compose.icons.feathericons.Home
+import compose.icons.feathericons.Layout
+import compose.icons.feathericons.List
+import compose.icons.feathericons.Search
+import compose.icons.feathericons.Share2
+import compose.icons.feathericons.Star
+import compose.icons.feathericons.Terminal
+import compose.icons.feathericons.Trash2
 
 /**
  * Menu for the toolbar, providing export options and other page-level actions.
@@ -69,120 +88,120 @@ private fun ToolbarMenuContent(
     uiState: ToolbarUiState,
     onAction: (ToolbarAction) -> Unit
 ) {
+    // Runs the action and closes the menu, as every row except the rating toggle does.
+    fun run(action: ToolbarAction) {
+        onAction(action)
+        onAction(ToolbarAction.ToggleMenu)
+    }
+
+    // Long menus (a book with commands) scroll instead of running off the screen.
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.85f - BUTTON_SIZE - 5 - 50).dp
     Column(
         Modifier
+            // Room for a bottom toolbar: the popup window is pushed up above it.
             .padding(bottom = (BUTTON_SIZE + 5).dp)
-            .border(1.dp, Color.Black, RectangleShape)
-            .background(Color.White)
+            .widthIn(min = 260.dp, max = 420.dp)
             .width(IntrinsicSize.Max)
+            .heightIn(max = maxHeight)
+            .nSurface(NotableTheme.colors)
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = NotableSpace.xs + NotableSpace.xxs)
     ) {
-        // Home / Library
-        MenuItem(stringResource(R.string.home_view_name)) {
-            onAction(ToolbarAction.NavigateToLibrary)
-            onAction(ToolbarAction.ToggleMenu)
+        NMenuHeader(stringResource(R.string.menu_group_navigate))
+        NMenuItem(stringResource(R.string.home_view_name), icon = FeatherIcons.Home, onClick = {
+            run(ToolbarAction.NavigateToLibrary)
+        })
+
+        // Reading a notebook made from a PDF or EPUB (docs/plans/ebook-features.md)
+        if (uiState.isBook) {
+            NMenuDivider()
+            NMenuHeader(stringResource(R.string.menu_group_reading))
+            NMenuItem(stringResource(R.string.book_contents), icon = FeatherIcons.List, onClick = {
+                onAction(ToolbarAction.OpenContents)
+            })
+            NMenuItem(stringResource(R.string.book_search), icon = FeatherIcons.Search, onClick = {
+                onAction(ToolbarAction.OpenBookSearch)
+            })
+            NMenuItem(
+                stringResource(if (uiState.isFinished) R.string.book_mark_unread else R.string.book_mark_finished),
+                icon = if (uiState.isFinished) FeatherIcons.Circle else FeatherIcons.CheckCircle,
+                onClick = { run(ToolbarAction.SetFinished(!uiState.isFinished)) },
+            )
+            // The picker opens in place, inside the menu: no hand travel to a dialog.
+            var rating by remember { mutableStateOf(false) }
+            NMenuItem(
+                stringResource(R.string.rating_menu),
+                icon = FeatherIcons.Star,
+                meta = uiState.rating?.let { stringResource(R.string.rating_value, it) },
+                onClick = { rating = !rating },
+            )
+            if (rating) RatingPicker(uiState.rating, onRate = { onAction(ToolbarAction.SetRating(it)) },
+                modifier = Modifier.padding(horizontal = NotableSpace.lg, vertical = NotableSpace.sm))
         }
-        DividerCentered()
 
         // Page exports
-        MenuItem(stringResource(R.string.share_page_pdf)) {
-            onAction(ToolbarAction.SharePdf(book = false))
-            onAction(ToolbarAction.ToggleMenu)
-        }
-        MenuItem(stringResource(R.string.export_page_to, "PDF")) {
-            onAction(ToolbarAction.ExportPage(ExportFormat.PDF))
-            onAction(ToolbarAction.ToggleMenu)
-        }
-        MenuItem(stringResource(R.string.export_page_to, "PNG")) {
-            onAction(ToolbarAction.ExportPage(ExportFormat.PNG))
-            onAction(ToolbarAction.ToggleMenu)
-        }
-        MenuItem(stringResource(R.string.export_page_to, "JPEG")) {
-            onAction(ToolbarAction.ExportPage(ExportFormat.JPEG))
-            onAction(ToolbarAction.ToggleMenu)
-        }
-        MenuItem(stringResource(R.string.export_page_to, "xopp")) {
-            onAction(ToolbarAction.ExportPage(ExportFormat.XOPP))
-            onAction(ToolbarAction.ToggleMenu)
-        }
-        DividerCentered()
+        NMenuDivider()
+        NMenuHeader(stringResource(R.string.menu_group_page))
+        NMenuItem(stringResource(R.string.share_page_pdf), icon = FeatherIcons.Share2, onClick = {
+            run(ToolbarAction.SharePdf(book = false))
+        })
+        NMenuItem(stringResource(R.string.export_page_to, "PDF"), icon = FeatherIcons.Download, onClick = {
+            run(ToolbarAction.ExportPage(ExportFormat.PDF))
+        })
+        NMenuItem(stringResource(R.string.export_page_to, "PNG"), icon = FeatherIcons.Download, onClick = {
+            run(ToolbarAction.ExportPage(ExportFormat.PNG))
+        })
+        NMenuItem(stringResource(R.string.export_page_to, "JPEG"), icon = FeatherIcons.Download, onClick = {
+            run(ToolbarAction.ExportPage(ExportFormat.JPEG))
+        })
+        NMenuItem(stringResource(R.string.export_page_to, "xopp"), icon = FeatherIcons.Download, onClick = {
+            run(ToolbarAction.ExportPage(ExportFormat.XOPP))
+        })
 
         // Book exports
         if (uiState.notebookId != null) {
-            MenuItem(stringResource(R.string.share_book_pdf)) {
-                onAction(ToolbarAction.SharePdf(book = true))
-                onAction(ToolbarAction.ToggleMenu)
-            }
-            MenuItem(stringResource(R.string.export_book_to, "PDF")) {
-                onAction(ToolbarAction.ExportBook(ExportFormat.PDF))
-                onAction(ToolbarAction.ToggleMenu)
-            }
-            MenuItem(stringResource(R.string.export_book_to, "PNG")) {
-                onAction(ToolbarAction.ExportBook(ExportFormat.PNG))
-                onAction(ToolbarAction.ToggleMenu)
-            }
-            MenuItem(stringResource(R.string.export_book_to, "xopp")) {
-                onAction(ToolbarAction.ExportBook(ExportFormat.XOPP))
-                onAction(ToolbarAction.ToggleMenu)
-            }
-            DividerCentered()
+            NMenuDivider()
+            NMenuHeader(stringResource(R.string.menu_group_notebook))
+            NMenuItem(stringResource(R.string.share_book_pdf), icon = FeatherIcons.Share2, onClick = {
+                run(ToolbarAction.SharePdf(book = true))
+            })
+            NMenuItem(stringResource(R.string.export_book_to, "PDF"), icon = FeatherIcons.Download, onClick = {
+                run(ToolbarAction.ExportBook(ExportFormat.PDF))
+            })
+            NMenuItem(stringResource(R.string.export_book_to, "PNG"), icon = FeatherIcons.Download, onClick = {
+                run(ToolbarAction.ExportBook(ExportFormat.PNG))
+            })
+            NMenuItem(stringResource(R.string.export_book_to, "xopp"), icon = FeatherIcons.Download, onClick = {
+                run(ToolbarAction.ExportBook(ExportFormat.XOPP))
+            })
         }
 
-        MenuItem(stringResource(R.string.clean_all_strokes)) {
-            onAction(ToolbarAction.ClearAllStrokes)
-            onAction(ToolbarAction.ToggleMenu)
-        }
-        DividerCentered()
+        NMenuDivider()
+        NMenuHeader(stringResource(R.string.menu_group_edit))
+        NMenuItem(stringResource(R.string.clean_all_strokes), icon = FeatherIcons.Trash2, onClick = {
+            run(ToolbarAction.ClearAllStrokes)
+        })
+        NMenuItem(stringResource(R.string.change_background), icon = FeatherIcons.Layout, onClick = {
+            run(ToolbarAction.ToggleBackgroundSelector(true))
+        })
 
-        MenuItem(stringResource(R.string.change_background)) {
-            onAction(ToolbarAction.ToggleBackgroundSelector(true))
-            onAction(ToolbarAction.ToggleMenu)
-        }
-
-        MenuItem(stringResource(R.string.bug_report)) {
-            onAction(ToolbarAction.NavigateToBugReport)
-            onAction(ToolbarAction.ToggleMenu)
-        }
+        NMenuDivider()
+        NMenuHeader(stringResource(R.string.menu_group_help))
+        NMenuItem(stringResource(R.string.bug_report), icon = FeatherIcons.Flag, onClick = {
+            run(ToolbarAction.NavigateToBugReport)
+        })
 
         // Commands of the live code image and their built-ins (ADR-002).
         if (uiState.commands.isNotEmpty()) {
-            DividerCentered()
+            NMenuDivider()
+            NMenuHeader(stringResource(R.string.menu_group_commands))
             uiState.commands.forEach { command ->
-                MenuItem(command.title) {
-                    onAction(ToolbarAction.RunCommand(command.id))
-                    onAction(ToolbarAction.ToggleMenu)
-                }
+                NMenuItem(command.title, icon = FeatherIcons.Terminal, onClick = {
+                    run(ToolbarAction.RunCommand(command.id))
+                })
             }
         }
     }
-}
-
-@Composable
-private fun MenuItem(
-    label: String,
-    onClick: () -> Unit
-) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .noRippleClickable { onClick() }
-            .padding(horizontal = 10.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = label,
-            color = Color.Black
-        )
-    }
-}
-
-@Composable
-private fun ColumnScope.DividerCentered() {
-    Box(
-        Modifier
-            .fillMaxWidth(1f / 2f)
-            .align(Alignment.CenterHorizontally)
-            .height(0.5.dp)
-            .background(Color(0xFF777777))
-    )
 }
 
 @Composable

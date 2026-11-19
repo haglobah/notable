@@ -8,7 +8,7 @@ import { sha256 } from "@noble/hashes/sha2.js"
 import { bytesToHex } from "@noble/hashes/utils.js"
 import { DEFAULT_CANVAS_WIDTH, notebookEntryValue, notebookValue, type Background, type Page, type Source } from "@notable/schema"
 import { UploadFailure, type DocumentKind } from "./errors.ts"
-import { countPages, EPUB_LAYOUT } from "./pages.ts"
+import { inspect, EPUB_LAYOUT } from "./pages.ts"
 
 export { UploadFailure, EPUB_LAYOUT }
 export type { DocumentKind }
@@ -98,7 +98,10 @@ export type AddDocument = {
   onStage?: (s: Stage) => void
 }
 
-export async function addDocument(o: AddDocument): Promise<{ notebookId: string; docUrl: string }> {
+/** [metaError]: the file was added, but its metadata couldn't be read (the title is the file name). */
+export type Added = { notebookId: string; docUrl: string; metaError: string | null }
+
+export async function addDocument(o: AddDocument): Promise<Added> {
   const stage = o.onStage ?? (() => {})
   const kind = detectKind(o.file)
   if (!kind) throw new UploadFailure("unsupported", `${o.file.name} isn't a PDF or EPUB. Notable can add only those.`)
@@ -109,7 +112,8 @@ export async function addDocument(o: AddDocument): Promise<{ notebookId: string;
   stage({ stage: "reading" })
   // MuPDF needs the whole file; this is the one full copy in memory.
   let bytes: Uint8Array | null = new Uint8Array(await o.file.arrayBuffer())
-  const pageCount = await countPages(bytes, kind)
+  const inspected = await inspect(bytes, kind)
+  const pageCount = inspected.pageCount
   bytes = null
 
   const total = o.file.size
@@ -142,13 +146,15 @@ export async function addDocument(o: AddDocument): Promise<{ notebookId: string;
     d.notebooks[notebookId] = notebookEntryValue({
       id: notebookId,
       docUrl: handle.url,
-      title: o.file.name.replace(/\.(pdf|epub)$/i, ""),
+      title: (inspected.ok ? inspected.extracted.title : null) ?? o.file.name.replace(/\.(pdf|epub)$/i, ""),
       folderId: o.folderId,
       kind: "notebook",
       source,
       createdAt: now,
       updatedAt: now,
+      pageCount,
+      ...(inspected.ok && inspected.extracted.meta ? { meta: inspected.extracted.meta } : {}),
     })
   })
-  return { notebookId, docUrl: handle.url }
+  return { notebookId, docUrl: handle.url, metaError: inspected.ok ? null : inspected.error }
 }

@@ -9,8 +9,8 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,21 +18,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Card
-import androidx.compose.material.Icon
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Surface
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.DoDisturb
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -44,11 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -61,8 +46,24 @@ import com.ethran.notable.editor.utils.getCurRefreshModeString
 import com.ethran.notable.editor.utils.isRecommendedRefreshMode
 import com.ethran.notable.editor.utils.setRecommendedMode
 import com.ethran.notable.navigation.NavigationDestination
+import com.ethran.notable.ui.design.NButton
+import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NDivider
+import com.ethran.notable.ui.design.NIcon
+import com.ethran.notable.ui.design.NNotice
+import com.ethran.notable.ui.design.NSection
+import com.ethran.notable.ui.design.NTopBar
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
+import com.ethran.notable.ui.theme.InkaTheme
 import com.ethran.notable.ui.viewmodels.WelcomeViewModel
 import com.ethran.notable.utils.hasUsableStorage
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.AlertTriangle
+import compose.icons.feathericons.ArrowRight
+import compose.icons.feathericons.Check
+import compose.icons.feathericons.CheckCircle
+import compose.icons.feathericons.Circle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -147,17 +148,26 @@ fun WelcomeContent(
     onRefreshModeRequest: () -> Unit,
     onContinue: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colors.background
+    val c = NotableTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(c.paper)
     ) {
+        NTopBar(title = stringResource(R.string.welcome_view_title))
+
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = NotableSpace.gutter, vertical = NotableSpace.xl)
         ) {
-            WelcomeHeader()
+            Text(
+                stringResource(R.string.welcome_view_subtitle),
+                style = NotableTheme.type.body,
+                color = c.secondary
+            )
 
             // Pass values and callbacks down
             PermissionsRow(
@@ -168,56 +178,29 @@ fun WelcomeContent(
                 onRefreshClick = onRefreshModeRequest
             )
 
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Column {
-                    OnyxUnfreezeInstruction()
-                    ShowInstructions()
-                }
-            }
+            Spacer(Modifier.height(NotableSpace.xxl))
+            OnyxUnfreezeInstruction()
+            ShowInstructions()
+        }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(
+        NDivider()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = NotableSpace.gutter, vertical = NotableSpace.md),
+            horizontalArrangement = Arrangement.End
+        ) {
+            NButton(
+                text = if (filePermissionGranted)
+                    stringResource(R.string.welcome_view_continue)
+                else
+                    stringResource(R.string.welcome_view_complete_setup_first),
                 onClick = onContinue,
                 enabled = filePermissionGranted,
-                modifier = Modifier
-                    .fillMaxWidth(0.8f)
-                    .padding(top = 24.dp)
-            ) {
-                Text(
-                    if (filePermissionGranted)
-                        stringResource(R.string.welcome_view_continue)
-                    else
-                        stringResource(R.string.welcome_view_complete_setup_first)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(30.dp))
+                style = NButtonStyle.Primary,
+                trailingIcon = FeatherIcons.ArrowRight,
+            )
         }
-    }
-}
-
-@Composable
-private fun WelcomeHeader() {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(top = 16.dp, bottom = 24.dp)
-    ) {
-        Text(
-            stringResource(R.string.welcome_view_title),
-            style = MaterialTheme.typography.h4,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Text(
-            stringResource(R.string.welcome_view_subtitle),
-            style = MaterialTheme.typography.body1,
-            textAlign = TextAlign.Center
-        )
     }
 }
 
@@ -229,182 +212,114 @@ private fun PermissionsRow(
     onFileClick: () -> Unit,
     onRefreshClick: () -> Unit
 ) {
-    // Two-column layout for permissions and instructions
+    // Two setup steps side by side.
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = NotableSpace.xl),
+        horizontalArrangement = Arrangement.spacedBy(NotableSpace.xl)
     ) {
-        // File Permission Column
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(end = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            PermissionItem(
-                title = stringResource(R.string.welcome_view_file_access),
-                description = stringResource(R.string.welcome_view_file_access_explanation),
-                isGranted = isFilePermissionGranted,
-                buttonText = if (isFilePermissionGranted) stringResource(R.string.welcome_view_permissions_granted) else stringResource(
-                    R.string.welcome_view_permissions_button
-                ),
-                onClick = onFileClick,
-                enabled = !isFilePermissionGranted
-            )
-        }
+        PermissionItem(
+            title = stringResource(R.string.welcome_view_file_access),
+            description = stringResource(R.string.welcome_view_file_access_explanation),
+            isGranted = isFilePermissionGranted,
+            buttonText = if (isFilePermissionGranted) stringResource(R.string.welcome_view_permissions_granted) else stringResource(
+                R.string.welcome_view_permissions_button
+            ),
+            onClick = onFileClick,
+            enabled = !isFilePermissionGranted,
+            modifier = Modifier.weight(1f)
+        )
 
-        // Refresh Mode Column
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            PermissionItem(
-                title = stringResource(R.string.welcome_view_refresh_mode),
-                description = stringResource(R.string.welcome_view_refresh_mode_details),
-                isGranted = isRecommendedRefreshMode,
-                buttonText = if (isRecommendedRefreshMode) stringResource(
-                    R.string.welcome_view_refresh_mode_applied, refreshModeString
-                )
-                else stringResource(
-                    R.string.welcome_view_refresh_mode_set_hd_mode, refreshModeString
-                ),
-                onClick = onRefreshClick,
-                enabled = !isRecommendedRefreshMode
+        PermissionItem(
+            title = stringResource(R.string.welcome_view_refresh_mode),
+            description = stringResource(R.string.welcome_view_refresh_mode_details),
+            isGranted = isRecommendedRefreshMode,
+            buttonText = if (isRecommendedRefreshMode) stringResource(
+                R.string.welcome_view_refresh_mode_applied, refreshModeString
             )
-        }
+            else stringResource(
+                R.string.welcome_view_refresh_mode_set_hd_mode, refreshModeString
+            ),
+            onClick = onRefreshClick,
+            enabled = !isRecommendedRefreshMode,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
 
 @Composable
 fun OnyxUnfreezeInstruction() {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        elevation = 0.dp,
-        backgroundColor = MaterialTheme.colors.surface,
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 5.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.Start
-        ) {
-            Text(
-                text = stringResource(R.string.welcome_view_prevent_frozen),
-                style = MaterialTheme.typography.h6,
-                color = MaterialTheme.colors.onSurface,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.welcome_view_prevent_frozen_details),
-                style = MaterialTheme.typography.body2,
-                color = MaterialTheme.colors.onSurface,
-                lineHeight = 18.sp
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = stringResource(R.string.welcome_view_prevent_frozen_instructions_title),
-                style = MaterialTheme.typography.subtitle2,
-                color = MaterialTheme.colors.onSurface,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.welcome_view_prevent_frozen_instructions),
-                style = MaterialTheme.typography.body2,
-                color = MaterialTheme.colors.onSurface,
-                lineHeight = 18.sp
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = stringResource(R.string.welcome_view_prevent_frozen_recommended),
-                style = MaterialTheme.typography.caption.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colors.onSurface
-            )
+    val c = NotableTheme.colors
+    NNotice(
+        title = stringResource(R.string.welcome_view_prevent_frozen),
+        text = stringResource(R.string.welcome_view_prevent_frozen_details).trim(),
+        icon = FeatherIcons.AlertTriangle,
+        actions = {
+            Column {
+                Text(
+                    text = stringResource(R.string.welcome_view_prevent_frozen_instructions_title),
+                    style = NotableTheme.type.label,
+                    color = c.ink
+                )
+                Spacer(Modifier.height(NotableSpace.xs))
+                Text(
+                    text = stringResource(R.string.welcome_view_prevent_frozen_instructions),
+                    style = NotableTheme.type.body,
+                    color = c.ink
+                )
+                Spacer(Modifier.height(NotableSpace.sm))
+                Text(
+                    text = stringResource(R.string.welcome_view_prevent_frozen_recommended),
+                    style = NotableTheme.type.meta,
+                    color = c.secondary
+                )
+            }
         }
-    }
+    )
 }
 
 @Composable
 fun ShowInstructions() {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        elevation = 0.dp,
-        backgroundColor = MaterialTheme.colors.surface,
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(start = 18.dp, top = 5.dp, end = 18.dp, bottom = 5.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.Start
+    NSection(title = stringResource(R.string.welcome_view_quick_start_title)) {
+        // Split into two columns for compactness
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(NotableSpace.xl)
         ) {
-            Text(
-                text = stringResource(R.string.welcome_view_quick_start_title),
-                style = MaterialTheme.typography.h6,
-                color = MaterialTheme.colors.onSurface,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            // Split into two columns for compactness
-            Row(Modifier.fillMaxWidth()) {
-                // First column: navigation, editing, selection
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.welcome_view_quick_start_navigation),
-                        style = MaterialTheme.typography.subtitle2,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colors.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.welcome_view_quick_start_navigation_details),
-                        style = MaterialTheme.typography.body2,
-                        color = MaterialTheme.colors.onSurface,
-                        lineHeight = 18.sp
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.welcome_view_quick_start_selection_editing_title),
-                        style = MaterialTheme.typography.subtitle2,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colors.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.welcome_view_quick_start_selection_editing_details),
-                        style = MaterialTheme.typography.body2,
-                        color = MaterialTheme.colors.onSurface,
-                        lineHeight = 18.sp
-                    )
-                }
-                Spacer(Modifier.width(20.dp))
-                // Second column: extra features
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.welcome_view_quick_start_tips_title),
-                        style = MaterialTheme.typography.subtitle2,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colors.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.welcome_view_quick_start_tips_details),
-                        style = MaterialTheme.typography.body2,
-                        color = MaterialTheme.colors.onSurface,
-                        lineHeight = 18.sp
-                    )
-                }
+            // First column: navigation, editing, selection
+            Column(Modifier.weight(1f)) {
+                InstructionBlock(
+                    stringResource(R.string.welcome_view_quick_start_navigation),
+                    stringResource(R.string.welcome_view_quick_start_navigation_details)
+                )
+                Spacer(modifier = Modifier.height(NotableSpace.lg))
+                InstructionBlock(
+                    stringResource(R.string.welcome_view_quick_start_selection_editing_title),
+                    stringResource(R.string.welcome_view_quick_start_selection_editing_details)
+                )
+            }
+            // Second column: extra features
+            Column(Modifier.weight(1f)) {
+                InstructionBlock(
+                    stringResource(R.string.welcome_view_quick_start_tips_title),
+                    stringResource(R.string.welcome_view_quick_start_tips_details)
+                )
             }
         }
     }
 }
 
+@Composable
+private fun InstructionBlock(title: String, details: String) {
+    val c = NotableTheme.colors
+    Text(text = title, style = NotableTheme.type.label, color = c.ink)
+    Spacer(Modifier.height(NotableSpace.xs))
+    Text(text = details, style = NotableTheme.type.body, color = c.ink)
+}
+
+/** A setup step: its state (check or empty circle), what it is for, and the button that does it. */
 @Composable
 private fun PermissionItem(
     title: String,
@@ -412,60 +327,32 @@ private fun PermissionItem(
     isGranted: Boolean,
     buttonText: String,
     onClick: () -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    modifier: Modifier = Modifier
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(8.dp)
-    ) {
-        // Status indicator
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(48.dp)
-        ) {
-            if (isGranted) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Granted",
-                    tint = MaterialTheme.colors.primary,
-                    modifier = Modifier.size(48.dp)
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.DoDisturb,
-                    contentDescription = "Granted",
-                    tint = MaterialTheme.colors.primary,
-                    modifier = Modifier.size(48.dp)
-                )
-            }
+    val c = NotableTheme.colors
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            NIcon(
+                if (isGranted) FeatherIcons.CheckCircle else FeatherIcons.Circle,
+                contentDescription = if (isGranted) stringResource(R.string.welcome_view_permissions_granted) else null,
+            )
+            Spacer(Modifier.width(NotableSpace.sm))
+            Text(text = title, style = NotableTheme.type.heading, color = c.ink)
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = title,
-            style = MaterialTheme.typography.subtitle1,
-            textAlign = TextAlign.Center
-        )
-
         Text(
             text = description,
-            style = MaterialTheme.typography.caption,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 4.dp)
+            style = NotableTheme.type.meta,
+            color = c.secondary,
+            modifier = Modifier.padding(top = NotableSpace.xs, bottom = NotableSpace.md)
         )
-
-        Button(
+        NButton(
+            text = buttonText,
             onClick = onClick,
             enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                backgroundColor = if (isGranted) MaterialTheme.colors.primary.copy(alpha = 0.12f)
-                else MaterialTheme.colors.primary
-            )
-        ) {
-            Text(buttonText)
-        }
+            style = NButtonStyle.Primary,
+            icon = if (isGranted) FeatherIcons.Check else null,
+        )
     }
 }
 
@@ -482,7 +369,7 @@ private fun PermissionItem(
 )
 @Composable
 fun WelcomePreviewSetup() {
-    MaterialTheme {
+    InkaTheme {
         WelcomeContent(
             filePermissionGranted = false,
             recommendedRefreshMode = false,
@@ -500,7 +387,7 @@ fun WelcomePreviewSetup() {
 )
 @Composable
 fun WelcomePreviewReady() {
-    MaterialTheme {
+    InkaTheme {
         WelcomeContent(
             filePermissionGranted = true,
             recommendedRefreshMode = true,

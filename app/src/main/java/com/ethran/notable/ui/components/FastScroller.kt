@@ -1,7 +1,6 @@
 package com.ethran.notable.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -22,17 +20,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.ethran.notable.ui.design.NotableShape
+import com.ethran.notable.ui.design.NotableSpace
+import com.ethran.notable.ui.design.NotableTheme
 import kotlinx.coroutines.launch
 
 /**
- * Right-side fast scroller with a draggable thumb (compact, e‑ink friendly).
+ * Right-side fast scroller: an inset track and an ink thumb, no animation (e-ink).
  */
 @Composable
 fun BoxScope.FastScroller(
@@ -47,6 +47,7 @@ fun BoxScope.FastScroller(
     quantization: Int = 2
 ) {
     val scope = rememberCoroutineScope()
+    val c = NotableTheme.colors
     val density = LocalDensity.current
 
     var dragIndex by remember { mutableIntStateOf(getVisibleIndex()) }
@@ -62,8 +63,8 @@ fun BoxScope.FastScroller(
         modifier = modifier
             .fillMaxHeight()
             .width(trackWidth)
-            .padding(vertical = 8.dp)
-            .background(Color(0x11000000))
+            .padding(vertical = NotableSpace.sm)
+            .background(c.inset, NotableShape.control)
             .onGloballyPositioned { coords ->
                 containerHeightPx = coords.size.height
             }
@@ -88,13 +89,11 @@ fun BoxScope.FastScroller(
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(end = 2.dp)
                 .height(thumbHeight)
                 .fillMaxWidth()
                 .offset { IntOffset(0, thumbOffsetYPx.toInt()) }
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF111111))
-                .border(1.dp, Color.Black, RoundedCornerShape(8.dp))
+                .clip(NotableShape.control)
+                .background(c.ink, NotableShape.control)
         )
     }
 }

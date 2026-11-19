@@ -41,6 +41,11 @@ class LibraryEdits @Inject constructor(
     private val images: ImageRepository,
     private val mirror: ContentMirror,
 ) {
+    companion object {
+        /** The quick notebook's title until renamed. */
+        const val QUICK_NOTEBOOK_TITLE = "Quick pages"
+    }
+
     internal var now: () -> Long = System::currentTimeMillis
     internal var publish: (List<RemotePageEdit>) -> Boolean = RemoteEdits::publish
 
@@ -95,6 +100,41 @@ class LibraryEdits @Inject constructor(
 
     /** The file this device exports the notebook to. Device-local: Room only, not in the docs. */
     suspend fun setNotebookLinkedUri(id: String, uri: String?) = books.setLinkedExternalUri(id, uri)
+
+    /** The editor opened notebook [id] (docs/plans/ebook-features.md: once per opening). */
+    suspend fun markNotebookRead(id: String) {
+        val at = now()
+        mirror.write(LocalChange.NotebookRead(id, at)) { books.setReadAt(id, Date(at)) }
+    }
+
+    /** "Mark as finished" ([finished]) or "Mark as unread". */
+    suspend fun setNotebookFinished(id: String, finished: Boolean) {
+        val at = if (finished) now() else null
+        mirror.write(LocalChange.NotebookFinished(id, at)) { books.setFinishedAt(id, at?.let(::Date)) }
+    }
+
+    /** 1 to 10, or null for "Clear". */
+    suspend fun rateNotebook(id: String, rating: Int?) {
+        require(rating == null || rating in 1..10) { "rating must be 1 to 10, got $rating" }
+        mirror.write(LocalChange.NotebookRated(id, rating)) { books.setRating(id, rating) }
+    }
+
+    /** Brings the entry's page count and open page index up to the notebook doc's. */
+    suspend fun syncReading(id: String) {
+        mirror.write(LocalChange.ReadingSynced(id)) {
+            books.getById(id)?.let { books.setPageCount(id, it.pageIds.size) }
+        }
+    }
+
+    /**
+     * Backfill (docs/plans/ebook-features.md, round 3): every notebook whose entry's page count, as
+     * Room last saw it, is missing or differs from its pages. Returns how many were synced.
+     */
+    suspend fun backfillPageCounts(): Int {
+        val due = books.getAll().filter { it.pageCount != it.pageIds.size }
+        due.forEach { syncReading(it.id) }
+        return due.size
+    }
 
     suspend fun deleteNotebook(id: String) {
         val pageIds = books.getById(id)?.pageIds.orEmpty()
@@ -170,6 +210,58 @@ class LibraryEdits @Inject constructor(
         if (nb != null) mirror.create(LocalChange.PageAdded(nb, copy.id, pageId), room)
         else mirror.create(LocalChange.PageUpserted(copy), room)
         return copy.id
+    }
+
+    /* ------------------------------ quick pages (round 5) ------------------------------ */
+
+    /** A notebook page to open: [notebookId] and [pageId]. */
+    data class OpenAt(val notebookId: String, val pageId: String)
+
+    /**
+     * "+ Quick page" (docs/plans/ebook-features.md, round 5): a new page at the end of the quick
+     * notebook, with its default background. Without a live quick notebook, one titled "Quick
+     * pages" is made in the root and becomes it (one library write); its first page is the new one.
+     */
+    suspend fun openQuickPage(nativeTemplate: String): OpenAt? {
+        val existing = quickNotebook()
+        if (existing != null) {
+            val pageId = addPage(existing.id, existing.pageIds.size) ?: return null
+            return OpenAt(existing.id, pageId)
+        }
+        val nb = Notebook(title = QUICK_NOTEBOOK_TITLE, parentFolderId = null,
+            defaultBackground = nativeTemplate, defaultBackgroundType = BackgroundType.Native.key)
+        createNotebook(nb)
+        mirror.write(LocalChange.QuickNotebookSet(nb.id)) {}
+        val first = books.getById(nb.id)?.pageIds?.firstOrNull() ?: return null
+        return OpenAt(nb.id, first)
+    }
+
+    /** The quick notebook when the library names one Room has. */
+    suspend fun quickNotebook(): Notebook? = mirror.quickNotebookId()?.let { books.getById(it) }
+
+    /**
+     * Old quick pages (one entry each) move into the quick notebook, oldest first, each appended
+     * at the end; the notebook is made when there's none ("Quick pages", in the root). Returns how
+     * many moved. Room's quick-page row becomes the notebook's page (strokes and images stay, by
+     * page id); the doc copies first and deletes the old entry after ([LocalChange.QuickPageMoved]).
+     */
+    suspend fun migrateQuickPages(): Int {
+        val old = pages.getAllQuickPages().sortedWith(compareBy<Page> { it.createdAt }.thenBy { it.id })
+        if (old.isEmpty()) return 0
+        val target = quickNotebook() ?: Notebook(title = QUICK_NOTEBOOK_TITLE, parentFolderId = null,
+            defaultBackground = old.first().background, defaultBackgroundType = old.first().backgroundType).also { nb ->
+            mirror.create(LocalChange.NotebookCreated(nb.id)) { books.createEmpty(nb) }
+            mirror.write(LocalChange.QuickNotebookSet(nb.id)) {}
+        }
+        for (page in old) {
+            mirror.write(LocalChange.QuickPageMoved(page.id, target.id)) {
+                val row = pages.getById(page.id) ?: return@write
+                if (row.notebookId == null) pages.update(row.copy(notebookId = target.id, parentFolderId = null))
+                val nb = books.getById(target.id) ?: return@write
+                if (page.id !in nb.pageIds) books.addPage(target.id, page.id)
+            }
+        }
+        return old.size
     }
 
     suspend fun createQuickPage(folderId: String?, nativeTemplate: String): String {
