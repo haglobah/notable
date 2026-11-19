@@ -189,6 +189,8 @@ class NotableSyncClient @Inject constructor(
         /** One per session, shared by the writer (settle) and the projector. */
         val projectionState = ProjectionStateStore(File(dir, "projection.json"))
         val migrationState = MigrationStateStore(File(dir, "migration.json"))
+        /** Earlier states of pages (docs/plans/library-features.md, 40). */
+        val versions = PageVersionStore(File(dir, "page-versions.json"))
         /** Room is still to be copied in; runs once the session can ([DeviceLibraryState.migrate]). */
         @Volatile var migrateDue = false
         @Volatile var libraryUrl: String? = null
@@ -474,6 +476,7 @@ class NotableSyncClient @Inject constructor(
             migrationState = s.migrationState,
             projection = s.projectionState,
             canvasWidth = canvasWidth().toDouble(),
+            versions = s.versions,
         )
         s.wake.trySend(Unit)
         startCodeWatch(s, url)
@@ -758,6 +761,24 @@ class NotableSyncClient @Inject constructor(
         val s = session ?: return null
         val url = s.libraryUrl ?: return null
         return RepoLocalDocs(s.repo, s.storage, url).edit(url) { AutomergeSchema.readLibrary(it) }
+    }
+
+    /* ---------------- page versions (docs/plans/library-features.md, 40) ---------------- */
+
+    /** Earlier states of page [pageId] this device recorded, newest first; empty while the library isn't open. */
+    suspend fun pageVersions(pageId: String): List<PageVersion> = withContext(Dispatchers.IO) {
+        session?.writer?.versionsOf(pageId).orEmpty()
+    }
+
+    /** [version]'s handwriting as Room strokes; null when it can't be read. */
+    suspend fun pageStrokesAt(version: PageVersion): List<com.ethran.notable.data.db.Stroke>? = withContext(Dispatchers.IO) {
+        runCatching { session?.writer?.strokesAt(version) }.onFailure { log.e("reading a page version failed: ${it.message}", it) }.getOrNull()
+    }
+
+    /** Records [pageId] as it is now, so a restore can be undone; false when it couldn't be. */
+    suspend fun recordPageVersion(pageId: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching { session?.writer?.recordVersion(pageId) == true }
+            .onFailure { log.e("recording a page version failed: ${it.message}", it) }.getOrDefault(false)
     }
 
     /** A notebook's library entry and its doc's `save()` bytes, as this device has them now. */

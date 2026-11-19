@@ -394,6 +394,15 @@
     <string name="pages_add_title">New page %1$d</string>
     <string name="pages_add_usual">With the notebook\'s template</string>
     <string name="pages_add_choose">Choose a template…</string>
+    <!-- Page versions (docs/plans/library-features.md) -->
+    <string name="versions_title">Versions</string>
+    <string name="versions_hint">Saved on this device before you change a page after a 10-minute break. Restore brings back the handwriting; images stay as they are.</string>
+    <string name="versions_none">No earlier versions of this page yet.</string>
+    <string name="versions_unreadable">Can\'t be read</string>
+    <plurals name="versions_strokes">
+        <item quantity="one">%1$d stroke</item>
+        <item quantity="other">%1$d strokes</item>
+    </plurals>
     <plurals name="select_move_title">
         <item quantity="one">Move %1$d item</item>
         <item quantity="other">Move %1$d items</item>

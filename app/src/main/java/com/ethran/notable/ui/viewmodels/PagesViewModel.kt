@@ -39,6 +39,11 @@ data class PagesUiState(
     val defaultBackground: String = "blank",
 )
 
+/** One earlier state of a page; [strokes] null when it couldn't be read. */
+data class VersionRow(val version: com.ethran.notable.sync.automerge.PageVersion, val strokes: List<com.ethran.notable.data.db.Stroke>?)
+
+data class PageVersionsUi(val pageId: String, val loading: Boolean = false, val rows: List<VersionRow> = emptyList())
+
 /** A notebook pages can be moved into, with where it is. */
 data class MoveTarget(val id: String, val title: String, val path: String)
 
@@ -47,6 +52,7 @@ class PagesViewModel @Inject constructor(
     private val appRepository: AppRepository,
     private val thumbnailBackfillQueue: ThumbnailBackfillQueue,
     private val snackDispatcher: com.ethran.notable.ui.SnackDispatcher,
+    private val sync: com.ethran.notable.sync.automerge.NotableSyncClient,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -200,6 +206,46 @@ class PagesViewModel @Inject constructor(
         books.filter { it.id != _uiState.value.bookId && it.id !in trashed }
             .sortedBy { it.title.lowercase() }
             .map { MoveTarget(it.id, it.title, path(it.parentFolderId)) }
+    }
+
+    /* ---------------- page versions (docs/plans/library-features.md, 40) ---------------- */
+
+    private val _versions = MutableStateFlow<PageVersionsUi?>(null)
+    /** The versions dialog's content; null: closed. */
+    val versions: StateFlow<PageVersionsUi?> = _versions.asStateFlow()
+
+    fun openVersions(pageId: String) {
+        _versions.value = PageVersionsUi(pageId, loading = true)
+        viewModelScope.launch(Dispatchers.IO) {
+            val rows = sync.pageVersions(pageId).map { v -> VersionRow(v, sync.pageStrokesAt(v)) }
+            _versions.update { if (it?.pageId == pageId) PageVersionsUi(pageId, rows = rows) else it }
+        }
+    }
+
+    fun closeVersions() {
+        _versions.value = null
+    }
+
+    /** The page's handwriting as in [row]; what it has now is recorded first, so this can be undone. */
+    fun restoreVersion(row: VersionRow) {
+        val strokes = row.strokes ?: return
+        val pageId = row.version.pageId
+        _versions.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            val text = try {
+                // Only with the current state kept: a restore must be undoable.
+                if (!sync.recordPageVersion(pageId)) throw IllegalStateException("the current page could not be kept as a version")
+                appRepository.edits.restorePageStrokes(pageId, strokes)
+                thumbnailBackfillQueue.enqueue(listOf(pageId))
+                "Page restored; its previous state is the newest version"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.e("restore failed: ${e.message}", e)
+                "Could not restore: ${e.message}"
+            }
+            snackDispatcher.showOrUpdateSnack(SnackConf(text = text, duration = 4000))
+        }
     }
 
     fun generateThumbnailsForCurrentBook() {

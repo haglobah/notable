@@ -1,6 +1,8 @@
 package com.ethran.notable.ui.views
 
 import android.util.Log
+import com.ethran.notable.ui.dialogs.PageVersionsDialog
+import compose.icons.feathericons.Clock
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -110,7 +112,8 @@ fun PagesView(
     LaunchedEffect(bookId) {
         viewModel.loadBook(bookId)
     }
-
+    val versions by viewModel.versions.collectAsStateWithLifecycle()
+    versions?.let { PageVersionsDialog(it, onRestore = viewModel::restoreVersion, onClose = viewModel::closeVersions) }
 
     // The observed notebook was deleted (or never existed) while this screen was open — leave
     // instead of rendering a stale/empty book. Guards the observe-then-delete race.
@@ -138,6 +141,7 @@ fun PagesView(
             loadTargets = viewModel::moveTargets,
             onTemplate = viewModel::setSelectedBackground,
             onAddWithTemplate = { index, type, value -> viewModel.newPageWithBackground(bookId, index, type, value) },
+            onVersions = viewModel::openVersions,
         ))
 }
 
@@ -153,6 +157,8 @@ data class PagesSelectionUi(
     val loadTargets: suspend () -> List<MoveTarget> = { emptyList() },
     val onTemplate: (type: String, value: String?) -> Unit = { _, _ -> },
     val onAddWithTemplate: (index: Int, type: String, value: String?) -> Unit = { _, _, _ -> },
+    /** The versions of one page (40). */
+    val onVersions: (pageId: String) -> Unit = {},
 )
 
 
@@ -287,6 +293,7 @@ fun PagesContent(
 
         if (state.selecting) PagesSelectionBar(
             count = state.selected.size, total = state.pageIds.size, selection = selection,
+            onlyPage = state.selected.singleOrNull(),
             onDelete = { confirmDeleteSelected = true }, onPickNotebook = { pickingNotebook = true },
             onPickTemplate = { pickingTemplate = true },
         )
@@ -461,7 +468,7 @@ fun PagesPreview() {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PagesSelectionBar(
-    count: Int, total: Int, selection: PagesSelectionUi,
+    count: Int, total: Int, selection: PagesSelectionUi, onlyPage: String?,
     onDelete: () -> Unit, onPickNotebook: () -> Unit, onPickTemplate: () -> Unit,
 ) {
     val any = count > 0
@@ -478,6 +485,7 @@ private fun PagesSelectionBar(
         NButton(stringResource(R.string.pages_move_end), { selection.onMoveWithin(false) }, icon = FeatherIcons.ChevronsDown, enabled = any)
         NButton(stringResource(R.string.pages_duplicate), selection.onDuplicate, icon = FeatherIcons.Copy, enabled = any)
         NButton(stringResource(R.string.pages_template), onPickTemplate, icon = FeatherIcons.Layout, enabled = any)
+        if (onlyPage != null) NButton(stringResource(R.string.versions_title), { selection.onVersions(onlyPage) }, icon = FeatherIcons.Clock)
         NButton(stringResource(R.string.pages_delete), onDelete, icon = FeatherIcons.Trash2, style = NButtonStyle.Danger, enabled = any)
         NButton(stringResource(R.string.details_done), { selection.onSelecting(false) }, style = NButtonStyle.Primary)
     }

@@ -137,6 +137,10 @@ class StrokeRepository @Inject constructor(
         return db.update(strokes)
     }
 
+    suspend fun upsert(strokes: List<Stroke>) = strokes.chunked(500).forEach { db.upsert(it) }
+
+    suspend fun idsForPage(pageId: String): List<String> = db.idsForPage(pageId)
+
     suspend fun deleteAll(ids: List<String>) {
         ids.chunked(900).forEach { batch ->
             db.deleteAll(batch)

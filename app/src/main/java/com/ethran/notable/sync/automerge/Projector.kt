@@ -153,7 +153,7 @@ internal fun sameHeads(a: Array<ChangeHash>, b: Array<ChangeHash>): Boolean =
     a.size == b.size && a.map { it.bytes.toList() }.toSet() == b.map { it.bytes.toList() }.toSet()
 
 /** automerge-java only creates ChangeHash itself; heads read back from disk come through here. */
-private class StoredChangeHash(bytes: ByteArray) : ChangeHash(bytes)
+internal class StoredChangeHash(bytes: ByteArray) : ChangeHash(bytes)
 
 /** [edits]: pages that went with a deleted notebook or quick page, so an editor showing one can leave it. */
 data class LibraryProjection(
@@ -545,22 +545,11 @@ class AutomergeProjector(
         return b.type to files.backgroundPath(blob, b.type, epub)
     }
 
-    private fun toStroke(s: AmStroke, pageId: String, factor: Double, warnings: MutableList<String>): Stroke {
-        val pen = Pen.entries.firstOrNull { it.penName == s.pen }
-            ?: Pen.BALLPEN.also { warnings += "stroke ${s.id}: unknown pen '${s.pen}', drawn as BALLPEN" }
-        val f = factor.toFloat()
-        val points = decodeStrokePoints(s.points).let { pts ->
-            if (factor == 1.0) pts else pts.map { it.copy(x = it.x * f, y = it.y * f) }
-        }
-        return Stroke(
-            id = s.id, size = (s.size * factor).toFloat(), pen = pen, color = s.color, maxPressure = MAX_PRESSURE_NORMALIZED,
-            top = (s.top * factor).toFloat(), bottom = (s.bottom * factor).toFloat(),
-            left = (s.left * factor).toFloat(), right = (s.right * factor).toFloat(),
-            points = points, pageId = pageId, createdAt = s.createdAt, updatedAt = s.updatedAt,
-        )
-    }
+    private fun toStroke(s: AmStroke, pageId: String, factor: Double, warnings: MutableList<String>): Stroke =
+        roomStroke(s, pageId, factor, warnings)
 
     companion object {
+
         /** The Note Air 5C's canvas width; docs written before canvasWidth existed came from it. */
         const val DEFAULT_CANVAS_WIDTH = 1860.0
         private const val NATIVE = "native"
@@ -583,4 +572,20 @@ class AutomergeProjector(
             else -> p.toString()
         }
     }
+}
+
+/** A doc stroke as a Room row of page [pageId], scaled by [factor] (device canvas / doc canvas). */
+internal fun roomStroke(s: AmStroke, pageId: String, factor: Double, warnings: MutableList<String>): Stroke {
+    val pen = Pen.entries.firstOrNull { it.penName == s.pen }
+        ?: Pen.BALLPEN.also { warnings += "stroke ${s.id}: unknown pen '${s.pen}', drawn as BALLPEN" }
+    val f = factor.toFloat()
+    val points = decodeStrokePoints(s.points).let { pts ->
+        if (factor == 1.0) pts else pts.map { it.copy(x = it.x * f, y = it.y * f) }
+    }
+    return Stroke(
+        id = s.id, size = (s.size * factor).toFloat(), pen = pen, color = s.color, maxPressure = MAX_PRESSURE_NORMALIZED,
+        top = (s.top * factor).toFloat(), bottom = (s.bottom * factor).toFloat(),
+        left = (s.left * factor).toFloat(), right = (s.right * factor).toFloat(),
+        points = points, pageId = pageId, createdAt = s.createdAt, updatedAt = s.updatedAt,
+    )
 }

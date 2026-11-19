@@ -419,6 +419,17 @@
     <string name="pages_add_title">Nowa strona %1$d</string>
     <string name="pages_add_usual">Z szablonem notatnika</string>
     <string name="pages_add_choose">Wybierz szablon…</string>
+    <!-- Wersje stron (docs/plans/library-features.md) -->
+    <string name="versions_title">Wersje</string>
+    <string name="versions_hint">Zapisywane na tym urządzeniu przed zmianą strony po 10 minutach przerwy. Przywrócenie przywraca pismo; obrazy zostają bez zmian.</string>
+    <string name="versions_none">Ta strona nie ma jeszcze wcześniejszych wersji.</string>
+    <string name="versions_unreadable">Nie można odczytać</string>
+    <plurals name="versions_strokes">
+        <item quantity="one">%1$d pociągnięcie</item>
+        <item quantity="few">%1$d pociągnięcia</item>
+        <item quantity="many">%1$d pociągnięć</item>
+        <item quantity="other">%1$d pociągnięcia</item>
+    </plurals>
     <plurals name="select_move_title">
         <item quantity="one">Przenieś %1$d element</item>
         <item quantity="few">Przenieś %1$d elementy</item>

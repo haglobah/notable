@@ -63,6 +63,8 @@ class LocalDocWriter(
     private val projection: ProjectionStateStore,
     private val canvasWidth: Double,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Where earlier states of pages are recorded (docs/plans/library-features.md, 40); null: none. */
+    private val versions: PageVersionStore? = null,
 ) {
     private val mapping = RoomMapping { blobs.upload(it) }
     private val migration = RoomToAutomergeMigration(local, blobs, LibraryDocStore(), migrationState, canvasWidth)
@@ -295,6 +297,7 @@ class LocalDocWriter(
         val page = local.pageRow(pageId) ?: return NONE // already gone from Room: nothing to mirror
         val (url, migrated) = docFor(page, create)
         if (url == null) return migrated
+        recordVersionIfDue(url, pageId)
         return migrated + commit(url) { doc, tx ->
             val obj = AutomergeSchema.pageObjOrNull(doc, pageId) ?: if (!create) return@commit false else {
                 putFullPage(doc, tx, pageId)
@@ -309,6 +312,37 @@ class LocalDocWriter(
             true
         } + touchOwningEntry(page)
     }
+
+    /** Before a page's first edit in a while: the doc's heads now, as a version to go back to. */
+    private fun recordVersionIfDue(url: String, pageId: String) {
+        val v = versions ?: return
+        if (!v.due(pageId)) return
+        runCatching { v.record(url, pageId, docs.edit(url) { it.heads }) }
+    }
+
+    /** [pageId] as it is now, recorded as a version (before a restore replaces it). */
+    fun recordVersion(pageId: String): Boolean {
+        val v = versions ?: return false
+        val page = local.pageRow(pageId) ?: return false
+        val url = docFor(page, create = false).first ?: return false
+        v.record(url, pageId, docs.edit(url) { it.heads })
+        return true
+    }
+
+    /** [version]'s page as Room strokes in this device's units; null when that doc or page isn't there. */
+    fun strokesAt(version: PageVersion): List<com.ethran.notable.data.db.Stroke>? = docs.edit(version.url) { doc ->
+        val old = doc.fork(version.heads)
+        try {
+            val page = AutomergeSchema.readPage(old, version.pageId) ?: return@edit null
+            val factor = canvasWidth / (AutomergeSchema.canvasWidthOf(old) ?: AutomergeProjector.DEFAULT_CANVAS_WIDTH)
+            val warnings = mutableListOf<String>()
+            page.strokes.values.map { roomStroke(it, version.pageId, factor, warnings) }
+        } finally {
+            old.free() // a native doc; forks aren't collected
+        }
+    }
+
+    fun versionsOf(pageId: String): List<PageVersion> = versions?.list(pageId).orEmpty()
 
     private fun touchPage(pageId: String, at: Date): WriteReceipt {
         val page = local.pageRow(pageId) ?: return NONE

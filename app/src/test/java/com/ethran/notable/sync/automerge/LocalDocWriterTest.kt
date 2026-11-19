@@ -140,12 +140,15 @@ internal class Device(
     localPending: (String) -> Boolean = { false },
     /** The writer's blob store; [blobs] when null. */
     blobStore: BlobStore? = null,
+    /** Record page versions (docs/plans/library-features.md, 40). */
+    withVersions: Boolean = false,
 ) {
     val room = FakeRoom()
     private val dir = tmp.newFolder()
     val state = ProjectionStateStore(java.io.File(dir, "projection.json"))
     val blobs = FakeBlobStore()
-    val writer = LocalDocWriter(writerDocs(docs), room.library, blobStore ?: blobs, MigrationStateStore(java.io.File(dir, "migration.json")), state, canvasWidth) { clock }
+    val versions = if (withVersions) PageVersionStore(java.io.File(dir, "versions.json")) { clock } else null
+    val writer = LocalDocWriter(writerDocs(docs), room.library, blobStore ?: blobs, MigrationStateStore(java.io.File(dir, "migration.json")), state, canvasWidth, { clock }, versions)
     val files = FakeFiles()
     val projector = AutomergeProjector(room, files, state, canvasWidth, localPending)
 
@@ -1046,6 +1049,30 @@ class LocalDocWriterTest {
         d.room.sink.notebooks["nb1"] = d.room.sink.notebooks.getValue("nb1").copy(rating = 6)
         d.writer.replay(DocDebt.ReadingState("nb1"))
         assertEquals(6, d.entry().rating)
+    }
+
+    /* ------------------------ page versions (library-features, 40) ------------------------ */
+
+    @Test
+    fun `a version is recorded before the first edit after a break, and reads back as it was`() {
+        val d = Device(tmp, withVersions = true).apply {
+            room.sink.notebooks["nb1"] = notebook("nb1", "p1")
+            room.sink.pages["p1"] = page("p1", "nb1")
+            room.sink.strokes["s1"] = stroke("s1", "p1")
+            writer.migrateAll(); project()
+        }
+        d.edit(LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1"))))
+        assertEquals("one before the first edit", 1, d.writer.versionsOf("p1").size)
+        d.clock += 60_000
+        d.edit(LocalChange.StrokesUpserted("p1", listOf(stroke("s3", "p1"))))
+        assertEquals("none within ten minutes", 1, d.writer.versionsOf("p1").size)
+        d.clock += PageVersionStore.INTERVAL_MS
+        d.edit(LocalChange.StrokesDeleted("p1", listOf("s1")))
+        val versions = d.writer.versionsOf("p1")
+        assertEquals(2, versions.size)
+        assertEquals("newest first: before the delete", setOf("s1", "s2", "s3"), d.writer.strokesAt(versions[0])!!.map { it.id }.toSet())
+        assertEquals("the first: as migrated", setOf("s1"), d.writer.strokesAt(versions[1])!!.map { it.id }.toSet())
+        assertEquals(setOf("s2", "s3"), d.docs.notebook("nb1").pages.getValue("p1").strokes.keys)
     }
 
     /* ------------------------ Read next and the trash (library-features) ------------------------ */

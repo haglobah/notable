@@ -396,6 +396,23 @@ class LibraryEdits @Inject constructor(
         publish(listOf(RemotePageEdit(pageId, pageDeleted = true)))
     }
 
+    /**
+     * Page [pageId]'s handwriting becomes [strokes] (an earlier version, docs/plans/library-features.md,
+     * 40): strokes it has now and [strokes] lacks are deleted, the rest written. Images stay. An
+     * editor showing the page takes the change like one from another device.
+     */
+    suspend fun restorePageStrokes(pageId: String, strokes: List<Stroke>) {
+        val now = this.strokes.idsForPage(pageId)
+        val keep = strokes.map { it.copy(pageId = pageId) }
+        val gone = now - keep.map { it.id }.toSet()
+        if (gone.isNotEmpty()) mirror.write(LocalChange.StrokesDeleted(pageId, gone)) { this.strokes.deleteAll(gone) }
+        if (keep.isNotEmpty()) mirror.write(LocalChange.StrokesUpserted(pageId, keep)) { this.strokes.upsert(keep) }
+        // An edit: the page's "edited" date moves, and with it its library preview goes stale.
+        val at = now()
+        mirror.write(LocalChange.PageTouched(pageId, at)) { pages.touchUpdatedAt(pageId, at) }
+        publish(listOf(RemotePageEdit(pageId, upsertStrokes = keep, deleteStrokes = gone.toSet())))
+    }
+
     /** [value] null keeps the current one (a type change only). Returns the page as written. */
     suspend fun setPageBackground(pageId: String, type: String, value: String?): Page? {
         val page = pages.getById(pageId) ?: return null

@@ -377,6 +377,18 @@ class LibraryEditsTest {
     }
 
     @Test
+    fun `restoring a version replaces the handwriting through the doc and marks the page edited`() = runBlocking {
+        book(1)
+        store.strokes["s2"] = stroke("s2", "p1")
+        edits.restorePageStrokes("p1", listOf(stroke("old", "p1")))
+        assertEquals(setOf("old"), store.strokes.values.filter { it.pageId == "p1" }.map { it.id }.toSet())
+        val kinds = mirror.changes.map { it.second::class.simpleName }
+        assertEquals(listOf("StrokesDeleted", "StrokesUpserted", "PageTouched"), kinds)
+        assertEquals("Room writes outside the mirror", emptyList<String>(), store.outside)
+        assertEquals(setOf("s1", "s2"), published.single().deleteStrokes)
+    }
+
+    @Test
     fun `a page can be added with its own template`() = runBlocking {
         book(2)
         val id = edits.addPageWithBackground("nb1", 1, "native", "lined")!!
