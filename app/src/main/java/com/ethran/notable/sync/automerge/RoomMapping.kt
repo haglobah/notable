@@ -19,7 +19,7 @@ class MissingFileException(val what: String) : Exception("missing file: $what")
  */
 internal class RoomMapping(private val blob: (String) -> String) {
 
-    fun folder(f: Folder) = AmFolder(f.id, f.title, f.parentFolderId, f.createdAt, f.updatedAt)
+    fun folder(f: Folder) = AmFolder(f.id, f.title, f.parentFolderId, f.createdAt, f.updatedAt, trashedAt = f.trashedAt)
 
     fun background(type: String, value: String): AmBackground =
         if (type == BackgroundType.Native.key) AmBackground(type, value, null)

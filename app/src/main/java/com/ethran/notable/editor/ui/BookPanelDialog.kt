@@ -1,6 +1,7 @@
 package com.ethran.notable.editor.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -27,14 +28,20 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ethran.notable.R
 import com.ethran.notable.editor.BookPanel
+import com.ethran.notable.editor.ReadingPace
+import com.ethran.notable.editor.SearchHighlights
 import com.ethran.notable.editor.utils.autoEInkAnimationOnScroll
 import com.ethran.notable.ui.design.NButton
 import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NControlSize
 import com.ethran.notable.ui.design.NDialog
 import com.ethran.notable.ui.design.NDivider
 import com.ethran.notable.ui.design.NTextField
@@ -55,6 +62,9 @@ fun BookPanelDialog(
     onSearch: (String) -> Unit,
     onJump: (pageId: String) -> Unit,
     onClose: () -> Unit,
+    /** Go to page n (1-based) of the notebook. */
+    onGoToPage: (Int) -> Unit = {},
+    onClearHighlights: () -> Unit = {},
 ) {
     NDialog(
         title = stringResource(if (panel is BookPanel.Contents) R.string.book_contents else R.string.book_search),
@@ -66,8 +76,11 @@ fun BookPanelDialog(
         titleAction = { NButton(stringResource(R.string.book_close), onClose, style = NButtonStyle.Secondary) },
     ) {
         when (panel) {
-            is BookPanel.Contents -> Contents(panel, onJump)
-            is BookPanel.Search -> Search(panel, onSearch, onJump)
+            is BookPanel.Contents -> {
+                WhereAndGoTo(panel, onGoToPage)
+                Contents(panel, onJump)
+            }
+            is BookPanel.Search -> Search(panel, onSearch, onJump, onClearHighlights)
         }
     }
 }
@@ -93,8 +106,52 @@ private fun Contents(panel: BookPanel.Contents, onJump: (String) -> Unit) {
     }
 }
 
+/**
+ * Over the contents (docs/plans/library-features.md, 31 and 34): "Page 12 of 300 · about 4 h 05 min
+ * left · 12 min in this chapter", and a page number field with Go.
+ */
 @Composable
-private fun Search(panel: BookPanel.Search, onSearch: (String) -> Unit, onJump: (String) -> Unit) {
+private fun WhereAndGoTo(panel: BookPanel.Contents, onGoToPage: (Int) -> Unit) {
+    if (panel.pageCount <= 0) return
+    val pace = panel.secondsPerPage
+    val parts = mutableListOf<String>()
+    if (panel.current >= 0) parts += stringResource(R.string.book_page_of, panel.current + 1, panel.pageCount)
+    if (pace != null && panel.current >= 0) {
+        parts += stringResource(R.string.book_time_left, duration(ReadingPace.pagesLeft(panel.current, panel.pageCount) * pace))
+        ReadingPace.chapterPagesLeft(panel.current, panel.lines.map { it.pageIndex })?.let { n ->
+            parts += stringResource(R.string.book_chapter_left, duration(n * pace))
+        }
+    } else if (panel.current >= 0) parts += stringResource(R.string.book_time_unknown)
+    Note(parts.joinToString(" · "))
+    var number by rememberSaveable { mutableStateOf("") }
+    val go = { number.toIntOrNull()?.let(onGoToPage); Unit }
+    val label = stringResource(R.string.book_go_to_page)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NotableSpace.md),
+        modifier = Modifier.padding(bottom = NotableSpace.md)) {
+        NTextField(
+            value = number, onValueChange = { v -> number = v.filter(Char::isDigit).take(6) }, singleLine = true,
+            placeholder = stringResource(R.string.book_go_to_page_hint, panel.pageCount),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
+            keyboardActions = KeyboardActions(onGo = { go() }),
+            modifier = Modifier.weight(1f).semantics { contentDescription = label },
+        )
+        NButton(label, onClick = go, enabled = number.toIntOrNull()?.let { it in 1..panel.pageCount } == true)
+    }
+}
+
+/** "4 h 05 min", "12 min", "under a minute". */
+@Composable
+private fun duration(seconds: Float): String {
+    val m = ReadingPace.minutes(seconds)
+    return when {
+        m < 1 -> stringResource(R.string.book_duration_short)
+        m < 60 -> stringResource(R.string.book_duration_m, m)
+        else -> stringResource(R.string.book_duration_hm, m / 60, m % 60)
+    }
+}
+
+@Composable
+private fun Search(panel: BookPanel.Search, onSearch: (String) -> Unit, onJump: (String) -> Unit, onClearHighlights: () -> Unit) {
     var query by rememberSaveable { mutableStateOf(panel.query) }
     val hint = stringResource(R.string.book_search_hint)
     val focus = remember { FocusRequester() }
@@ -120,7 +177,12 @@ private fun Search(panel: BookPanel.Search, onSearch: (String) -> Unit, onJump: 
         results == null -> Unit
         results.isEmpty() && panel.missing == 0 -> Note(stringResource(R.string.book_search_none))
         else -> {
-            Note(pluralStringResource(R.plurals.book_search_results, results.size, results.size))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { Note(pluralStringResource(R.plurals.book_search_results, results.size, results.size)) }
+                // Hits are drawn on their pages until the next search or this.
+                if (!SearchHighlights.isEmpty) NButton(stringResource(R.string.book_clear_highlights), onClearHighlights,
+                    style = NButtonStyle.Quiet, size = NControlSize.Compact)
+            }
             Missing(panel.missing)
             LazyColumn(Modifier.fillMaxWidth().autoEInkAnimationOnScroll()) {
                 items(results) { r ->

@@ -11,6 +11,7 @@ import androidx.room.ForeignKey
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
 import io.shipbook.shipbooksdk.ShipBook
@@ -35,7 +36,9 @@ data class Folder(
     val parentFolderId: String? = null,
 
     val createdAt: Date = Date(),
-    val updatedAt: Date = Date()
+    val updatedAt: Date = Date(),
+    /** In the trash since then, with everything in it (docs/plans/library-features.md); null when not. */
+    val trashedAt: Date? = null,
 )
 
 // DAO
@@ -50,6 +53,7 @@ interface FolderDao {
     @Query("SELECT * FROM folder WHERE id IS :folderId")
     fun getLive(folderId: String): LiveData<Folder?>
 
+    @Transaction
     @Query("SELECT * FROM folder")
     fun getAll(): List<Folder>
 
@@ -68,6 +72,10 @@ interface FolderDao {
 
     @Query("UPDATE folder SET parentFolderId=:parentId, updatedAt=:updatedAt WHERE id=:id")
     suspend fun setParent(id: String, parentId: String?, updatedAt: Date)
+
+    /** Not an edit: updatedAt stays. */
+    @Query("UPDATE folder SET trashedAt=:at WHERE id=:id")
+    suspend fun setTrashedAt(id: String, at: Date?): Int
 
     @Query("DELETE FROM folder WHERE id=:id")
     suspend fun delete(id: String)
@@ -126,6 +134,7 @@ class FolderRepository @Inject constructor(
 
     suspend fun setTitle(id: String, title: String, updatedAt: Date) = db.setTitle(id, title, updatedAt)
     suspend fun setParent(id: String, parentId: String?, updatedAt: Date) = db.setParent(id, parentId, updatedAt)
+    suspend fun setTrashedAt(id: String, at: Date?) = db.setTrashedAt(id, at)
 
     suspend fun delete(id: String) {
         db.delete(id)

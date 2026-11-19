@@ -307,7 +307,7 @@
     <string name="bar_flip">Odwróć kolejność</string>
     <string name="bar_search_everywhere">Szukaj wszędzie</string>
     <string name="bar_search_only">Szukaj tylko w %1$s</string>
-    <string name="bar_syntax_lines">słowa  w tytule, autorze, serii, tagach, folderze…\n\"dokładna fraza\"   -słowo  wyklucza\nauthor:le guin  series:  tag:  lang:  publisher:  desc:\nkind:pdf,epub  (przecinek: dowolne z)\nis:reading  is:unread  is:finished\nhas:author  has:rating  has:pages\nrating:>7  pages:&lt;200  progress:25-75\nadded:2026  read:2026-10  edited:  finished:</string>
+    <string name="bar_syntax_lines">słowa  w tytule, autorze, serii, tagach, folderze…\n\"dokładna fraza\"   -słowo  wyklucza\nauthor:le guin  series:  tag:  lang:  publisher:  desc:\nkind:pdf,epub  (przecinek: dowolne z)\nis:reading  is:unread  is:finished  is:next\nhas:author  has:rating  has:pages\nrating:>7  pages:&lt;200  progress:25-75\nadded:2026  read:2026-10  edited:  finished:</string>
     <string name="dir_az">A do Z</string>
     <string name="dir_za">Z do A</string>
     <string name="dir_newest">Najnowsze najpierw</string>
@@ -360,4 +360,89 @@
     <string name="pages_jump_to_current">Przejdź do bieżącej</string>
     <string name="pages_delete_title">Usunąć stronę?</string>
     <string name="pages_delete_message">Strona i cała jej zawartość zostaną usunięte.</string>
+    <!-- Zarządzanie biblioteką (docs/plans/library-features.md) -->
+    <string name="library_read_next">Do przeczytania</string>
+    <string name="filter_next">Do przeczytania</string>
+    <string name="bar_read_next">Do przeczytania</string>
+    <string name="bar_hide_finished">Ukryj przeczytane</string>
+    <string name="select_done">Zakończ zaznaczanie</string>
+    <plurals name="select_count">
+        <item quantity="one">Zaznaczono %1$d</item>
+        <item quantity="few">Zaznaczono %1$d</item>
+        <item quantity="many">Zaznaczono %1$d</item>
+        <item quantity="other">Zaznaczono %1$d</item>
+    </plurals>
+    <string name="select_all">Zaznacz wszystko</string>
+    <string name="select_move">Przenieś…</string>
+    <string name="select_mark_read">Oznacz jako przeczytane</string>
+    <string name="select_mark_unread">Oznacz jako nieprzeczytane</string>
+    <string name="select_queue">Dodaj do „Do przeczytania”</string>
+    <string name="select_unqueue">Usuń z „Do przeczytania”</string>
+    <string name="select_details">Szczegóły</string>
+    <string name="select_trash">Przenieś do kosza</string>
+    <string name="details_trash">Przenieś do kosza</string>
+    <string name="details_read">Przeczytana</string>
+    <string name="details_read_next">Do przeczytania</string>
+    <string name="details_read_next_hint">Na liście „Do przeczytania”, dopóki jej nie otworzysz</string>
+    <string name="folder_trash">Przenieś folder do kosza</string>
+    <string name="trash_title">Kosz</string>
+    <string name="trash_hint">Elementy są usuwane na stałe po %1$d dniach w koszu.</string>
+    <string name="trash_none">Kosz jest pusty.</string>
+    <string name="trash_row_meta">W koszu od %1$s · zostało dni: %2$d</string>
+    <string name="trash_restore">Przywróć</string>
+    <string name="trash_empty">Opróżnij kosz</string>
+    <string name="trash_empty_title">Opróżnić kosz?</string>
+    <string name="trash_empty_message">Wszystko w koszu zostanie usunięte na stałe.</string>
+    <string name="trash_delete_title">Usunąć na stałe?</string>
+    <string name="trash_delete_message">„%1$s” zostanie usunięte na stałe. Tej operacji nie można cofnąć.</string>
+    <!-- Pomoce do czytania (docs/plans/library-features.md) -->
+    <string name="book_page_of">Strona %1$d z %2$d</string>
+    <string name="book_time_left">zostało około %1$s</string>
+    <string name="book_chapter_left">%1$s do końca rozdziału</string>
+    <string name="book_time_unknown">pozostały czas pojawi się po kilku przeczytanych stronach</string>
+    <string name="book_duration_short">mniej niż minuta</string>
+    <string name="book_duration_m">%1$d min</string>
+    <string name="book_duration_hm">%1$d godz. %2$02d min</string>
+    <string name="book_go_to_page">Przejdź do strony</string>
+    <string name="book_go_to_page_hint">1 do %1$d</string>
+    <string name="book_clear_highlights">Wyczyść wyróżnienia</string>
+    <string name="book_back_to_page">Wróć do strony %1$d</string>
+    <string name="book_back">Wróć</string>
+    <string name="book_back_dismiss">Zostań tutaj</string>
+    <!-- Strony (docs/plans/library-features.md) -->
+    <string name="pages_select">Zaznacz</string>
+    <plurals name="pages_delete_selected_title">
+        <item quantity="one">Usunąć %1$d stronę?</item>
+        <item quantity="few">Usunąć %1$d strony?</item>
+        <item quantity="many">Usunąć %1$d stron?</item>
+        <item quantity="other">Usunąć %1$d strony?</item>
+    </plurals>
+    <string name="pages_move_to_notebook">Przenieś do notatnika…</string>
+    <string name="pages_move_start">Przenieś na początek</string>
+    <string name="pages_move_end">Przenieś na koniec</string>
+    <string name="pages_template">Szablon…</string>
+    <string name="pages_move_filter">Znajdź notatnik</string>
+    <string name="pages_move_none">Żaden inny notatnik nie pasuje.</string>
+    <string name="pages_add_title">Nowa strona %1$d</string>
+    <string name="pages_add_usual">Z szablonem notatnika</string>
+    <string name="pages_add_choose">Wybierz szablon…</string>
+    <!-- Wersje stron (docs/plans/library-features.md) -->
+    <string name="versions_title">Wersje</string>
+    <string name="versions_hint">Zapisywane na tym urządzeniu przed zmianą strony po 10 minutach przerwy. Przywrócenie przywraca pismo; obrazy zostają bez zmian.</string>
+    <string name="versions_none">Ta strona nie ma jeszcze wcześniejszych wersji.</string>
+    <string name="versions_unreadable">Nie można odczytać</string>
+    <plurals name="versions_strokes">
+        <item quantity="one">%1$d pociągnięcie</item>
+        <item quantity="few">%1$d pociągnięcia</item>
+        <item quantity="many">%1$d pociągnięć</item>
+        <item quantity="other">%1$d pociągnięcia</item>
+    </plurals>
+    <plurals name="select_move_title">
+        <item quantity="one">Przenieś %1$d element</item>
+        <item quantity="few">Przenieś %1$d elementy</item>
+        <item quantity="many">Przenieś %1$d elementów</item>
+        <item quantity="other">Przenieś %1$d elementu</item>
+    </plurals>
+    <string name="pages_duplicate">Duplikuj</string>
+    <string name="pages_delete">Usuń</string>
 </resources>

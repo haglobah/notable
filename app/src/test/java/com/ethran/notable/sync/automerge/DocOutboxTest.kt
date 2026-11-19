@@ -52,4 +52,18 @@ class DocOutboxTest {
         box.record(LocalChange.NotebookRenamed("nb1", "x"))
         assertEquals(listOf(DocDebt.ReadingState("nb1"), DocDebt.NotebookRow("nb1")), DocOutbox(file, PendingLocalWrites()).debts())
     }
+
+    @Test
+    fun `queue and trash are debts of their own, apart from reading state, and survive a restart`() {
+        val file = File(tmp.newFolder(), "pending.json")
+        val box = DocOutbox(file, PendingLocalWrites())
+        box.record(LocalChange.NotebookQueued("nb1", 1L))
+        box.record(LocalChange.NotebookTrashed("nb1", null))
+        box.record(LocalChange.NotebookRead("nb1", 3L))
+        box.record(LocalChange.FolderTrashed("f1", 2L))
+        assertEquals(
+            listOf(DocDebt.NotebookQueue("nb1"), DocDebt.NotebookTrash("nb1"), DocDebt.ReadingState("nb1"), DocDebt.FolderTrash("f1")),
+            DocOutbox(file, PendingLocalWrites()).debts(),
+        )
+    }
 }

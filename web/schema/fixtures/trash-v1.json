@@ -1,0 +1,64 @@
+{
+  "now": "2026-11-19T00:00:00.000Z",
+  "readNext": [
+    "n-fr",
+    "n-dune",
+    "n-reread"
+  ],
+  "trash": [
+    [
+      "notebook",
+      "n-gone"
+    ],
+    [
+      "notebook",
+      "n-old"
+    ],
+    [
+      "folder",
+      "f-old"
+    ]
+  ],
+  "expired": [
+    [
+      "notebook",
+      "n-old"
+    ],
+    [
+      "folder",
+      "f-old"
+    ]
+  ],
+  "trashed": [
+    "n-gone",
+    "n-sub",
+    "n-old"
+  ],
+  "cases": [
+    {
+      "query": "dune",
+      "ids": [
+        "n-back",
+        "n-dune"
+      ]
+    },
+    {
+      "query": "is:next",
+      "ids": [
+        "n-reread",
+        "n-dune",
+        "n-fr"
+      ]
+    },
+    {
+      "query": "-is:next dune",
+      "ids": [
+        "n-back"
+      ]
+    },
+    {
+      "query": "folder:old",
+      "ids": []
+    }
+  ]
+}

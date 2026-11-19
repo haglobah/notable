@@ -106,6 +106,9 @@ internal class FakeRoom(val sink: FakeSink = FakeSink()) : ProjectionSink by sin
             is LocalChange.NotebookFinished -> notebook(change.id) { it.copy(finishedAt = change.at?.let(::Date)) }
             is LocalChange.NotebookRated -> notebook(change.id) { it.copy(rating = change.rating) }
             is LocalChange.ReadingSynced -> notebook(change.id) { it.copy(pageCount = it.pageIds.size) }
+            is LocalChange.NotebookQueued -> notebook(change.id) { it.copy(queuedAt = change.at?.let(::Date)) }
+            is LocalChange.NotebookTrashed -> notebook(change.id) { it.copy(trashedAt = change.at?.let(::Date)) }
+            is LocalChange.FolderTrashed -> sink.folders[change.id]?.let { sink.folders[it.id] = it.copy(trashedAt = change.at?.let(::Date)) }
             is LocalChange.QuickNotebookSet -> Unit
             is LocalChange.QuickPageMoved -> {
                 sink.pages[change.pageId]?.let { sink.pages[it.id] = it.copy(notebookId = change.notebookId, parentFolderId = null) }
@@ -137,12 +140,15 @@ internal class Device(
     localPending: (String) -> Boolean = { false },
     /** The writer's blob store; [blobs] when null. */
     blobStore: BlobStore? = null,
+    /** Record page versions (docs/plans/library-features.md, 40). */
+    withVersions: Boolean = false,
 ) {
     val room = FakeRoom()
     private val dir = tmp.newFolder()
     val state = ProjectionStateStore(java.io.File(dir, "projection.json"))
     val blobs = FakeBlobStore()
-    val writer = LocalDocWriter(writerDocs(docs), room.library, blobStore ?: blobs, MigrationStateStore(java.io.File(dir, "migration.json")), state, canvasWidth) { clock }
+    val versions = if (withVersions) PageVersionStore(java.io.File(dir, "versions.json")) { clock } else null
+    val writer = LocalDocWriter(writerDocs(docs), room.library, blobStore ?: blobs, MigrationStateStore(java.io.File(dir, "migration.json")), state, canvasWidth, { clock }, versions)
     val files = FakeFiles()
     val projector = AutomergeProjector(room, files, state, canvasWidth, localPending)
 
@@ -1043,6 +1049,78 @@ class LocalDocWriterTest {
         d.room.sink.notebooks["nb1"] = d.room.sink.notebooks.getValue("nb1").copy(rating = 6)
         d.writer.replay(DocDebt.ReadingState("nb1"))
         assertEquals(6, d.entry().rating)
+    }
+
+    /* ------------------------ page versions (library-features, 40) ------------------------ */
+
+    @Test
+    fun `a version is recorded before the first edit after a break, and reads back as it was`() {
+        val d = Device(tmp, withVersions = true).apply {
+            room.sink.notebooks["nb1"] = notebook("nb1", "p1")
+            room.sink.pages["p1"] = page("p1", "nb1")
+            room.sink.strokes["s1"] = stroke("s1", "p1")
+            writer.migrateAll(); project()
+        }
+        d.edit(LocalChange.StrokesUpserted("p1", listOf(stroke("s2", "p1"))))
+        assertEquals("one before the first edit", 1, d.writer.versionsOf("p1").size)
+        d.clock += 60_000
+        d.edit(LocalChange.StrokesUpserted("p1", listOf(stroke("s3", "p1"))))
+        assertEquals("none within ten minutes", 1, d.writer.versionsOf("p1").size)
+        d.clock += PageVersionStore.INTERVAL_MS
+        d.edit(LocalChange.StrokesDeleted("p1", listOf("s1")))
+        val versions = d.writer.versionsOf("p1")
+        assertEquals(2, versions.size)
+        assertEquals("newest first: before the delete", setOf("s1", "s2", "s3"), d.writer.strokesAt(versions[0])!!.map { it.id }.toSet())
+        assertEquals("the first: as migrated", setOf("s1"), d.writer.strokesAt(versions[1])!!.map { it.id }.toSet())
+        assertEquals(setOf("s2", "s3"), d.docs.notebook("nb1").pages.getValue("p1").strokes.keys)
+    }
+
+    /* ------------------------ Read next and the trash (library-features) ------------------------ */
+
+    @Test
+    fun `queue and trash are single fields that merge with edits elsewhere and project to Room`() {
+        val d = bookDevice(pages = 1)
+        d.room.sink.folders["f1"] = com.ethran.notable.data.db.Folder("f1", "Uni", null, t0, t1)
+        d.edit(LocalChange.FolderUpserted(d.room.sink.folders.getValue("f1")))
+        val other = peer(d)
+        d.edit(LocalChange.NotebookQueued("nb1", 1_780_002_000_000))
+        d.edit(LocalChange.NotebookTrashed("nb1", 1_780_002_000_001))
+        d.edit(LocalChange.FolderTrashed("f1", 1_780_002_000_002))
+        other.edit(LocalChange.NotebookRenamed("nb1", "Renamed"))
+        d.docs.syncWith(other.docs)
+        val e = d.entry()
+        assertEquals(Date(1_780_002_000_000), e.queuedAt)
+        assertEquals(Date(1_780_002_000_001), e.trashedAt)
+        assertEquals("Renamed", e.title)
+        assertEquals(Date(1_780_002_000_002), d.docs.library().folders.getValue("f1").trashedAt)
+        other.project()
+        assertEquals(Date(1_780_002_000_001), other.room.sink.notebooks.getValue("nb1").trashedAt)
+        assertEquals(Date(1_780_002_000_000), other.room.sink.notebooks.getValue("nb1").queuedAt)
+        assertEquals(Date(1_780_002_000_002), other.room.sink.folders.getValue("f1").trashedAt)
+
+        d.edit(LocalChange.NotebookTrashed("nb1", null))
+        assertNull(d.entry().trashedAt)
+        assertTrue(d.entry().hasTrashedAt)
+        assertTrue("unchanged: no commit", d.edit(LocalChange.NotebookTrashed("nb1", null)).commits.isEmpty())
+        val fresh = bookDevice(pages = 1)
+        assertTrue("null over absent: no commit", fresh.edit(LocalChange.NotebookQueued("nb1", null)).commits.isEmpty())
+    }
+
+    @Test
+    fun `queue and trash that failed to reach the doc are replayed from Room`() {
+        val d = bookDevice(pages = 1)
+        d.room.sink.notebooks["nb1"] = d.room.sink.notebooks.getValue("nb1").copy(queuedAt = Date(5), trashedAt = Date(6))
+        d.writer.replay(DocDebt.ReadingState("nb1"))
+        assertNull("a reading-state replay leaves them alone", d.entry().trashedAt)
+        d.writer.replay(DocDebt.NotebookQueue("nb1"))
+        d.writer.replay(DocDebt.NotebookTrash("nb1"))
+        assertEquals(Date(5), d.entry().queuedAt)
+        assertEquals(Date(6), d.entry().trashedAt)
+        d.room.sink.folders["f1"] = com.ethran.notable.data.db.Folder("f1", "Uni", null, t0, t1)
+        d.edit(LocalChange.FolderUpserted(d.room.sink.folders.getValue("f1")))
+        d.room.sink.folders["f1"] = d.room.sink.folders.getValue("f1").copy(trashedAt = Date(7))
+        d.writer.replay(DocDebt.FolderTrash("f1"))
+        assertEquals(Date(7), d.docs.library().folders.getValue("f1").trashedAt)
     }
 
     /* ------------------------------ quick pages (round 5) ------------------------------ */

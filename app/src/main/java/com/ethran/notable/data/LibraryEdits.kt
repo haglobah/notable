@@ -12,6 +12,8 @@ import com.ethran.notable.data.db.Stroke
 import com.ethran.notable.data.db.StrokeRepository
 import com.ethran.notable.data.db.newPage
 import com.ethran.notable.data.model.BackgroundType
+import com.ethran.notable.sync.automerge.LibrarySearch
+import com.ethran.notable.ui.viewmodels.LibrarySearchIndex
 import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
@@ -119,6 +121,67 @@ class LibraryEdits @Inject constructor(
         mirror.write(LocalChange.NotebookRated(id, rating)) { books.setRating(id, rating) }
     }
 
+    /* -------------------- Read next and the trash (docs/plans/library-features.md) -------------------- */
+
+    /** Puts notebook [id] on the Read next list ([queued]) or takes it off. */
+    suspend fun setNotebookQueued(id: String, queued: Boolean) {
+        val at = if (queued) now() else null
+        mirror.write(LocalChange.NotebookQueued(id, at)) { books.setQueuedAt(id, at?.let(::Date)) }
+    }
+
+    suspend fun trashNotebook(id: String) {
+        val at = now()
+        mirror.write(LocalChange.NotebookTrashed(id, at)) { books.setTrashedAt(id, Date(at)) }
+    }
+
+    /** Folder [id] and everything in it go to the trash together. */
+    suspend fun trashFolder(id: String) {
+        val at = now()
+        mirror.write(LocalChange.FolderTrashed(id, at)) { folders.setTrashedAt(id, Date(at)) }
+    }
+
+    /** Out of the trash; to the root when its folder is itself in the trash or gone. */
+    suspend fun restoreNotebook(id: String) {
+        val nb = books.getById(id) ?: return
+        val folder = nb.parentFolderId
+        if (folder != null && !folderLive(folder)) moveNotebook(id, null)
+        mirror.write(LocalChange.NotebookTrashed(id, null)) { books.setTrashedAt(id, null) }
+    }
+
+    /** Out of the trash with everything in it; to the root when its parent is in the trash or gone. */
+    suspend fun restoreFolder(id: String) {
+        val parent = folders.getParent(id)
+        if (parent != null && !folderLive(parent)) moveFolder(id, null)
+        mirror.write(LocalChange.FolderTrashed(id, null)) { folders.setTrashedAt(id, null) }
+    }
+
+    /** Folder [id] exists and neither it nor one above it is in the trash. */
+    private fun folderLive(id: String): Boolean {
+        val all = folders.getAll().associateBy { it.id }
+        val seen = HashSet<String>()
+        var at: String? = id
+        while (at != null && seen.add(at)) {
+            val f = all[at] ?: return false
+            if (f.trashedAt != null) return false
+            at = f.parentFolderId
+        }
+        return true
+    }
+
+    /** Deletes for good what has been in the trash [LibrarySearch.TRASH_DAYS] days or more; returns how many items. */
+    suspend fun emptyExpiredTrash(): Int {
+        val lib = LibrarySearchIndex.library(folders.getAll(), books.getAll(), emptyList())
+        val due = LibrarySearch.expiredTrash(lib, Date(now()))
+        due.forEach { deleteTrashItem(it) }
+        return due.size
+    }
+
+    /** Deletes a trash item for good. */
+    suspend fun deleteTrashItem(item: LibrarySearch.TrashItem) = when (item) {
+        is LibrarySearch.TrashItem.Folder -> deleteFolder(item.id)
+        is LibrarySearch.TrashItem.Notebook -> deleteNotebook(item.id)
+    }
+
     /** Brings the entry's page count and open page index up to the notebook doc's. */
     suspend fun syncReading(id: String) {
         mirror.write(LocalChange.ReadingSynced(id)) {
@@ -194,20 +257,66 @@ class LibraryEdits @Inject constructor(
     }
 
     /** A copy right after the original, with copies of its strokes and images; null when it's gone. */
-    suspend fun duplicatePage(pageId: String): String? {
+    suspend fun duplicatePage(pageId: String): String? = copyPage(pageId, into = null)
+
+    /**
+     * Moves pages into notebook [notebookId], at its end in the order given
+     * (docs/plans/library-features.md, 36): each is copied there with new ids, then deleted where
+     * it was. The copy reaches the target's doc before the original is deleted, so a crash between
+     * leaves the page twice, never lost. Pages already in [notebookId] stay. Returns how many moved.
+     */
+    suspend fun movePagesTo(pageIds: List<String>, notebookId: String): Int {
+        if (books.getById(notebookId) == null) throw IllegalStateException("Notebook no longer exists")
+        var moved = 0
+        for (id in pageIds) {
+            val page = pages.getById(id) ?: continue
+            if (page.notebookId == notebookId) continue
+            copyPage(id, into = notebookId) ?: continue
+            deletePage(id, page.notebookId)
+            moved++
+        }
+        return moved
+    }
+
+    /**
+     * A new page at [index] of the notebook's order with background [type]/[value] instead of the
+     * notebook's (docs/plans/library-features.md, 39); null when the notebook is gone.
+     */
+    suspend fun addPageWithBackground(notebookId: String, index: Int, type: String, value: String): String? {
+        val id = addPage(notebookId, index) ?: return null
+        setPageBackground(id, type, value)
+        return id
+    }
+
+    /**
+     * A copy of [pageId] with copies of its strokes and images: right after it ([into] null), or at
+     * the end of notebook [into]. Null when the page (or that notebook) is gone.
+     */
+    private suspend fun copyPage(pageId: String, into: String?): String? {
         val data = pages.getWithDataById(pageId) ?: return null
         val stamp = Date(now())
-        val copy = data.page.copy(id = UUID.randomUUID().toString(), scroll = 0, createdAt = stamp, updatedAt = stamp)
+        val target = into?.let { books.getById(it) ?: return null }
+        val copy = data.page.copy(id = UUID.randomUUID().toString(), scroll = 0, createdAt = stamp, updatedAt = stamp,
+            notebookId = target?.id ?: data.page.notebookId, parentFolderId = if (target != null) null else data.page.parentFolderId)
+            // An AutoPdf page shows the PDF page at its own index; elsewhere it keeps the one it showed.
+            .let { c ->
+                val from = data.page.notebookId?.let { books.getById(it) }
+                val index = from?.pageIds?.indexOf(pageId) ?: -1
+                if (target != null && c.backgroundType == BackgroundType.AutoPdf.key && index >= 0)
+                    c.copy(backgroundType = BackgroundType.Pdf(index).key) else c
+            }
         val copiedStrokes = data.strokes.map { it.copy(id = UUID.randomUUID().toString(), pageId = copy.id, createdAt = stamp, updatedAt = stamp) }
         val copiedImages = data.images.map { it.copy(id = UUID.randomUUID().toString(), pageId = copy.id, createdAt = stamp, updatedAt = stamp) }
+        // Right after the original, or last in the target notebook.
+        val after = if (target != null) target.pageIds.lastOrNull() else pageId
         val room: suspend () -> Unit = {
             pages.create(copy)
             if (copiedStrokes.isNotEmpty()) strokes.create(copiedStrokes)
             if (copiedImages.isNotEmpty()) images.create(copiedImages)
-            copy.notebookId?.let { books.placePage(it, copy.id, pageId) }
+            copy.notebookId?.let { books.placePage(it, copy.id, after) }
         }
         val nb = copy.notebookId
-        if (nb != null) mirror.create(LocalChange.PageAdded(nb, copy.id, pageId), room)
+        if (nb != null) mirror.create(LocalChange.PageAdded(nb, copy.id, after), room)
         else mirror.create(LocalChange.PageUpserted(copy), room)
         return copy.id
     }
@@ -236,8 +345,12 @@ class LibraryEdits @Inject constructor(
         return OpenAt(nb.id, first)
     }
 
-    /** The quick notebook when the library names one Room has. */
+    /**
+     * The quick notebook when the library names one Room has and it isn't in the trash (a trashed
+     * one is left there; "+ Quick page" then starts a new one).
+     */
     suspend fun quickNotebook(): Notebook? = mirror.quickNotebookId()?.let { books.getById(it) }
+        ?.takeIf { it.trashedAt == null && (it.parentFolderId == null || folderLive(it.parentFolderId)) }
 
     /**
      * Old quick pages (one entry each) move into the quick notebook, oldest first, each appended
@@ -281,6 +394,23 @@ class LibraryEdits @Inject constructor(
             pages.delete(pageId)
         }
         publish(listOf(RemotePageEdit(pageId, pageDeleted = true)))
+    }
+
+    /**
+     * Page [pageId]'s handwriting becomes [strokes] (an earlier version, docs/plans/library-features.md,
+     * 40): strokes it has now and [strokes] lacks are deleted, the rest written. Images stay. An
+     * editor showing the page takes the change like one from another device.
+     */
+    suspend fun restorePageStrokes(pageId: String, strokes: List<Stroke>) {
+        val now = this.strokes.idsForPage(pageId)
+        val keep = strokes.map { it.copy(pageId = pageId) }
+        val gone = now - keep.map { it.id }.toSet()
+        if (gone.isNotEmpty()) mirror.write(LocalChange.StrokesDeleted(pageId, gone)) { this.strokes.deleteAll(gone) }
+        if (keep.isNotEmpty()) mirror.write(LocalChange.StrokesUpserted(pageId, keep)) { this.strokes.upsert(keep) }
+        // An edit: the page's "edited" date moves, and with it its library preview goes stale.
+        val at = now()
+        mirror.write(LocalChange.PageTouched(pageId, at)) { pages.touchUpdatedAt(pageId, at) }
+        publish(listOf(RemotePageEdit(pageId, upsertStrokes = keep, deleteStrokes = gone.toSet())))
     }
 
     /** [value] null keeps the current one (a type change only). Returns the page as written. */

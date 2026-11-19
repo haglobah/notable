@@ -83,6 +83,8 @@ data class AppSettings(
     val librarySort: String? = null,
     /** Null: the sort key's own default direction. */
     val librarySortDescending: Boolean? = null,
+    /** Hide finished books in the library on this device (docs/plans/library-features.md). */
+    val libraryHideFinished: Boolean = false,
 
     // Debug
     val showWelcome: Boolean = true,

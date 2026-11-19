@@ -30,6 +30,10 @@ data class AmFolder(
     val parentId: String?,
     val createdAt: Date,
     val updatedAt: Date,
+    /** In the trash since then (docs/plans/library-features.md); null when not. */
+    val trashedAt: Date? = null,
+    /** Whether the doc has the `trashedAt` key: "Restore" writes null, kept apart from never trashed. */
+    val hasTrashedAt: Boolean = trashedAt != null,
 )
 
 /** A notebook, or a single "quick page" that lives directly in a folder (Room: page.notebookId == null). */
@@ -71,6 +75,14 @@ data class AmNotebookEntry(
     val rating: Int? = null,
     /** Whether the doc has the `rating` key: "Clear" writes null, kept apart from never rated. */
     val hasRating: Boolean = rating != null,
+    /** On the Read next list since then (docs/plans/library-features.md); null when not. */
+    val queuedAt: Date? = null,
+    /** Whether the doc has the `queuedAt` key: taking it off writes null. */
+    val hasQueuedAt: Boolean = queuedAt != null,
+    /** In the trash since then; null when not. */
+    val trashedAt: Date? = null,
+    /** Whether the doc has the `trashedAt` key: "Restore" writes null. */
+    val hasTrashedAt: Boolean = trashedAt != null,
 )
 
 /** Every key is present in the doc; lists hold scalar strings. Same type as Room's copy. */

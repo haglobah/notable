@@ -63,6 +63,8 @@ class LocalDocWriter(
     private val projection: ProjectionStateStore,
     private val canvasWidth: Double,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Where earlier states of pages are recorded (docs/plans/library-features.md, 40); null: none. */
+    private val versions: PageVersionStore? = null,
 ) {
     private val mapping = RoomMapping { blobs.upload(it) }
     private val migration = RoomToAutomergeMigration(local, blobs, LibraryDocStore(), migrationState, canvasWidth)
@@ -130,6 +132,9 @@ class LocalDocWriter(
         is LocalChange.NotebookFinished -> readingState(change.id, null, change.at?.let(::Date), setFinished = true)
         is LocalChange.NotebookRated -> rate(change.id, change.rating, cleared = change.rating == null)
         is LocalChange.ReadingSynced -> syncReading(change.id)
+        is LocalChange.NotebookQueued -> entryDate(change.id, EntryDate.QUEUED, change.at?.let(::Date))
+        is LocalChange.NotebookTrashed -> entryDate(change.id, EntryDate.TRASHED, change.at?.let(::Date))
+        is LocalChange.FolderTrashed -> folderTrashed(change.id, change.at?.let(::Date))
         is LocalChange.QuickNotebookSet -> editLibrary { doc, tx ->
             if (AutomergeSchema.readLibrary(doc).quickNotebookId != change.id) AutomergeSchema.setQuickNotebookId(tx, change.id)
         }
@@ -167,6 +172,9 @@ class LocalDocWriter(
             readingState(nb.id, nb.readAt, nb.finishedAt, setFinished = true) +
                 rate(nb.id, nb.rating, cleared = false) + syncReading(nb.id)
         } ?: NONE
+        is DocDebt.NotebookTrash -> local.notebook(debt.id)?.let { entryDate(it.id, EntryDate.TRASHED, it.trashedAt) } ?: NONE
+        is DocDebt.NotebookQueue -> local.notebook(debt.id)?.let { entryDate(it.id, EntryDate.QUEUED, it.queuedAt) } ?: NONE
+        is DocDebt.FolderTrash -> local.folders().firstOrNull { it.id == debt.id }?.let { folderTrashed(it.id, it.trashedAt) } ?: NONE
     }
 
     /** The library's quickNotebookId, when it names a live entry. */
@@ -289,6 +297,7 @@ class LocalDocWriter(
         val page = local.pageRow(pageId) ?: return NONE // already gone from Room: nothing to mirror
         val (url, migrated) = docFor(page, create)
         if (url == null) return migrated
+        recordVersionIfDue(url, pageId)
         return migrated + commit(url) { doc, tx ->
             val obj = AutomergeSchema.pageObjOrNull(doc, pageId) ?: if (!create) return@commit false else {
                 putFullPage(doc, tx, pageId)
@@ -303,6 +312,37 @@ class LocalDocWriter(
             true
         } + touchOwningEntry(page)
     }
+
+    /** Before a page's first edit in a while: the doc's heads now, as a version to go back to. */
+    private fun recordVersionIfDue(url: String, pageId: String) {
+        val v = versions ?: return
+        if (!v.due(pageId)) return
+        runCatching { v.record(url, pageId, docs.edit(url) { it.heads }) }
+    }
+
+    /** [pageId] as it is now, recorded as a version (before a restore replaces it). */
+    fun recordVersion(pageId: String): Boolean {
+        val v = versions ?: return false
+        val page = local.pageRow(pageId) ?: return false
+        val url = docFor(page, create = false).first ?: return false
+        v.record(url, pageId, docs.edit(url) { it.heads })
+        return true
+    }
+
+    /** [version]'s page as Room strokes in this device's units; null when that doc or page isn't there. */
+    fun strokesAt(version: PageVersion): List<com.ethran.notable.data.db.Stroke>? = docs.edit(version.url) { doc ->
+        val old = doc.fork(version.heads)
+        try {
+            val page = AutomergeSchema.readPage(old, version.pageId) ?: return@edit null
+            val factor = canvasWidth / (AutomergeSchema.canvasWidthOf(old) ?: AutomergeProjector.DEFAULT_CANVAS_WIDTH)
+            val warnings = mutableListOf<String>()
+            page.strokes.values.map { roomStroke(it, version.pageId, factor, warnings) }
+        } finally {
+            old.free() // a native doc; forks aren't collected
+        }
+    }
+
+    fun versionsOf(pageId: String): List<PageVersion> = versions?.list(pageId).orEmpty()
 
     private fun touchPage(pageId: String, at: Date): WriteReceipt {
         val page = local.pageRow(pageId) ?: return NONE
@@ -439,6 +479,33 @@ class LocalDocWriter(
             }
             changed
         }
+    }
+
+    private enum class EntryDate { QUEUED, TRASHED }
+
+    /**
+     * Entry [id]'s queuedAt or trashedAt (docs/plans/library-features.md), when it differs; null
+     * and absent count as the same, so a null is written only over a date. No updatedAt bump.
+     */
+    private fun entryDate(id: String, which: EntryDate, at: Date?): WriteReceipt {
+        val (url, migrated) = ensureDoc(id)
+        if (url == null) return migrated
+        return migrated + commit(docs.libraryUrl()) { doc, tx ->
+            val e = AutomergeSchema.entryObjOrNull(doc, id) ?: return@commit false
+            val cur = AutomergeSchema.readLibrary(doc).notebooks.getValue(id)
+            val now = if (which == EntryDate.QUEUED) cur.queuedAt else cur.trashedAt
+            if (now == at) return@commit false
+            if (which == EntryDate.QUEUED) AutomergeSchema.setQueuedAt(tx, e, at) else AutomergeSchema.setTrashedAt(tx, e, at)
+            true
+        }
+    }
+
+    /** Folder [id]'s trashedAt, when it differs (null and absent alike). */
+    private fun folderTrashed(id: String, at: Date?): WriteReceipt = commit(docs.libraryUrl()) { doc, tx ->
+        val f = AutomergeSchema.folderObjOrNull(doc, id) ?: return@commit false
+        if (AutomergeSchema.readLibrary(doc).folders[id]?.trashedAt == at) return@commit false
+        AutomergeSchema.setTrashedAt(tx, f, at)
+        true
     }
 
     /**

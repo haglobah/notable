@@ -62,7 +62,7 @@ class Converters {
 
 @Database(
     entities = [Folder::class, Notebook::class, Page::class, Stroke::class, Image::class, Kv::class],
-    version = 40,
+    version = 41,
     autoMigrations = [
         AutoMigration(19, 20),
         AutoMigration(20, 21),
@@ -88,6 +88,9 @@ class Converters {
         AutoMigration(38, 39),
         // Adds the nullable `rating` and `pageCount` to `Notebook` (round 3 of the ebook features).
         AutoMigration(39, 40),
+        // Adds the nullable `queuedAt` and `trashedAt` to `Notebook`, `trashedAt` to `Folder`
+        // (docs/plans/library-features.md).
+        AutoMigration(40, 41),
     ], exportSchema = true
 )
 @TypeConverters(Converters::class)

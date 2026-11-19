@@ -106,6 +106,8 @@ object LibrarySearch {
         val numbers: Map<Field, Double?>,
         val kind: String,
         val state: String,
+        /** On the Read next list ([isNext]). */
+        val next: Boolean,
         val has: Set<String>,
     )
 
@@ -190,6 +192,7 @@ object LibrarySearch {
             ),
             kind = kindOf(e),
             state = stateOf(e),
+            next = isNext(e),
             has = has,
         )
     }
@@ -241,7 +244,7 @@ object LibrarySearch {
     private fun matchesOne(x: Indexed, field: Field?, v: String): Boolean = when (field) {
         null -> termScore(x, v) > 0
         Field.KIND -> x.kind == v
-        Field.IS -> x.state == v
+        Field.IS -> x.state == v || (v == "next" && x.next)
         Field.HAS -> v in x.has
         Field.ADDED, Field.EDITED, Field.READ, Field.FINISHED -> x.dates[field]?.startsWith(v) ?: false
         Field.RATING, Field.PAGES, Field.PROGRESS -> compares(x.numbers[field], v)
@@ -354,6 +357,60 @@ object LibrarySearch {
         else -> 0
     }
 
+    /* ---------------- the trash and Read next (docs/plans/library-features.md) ---------------- */
+
+    /** Folder [id] or one above it is in the trash. A missing folder isn't; cycles stop. Same as TS. */
+    fun isFolderTrashed(lib: AmLibrary, id: String?): Boolean {
+        val seen = HashSet<String>()
+        var f = id
+        while (!f.isNullOrEmpty() && f !in seen) {
+            val folder = lib.folders[f] ?: return false
+            if (folder.trashedAt != null) return true
+            seen += f
+            f = folder.parentId
+        }
+        return false
+    }
+
+    /** Entry [e] is in the trash: trashed itself, or inside a trashed folder. */
+    fun isTrashed(lib: AmLibrary, e: AmNotebookEntry) = e.trashedAt != null || isFolderTrashed(lib, e.folderId)
+
+    /** Queued, not finished, and not opened since it was queued. (The trash is the caller's.) */
+    fun isNext(e: AmNotebookEntry): Boolean {
+        val q = e.queuedAt ?: return false
+        return e.finishedAt == null && !(e.readAt != null && e.readAt.time >= q.time)
+    }
+
+    /** The Read next list: oldest queued first, then by id; nothing in the trash. */
+    fun readNext(lib: AmLibrary): List<AmNotebookEntry> =
+        lib.notebooks.values.filter { isNext(it) && !isTrashed(lib, it) }
+            .sortedWith(compareBy<AmNotebookEntry> { it.queuedAt!!.time }.then(byId))
+
+    sealed interface TrashItem {
+        val id: String
+        val trashedAt: Date
+        data class Folder(val folder: AmFolder) : TrashItem {
+            override val id get() = folder.id
+            override val trashedAt get() = folder.trashedAt!!
+        }
+        data class Notebook(val entry: AmNotebookEntry) : TrashItem {
+            override val id get() = entry.id
+            override val trashedAt get() = entry.trashedAt!!
+        }
+    }
+
+    /** What was trashed directly (not what's inside a trashed folder), most recently trashed first, then by id. */
+    fun trashOf(lib: AmLibrary): List<TrashItem> =
+        (lib.folders.values.filter { it.trashedAt != null }.map { TrashItem.Folder(it) } +
+            lib.notebooks.values.filter { it.trashedAt != null }.map { TrashItem.Notebook(it) })
+            .sortedWith(compareByDescending<TrashItem> { it.trashedAt.time }.thenBy { it.id })
+
+    const val TRASH_DAYS = 30
+
+    /** Trash items trashed at least [TRASH_DAYS] before [now]: due to be deleted for good. */
+    fun expiredTrash(lib: AmLibrary, now: Date): List<TrashItem> =
+        trashOf(lib).filter { now.time - it.trashedAt.time >= TRASH_DAYS * 86_400_000L }
+
     /** The folder ids [scope] stands for: its folder alone, or with every folder below it. */
     private fun folderIds(lib: AmLibrary, scope: Scope.In): Set<String?> {
         val ids = hashSetOf(scope.id)
@@ -375,6 +432,7 @@ object LibrarySearch {
         val scope = (q.scope as? Scope.In)?.let { folderIds(lib, it) }
         val rows = lib.notebooks.values.mapNotNull { e ->
             if (scope != null && e.folderId !in scope) return@mapNotNull null
+            if (isTrashed(lib, e)) return@mapNotNull null
             val x = index(lib, e)
             if (!tokens.all { matches(x, it) != it.negated }) return@mapNotNull null
             x to tokens.sumOf { if (!it.negated && it.field == null) termScore(x, it.values[0]) else 0 }

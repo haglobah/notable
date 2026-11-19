@@ -3,7 +3,7 @@
  * and sort"). The Kotlin twin is LibrarySearch.kt; both run fixtures/search-v1.json, so a query
  * finds the same entries in the same order on every device.
  */
-import type { Library, NotebookEntry } from "./model.ts"
+import type { Folder, Library, NotebookEntry } from "./model.ts"
 
 type Field = "title" | "authors" | "series" | "subjects" | "folder" | "publisher" | "isbn" | "language" | "description" | "published"
 type DateField = "added" | "edited" | "read" | "finished"
@@ -70,6 +70,8 @@ type Indexed = {
   dates: Record<DateField, string | null>
   kind: string
   state: "finished" | "reading" | "unread"
+  /** On the Read next list (isNext). */
+  next: boolean
   has: Set<string>
   /** progress is a percentage, 0 to 100. */
   numbers: Record<NumberField, number | null>
@@ -129,6 +131,7 @@ function index(lib: Library, e: NotebookEntry): Indexed {
     dates: { added: iso(e.createdAt), edited: iso(e.updatedAt), read: iso(e.readAt), finished: iso(e.finishedAt) },
     kind: e.kind === "quickPage" ? "quickpage" : e.source.kind === "none" ? "notebook" : e.source.kind,
     state: e.finishedAt ? "finished" : e.readAt ? "reading" : "unread",
+    next: isNext(e),
     has,
     numbers: { rating: e.rating ?? null, pages: e.pageCount ?? null, progress: progress === null ? null : progress * 100 },
   }
@@ -183,7 +186,7 @@ function matchesOne(x: Indexed, field: TokenField | null, v: string): boolean {
   switch (field) {
     case null: return termScore(x, v) > 0
     case "kind": return x.kind === v
-    case "is": return x.state === v
+    case "is": return x.state === v || (v === "next" && x.next)
     case "has": return x.has.has(v)
     case "rating": case "pages": case "progress": return compares(x.numbers[field], v)
     case "added": case "edited": case "read": case "finished": {
@@ -214,6 +217,51 @@ export type LibraryQuery = {
   /** With folderId: also the entries of every folder below it (cycles stop). */
   subfolders?: boolean
 }
+
+/*
+ * The trash and Read next (docs/plans/library-features.md).
+ */
+
+/** Folder [id] or one above it is in the trash. A missing folder isn't; cycles stop. */
+export function isFolderTrashed(lib: Library, id: string | null): boolean {
+  const seen = new Set<string>()
+  for (let f = id; f && !seen.has(f) && lib.folders[f]; f = lib.folders[f].parentId) {
+    seen.add(f)
+    if (lib.folders[f].trashedAt) return true
+  }
+  return false
+}
+
+/** Entry [e] is in the trash: trashed itself, or inside a trashed folder. */
+export const isTrashed = (lib: Library, e: NotebookEntry) => !!e.trashedAt || isFolderTrashed(lib, e.folderId)
+
+/** Queued, not finished, and not opened since it was queued. (Trash is the caller's: see readNext.) */
+export const isNext = (e: NotebookEntry) =>
+  !!e.queuedAt && !e.finishedAt && !(e.readAt && e.readAt.getTime() >= e.queuedAt.getTime())
+
+/** The Read next list: oldest queued first, then by id; nothing in the trash. */
+export function readNext(lib: Library): NotebookEntry[] {
+  return Object.values(lib.notebooks)
+    .filter(e => isNext(e) && !isTrashed(lib, e))
+    .sort((a, b) => a.queuedAt!.getTime() - b.queuedAt!.getTime() || byId(a, b))
+}
+
+export type TrashItem = { kind: "folder"; folder: Folder } | { kind: "notebook"; entry: NotebookEntry }
+
+/** What was trashed directly (not what's inside a trashed folder), most recently trashed first, then by id. */
+export function trashOf(lib: Library): TrashItem[] {
+  const items: { at: number; id: string; item: TrashItem }[] = [
+    ...Object.values(lib.folders).filter(f => f.trashedAt).map(f => ({ at: f.trashedAt!.getTime(), id: f.id, item: { kind: "folder", folder: f } as TrashItem })),
+    ...Object.values(lib.notebooks).filter(e => e.trashedAt).map(e => ({ at: e.trashedAt!.getTime(), id: e.id, item: { kind: "notebook", entry: e } as TrashItem })),
+  ]
+  return items.sort((a, b) => b.at - a.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map(x => x.item)
+}
+
+export const TRASH_DAYS = 30
+
+/** Trash items trashed at least TRASH_DAYS before [now]: due to be deleted for good. */
+export const expiredTrash = (lib: Library, now: Date) =>
+  trashOf(lib).filter(t => now.getTime() - (t.kind === "folder" ? t.folder.trashedAt! : t.entry.trashedAt!).getTime() >= TRASH_DAYS * 86_400_000)
 
 /** The folder ids [folderId] stands for: it alone, or with every folder below it. */
 function scopeOf(lib: Library, folderId: string | null, subfolders: boolean): Set<string | null> {
@@ -286,6 +334,7 @@ export function queryLibrary(lib: Library, q: LibraryQuery): NotebookEntry[] {
   const rows: { x: Indexed; score: number }[] = []
   for (const e of Object.values(lib.notebooks)) {
     if (scope && !scope.has(e.folderId)) continue
+    if (isTrashed(lib, e)) continue
     const x = index(lib, e)
     if (!tokens.every(t => matches(x, t) !== t.negated)) continue
     const score = tokens.reduce((sum, t) => sum + (!t.negated && t.field === null ? termScore(x, t.values[0]) : 0), 0)

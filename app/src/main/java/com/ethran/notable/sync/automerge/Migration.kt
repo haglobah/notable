@@ -206,7 +206,7 @@ class RoomToAutomergeMigration(
             kind = AmEntryKind.NOTEBOOK, source = source, createdAt = nb.createdAt, updatedAt = nb.updatedAt,
             // The book's metadata is read at import into Room, and reaches the doc here, whole.
             meta = nb.bookMeta?.takeUnless { it.isEmpty }, readAt = nb.readAt, finishedAt = nb.finishedAt,
-            rating = nb.rating,
+            rating = nb.rating, queuedAt = nb.queuedAt, trashedAt = nb.trashedAt,
             // Page count and open page as the new doc has them (docs/plans/ebook-features.md, round 3).
             pageCount = mapped.size,
             readPage = mapped.indexOfFirst { it.id == nb.openPageId }.takeIf { it >= 0 },

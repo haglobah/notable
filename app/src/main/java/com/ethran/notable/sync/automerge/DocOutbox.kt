@@ -58,6 +58,23 @@ sealed interface DocDebt {
         override val key get() = "qmove/$pageId"
     }
 
+    /**
+     * Folder [id]'s trashedAt, notebook [id]'s trashedAt, notebook [id]'s queuedAt
+     * (docs/plans/library-features.md). Each its own debt, so replaying another field never writes
+     * Room's copy of these over a change another device made.
+     */
+    data class FolderTrash(val id: String) : DocDebt {
+        override val key get() = "ftrash/$id"
+    }
+
+    data class NotebookTrash(val id: String) : DocDebt {
+        override val key get() = "ntrash/$id"
+    }
+
+    data class NotebookQueue(val id: String) : DocDebt {
+        override val key get() = "queue/$id"
+    }
+
     /** A notebook's readAt, finishedAt, rating, and its entry's pageCount and readPage. */
     data class ReadingState(val id: String) : DocDebt {
         override val key get() = "reading/$id"
@@ -91,6 +108,9 @@ sealed interface DocDebt {
             is LocalChange.NotebookFinished -> ReadingState(change.id)
             is LocalChange.NotebookRated -> ReadingState(change.id)
             is LocalChange.ReadingSynced -> ReadingState(change.id)
+            is LocalChange.NotebookQueued -> NotebookQueue(change.id)
+            is LocalChange.NotebookTrashed -> NotebookTrash(change.id)
+            is LocalChange.FolderTrashed -> FolderTrash(change.id)
             is LocalChange.QuickNotebookSet -> QuickNotebook(change.id)
             is LocalChange.QuickPageMoved -> QuickPageMove(change.pageId, change.notebookId)
         }
@@ -201,6 +221,9 @@ class DocOutbox(
                 "open" -> DocDebt.OpenPage(str("id"))
                 "folder" -> DocDebt.FolderRow(str("id"))
                 "reading" -> DocDebt.ReadingState(str("id"))
+                "ftrash" -> DocDebt.FolderTrash(str("id"))
+                "ntrash" -> DocDebt.NotebookTrash(str("id"))
+                "queue" -> DocDebt.NotebookQueue(str("id"))
                 "quick" -> DocDebt.QuickNotebook(str("id"))
                 "qmove" -> DocDebt.QuickPageMove(str("page"), str("id"))
                 else -> throw IOException("${file.path}: unknown entry type '$t'")
@@ -225,6 +248,9 @@ class DocOutbox(
                 is DocDebt.OpenPage -> obj("t" to "open", "id" to d.notebookId)
                 is DocDebt.FolderRow -> obj("t" to "folder", "id" to d.id)
                 is DocDebt.ReadingState -> obj("t" to "reading", "id" to d.id)
+                is DocDebt.FolderTrash -> obj("t" to "ftrash", "id" to d.id)
+                is DocDebt.NotebookTrash -> obj("t" to "ntrash", "id" to d.id)
+                is DocDebt.NotebookQueue -> obj("t" to "queue", "id" to d.id)
                 is DocDebt.QuickNotebook -> obj("t" to "quick", "id" to d.id)
                 is DocDebt.QuickPageMove -> obj("t" to "qmove", "page" to d.pageId, "id" to d.notebookId)
             }

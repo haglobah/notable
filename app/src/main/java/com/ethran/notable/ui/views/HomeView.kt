@@ -41,6 +41,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +65,7 @@ import com.ethran.notable.ui.LocalSnackContext
 import com.ethran.notable.ui.SnackConf
 import com.ethran.notable.ui.components.BreadCrumb
 import com.ethran.notable.ui.components.LibraryBar
+import com.ethran.notable.ui.components.LibrarySelectionBar
 import com.ethran.notable.ui.components.NotebookCard
 import com.ethran.notable.ui.components.ResultsLine
 import com.ethran.notable.ui.components.ShowPagesRow
@@ -78,16 +80,21 @@ import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.dialogs.EmptyBookWarningHandler
 import com.ethran.notable.ui.dialogs.FolderConfigDialog
 import com.ethran.notable.ui.dialogs.NotebookConfigDialog
+import com.ethran.notable.ui.dialogs.ShowFolderSelectionDialog
+import com.ethran.notable.ui.dialogs.TrashDialog
+import com.ethran.notable.ui.viewmodels.LibraryItem
 import com.ethran.notable.ui.viewmodels.LibraryBrowse
 import com.ethran.notable.ui.viewmodels.LibraryUiState
 import com.ethran.notable.ui.viewmodels.LibraryViewModel
 import com.ethran.notable.ui.viewmodels.RecentNotebooks
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.CheckSquare
 import compose.icons.feathericons.FilePlus
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.FolderPlus
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Settings
+import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.Upload
 import io.shipbook.shipbooksdk.ShipBook
 
@@ -116,6 +123,13 @@ fun Library(
     val browse by viewModel.browse.collectAsStateWithLifecycle()
     val quickNotebookId by viewModel.quickNotebookId.collectAsStateWithLifecycle()
     val newlyCreatedBookId by viewModel.newlyCreatedBookId.collectAsStateWithLifecycle()
+    val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val trash by viewModel.trash.collectAsStateWithLifecycle()
+    var trashOpen by remember { mutableStateOf(false) }
+    if (trashOpen) TrashDialog(
+        rows = trash, onRestore = viewModel::restoreFromTrash, onDelete = viewModel::deleteForever,
+        onEmpty = viewModel::emptyTrash, onClose = { trashOpen = false },
+    )
 
     LaunchedEffect(folderId) {
         viewModel.loadFolder(folderId)
@@ -161,9 +175,38 @@ fun Library(
         onCreateNewNotebook = viewModel::onCreateNewNotebook,
         onImportPdf = viewModel::onPdfFile,
         onImportXopp = viewModel::onXoppFile,
-        onPreviewMissing = viewModel::onPreviewRequested
-
+        onPreviewMissing = viewModel::onPreviewRequested,
+        onHideFinished = viewModel::setHideFinished,
+        onOpenTrash = { viewModel.loadTrash(); trashOpen = true },
+        selection = LibrarySelectionUi(
+            selected = selection,
+            onToggle = viewModel::toggleSelected,
+            onSelectAll = viewModel::selectAll,
+            onClear = viewModel::clearSelection,
+            onMove = viewModel::moveSelected,
+            onSetFinished = viewModel::setSelectedFinished,
+            onSetQueued = viewModel::setSelectedQueued,
+            onTrash = viewModel::trashSelected,
+        ),
     )
+}
+
+/** Selecting in the library (docs/plans/library-features.md); [selected] empty: not selecting. */
+data class LibrarySelectionUi(
+    val selected: Set<LibraryItem> = emptySet(),
+    val onToggle: (LibraryItem) -> Unit = {},
+    val onSelectAll: (Collection<LibraryItem>) -> Unit = {},
+    val onClear: () -> Unit = {},
+    val onMove: (String?) -> Unit = {},
+    val onSetFinished: (Boolean) -> Unit = {},
+    val onSetQueued: (Boolean) -> Unit = {},
+    val onTrash: () -> Unit = {},
+) {
+    val active: Boolean get() = selected.isNotEmpty()
+    /** Null when not selecting, else whether [item] is selected: what a card shows. */
+    fun stateOf(item: LibraryItem): Boolean? = if (active) item in selected else null
+    /** A tap while selecting toggles; a long press starts selecting (or toggles while selecting). */
+    fun longPress(item: LibraryItem) = onToggle(item)
 }
 
 
@@ -190,14 +233,45 @@ fun LibraryContent(
     onCreateNewNotebook: () -> Unit,
     onImportPdf: (Uri) -> Unit,
     onImportXopp: (Uri) -> Unit,
-    onPreviewMissing: (String) -> Unit
+    onPreviewMissing: (String) -> Unit,
+    onHideFinished: (Boolean) -> Unit = {},
+    onOpenTrash: () -> Unit = {},
+    selection: LibrarySelectionUi = LibrarySelectionUi(),
 ) {
+    // Back while selecting ends the selection instead of leaving the folder.
+    androidx.activity.compose.BackHandler(enabled = selection.active) { selection.onClear() }
     Column(Modifier.fillMaxSize().background(NotableTheme.colors.paper)) {
         val results = browse.results?.takeIf { query.isNotBlank() }
+        val shownBooks = results?.notebooks ?: browse.sortedBooks ?: uiState.books
+        // Folders show only outside a search, so only then can they be selected.
+        val shownFolders = if (results == null) uiState.folders else emptyList()
+        val selectable = shownBooks.filter { it.pageIds.isNotEmpty() }.map { LibraryItem.Book(it.id) } +
+            shownFolders.map { LibraryItem.Shelf(it.id) }
+        var moving by remember { mutableStateOf(false) }
+        var details by remember { mutableStateOf<LibraryItem?>(null) }
+        if (moving) {
+            val n = selection.selected.size
+            ShowFolderSelectionDialog(
+                appRepository = appRepository,
+                notebookName = "",
+                title = pluralStringResource(R.plurals.select_move_title, n, n),
+                initialFolderId = uiState.folderId,
+                excludeIds = selection.selected.filterIsInstance<LibraryItem.Shelf>().map { it.id }.toSet(),
+                onCancel = { moving = false },
+                onConfirm = { folder -> moving = false; selection.onMove(folder) },
+            )
+        }
+        when (val d = details) {
+            is LibraryItem.Book -> NotebookConfigDialog(appRepository, exportEngine, bookId = d.id, onClose = { details = null })
+            is LibraryItem.Shelf -> FolderConfigDialog(appRepository.folderRepository, appRepository.edits, folderId = d.id,
+                onClose = { details = null })
+            null -> Unit
+        }
         NotebookGrid(
             appRepository = appRepository,
             exportEngine = exportEngine,
-            books = results?.notebooks ?: browse.sortedBooks ?: uiState.books,
+            books = shownBooks,
+            selection = selection,
             isImporting = uiState.isImporting,
             onNavigateToEditor = onNavigateToEditor,
             onDeleteEmptyBook = onDeleteEmptyBook,
@@ -221,11 +295,25 @@ fun LibraryContent(
                 stringResource(R.string.library_search_none) else null,
             header = {
                 Column {
-                    LibraryBar(query = query, onQueryChange = onQueryChange, browse = browse,
+                    if (selection.active) {
+                        val selectedBooks = shownBooks.filter { LibraryItem.Book(it.id) in selection.selected }
+                        LibrarySelectionBar(
+                            count = selection.selected.size, books = selectedBooks,
+                            canSelectMore = !selection.selected.containsAll(selectable),
+                            onSelectAll = { selection.onSelectAll(selectable) }, onClear = selection.onClear,
+                            onMove = { moving = true }, onSetFinished = selection.onSetFinished,
+                            onSetQueued = selection.onSetQueued, onTrash = selection.onTrash,
+                            onDetails = selection.selected.singleOrNull()?.let { only -> { selection.onClear(); details = only } },
+                        )
+                    } else LibraryBar(query = query, onQueryChange = onQueryChange, browse = browse,
                         onToggleFilter = onToggleFilter, onSort = onSort,
                         onOpenNotebook = { nb -> onNavigateToEditor(RecentNotebooks.pageOf(nb), nb.id) },
+                        onHideFinished = onHideFinished,
                         // Navigation lives with the bar, at its far right; a dot marks an update.
-                        trailing = { SettingsButton(updateAvailable = !uiState.isLatestVersion, onClick = onNavigateToSettings) })
+                        trailing = {
+                            NIconButton(FeatherIcons.Trash2, stringResource(R.string.trash_title), onOpenTrash)
+                            SettingsButton(updateAvailable = !uiState.isLatestVersion, onClick = onNavigateToSettings)
+                        })
                     Spacer(Modifier.height(NotableSpace.xl))
                     if (results != null) {
                         if (results.quickPages.isNotEmpty()) ShowPagesRow(
@@ -257,7 +345,7 @@ fun LibraryContent(
                     // Folders as a row above the cards, without a heading.
                     if (uiState.folders.isNotEmpty()) {
                         Spacer(Modifier.height(NotableSpace.sm))
-                        FolderList(appRepository, uiState.folders, onNavigateToFolder)
+                        FolderList(appRepository, uiState.folders, onNavigateToFolder, selection)
                     }
                 }
             }
@@ -274,7 +362,8 @@ private fun SettingsButton(updateAvailable: Boolean, onClick: () -> Unit) =
 fun FolderList(
     appRepository: AppRepository,
     folders: List<Folder>,
-    onNavigateToFolder: (String) -> Unit
+    onNavigateToFolder: (String) -> Unit,
+    selection: LibrarySelectionUi = LibrarySelectionUi(),
 ) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm),
@@ -284,38 +373,26 @@ fun FolderList(
     ) {
         if (folders.isNotEmpty()) {
             items(folders, key = { it.id }) { folder ->
-                var isFolderSettingsOpen by remember { mutableStateOf(false) }
-                if (isFolderSettingsOpen) FolderConfigDialog(
-                    appRepository.folderRepository,
-                    appRepository.edits,
-                    folderId = folder.id,
-                    onClose = {
-                        log.i("Closing Directory Dialog")
-                        isFolderSettingsOpen = false
-                    })
-                FolderButton(
-                    title = folder.title,
-                    onClick = { onNavigateToFolder(folder.id) },
-                    onLongClick = { isFolderSettingsOpen = true })
+                // A long press selects the folder (its settings are under Details then).
+                val item = LibraryItem.Shelf(folder.id)
+                val selected = selection.stateOf(item)
+                NButton(folder.title,
+                    onClick = { if (selected != null) selection.onToggle(item) else onNavigateToFolder(folder.id) },
+                    style = NButtonStyle.Quiet, icon = if (selected == true) FeatherIcons.CheckSquare else FeatherIcons.Folder,
+                    selected = selected == true,
+                    onLongClick = { selection.longPress(item) })
             }
         }
     }
 }
 
-/**
- * A folder: a quiet [NButton] (folder icon, no border), so places read differently from the
- * outlined actions above them. Long press opens the folder settings.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun FolderButton(title: String, onClick: () -> Unit, onLongClick: () -> Unit) =
-    NButton(title, onClick, style = NButtonStyle.Quiet, icon = FeatherIcons.Folder, onLongClick = onLongClick)
 
 @Composable
 fun NotebookGrid(
     appRepository: AppRepository,
     exportEngine: ExportEngine,
     books: List<Notebook>,
+    selection: LibrarySelectionUi = LibrarySelectionUi(),
     isImporting: Boolean,
     onNavigateToEditor: (String, String) -> Unit,
     onDeleteEmptyBook: (String) -> Unit,
@@ -378,6 +455,10 @@ fun NotebookGrid(
                     finished = book.finishedAt != null,
                     folderPath = folderPaths[book.id],
                     rating = book.rating,
+                    queued = book.queuedAt != null,
+                    selected = selection.stateOf(LibraryItem.Book(book.id)),
+                    onToggleSelected = { selection.onToggle(LibraryItem.Book(book.id)) },
+                    onLongPress = { selection.longPress(LibraryItem.Book(book.id)) },
                 )
 
                 if (isSettingsOpen) {

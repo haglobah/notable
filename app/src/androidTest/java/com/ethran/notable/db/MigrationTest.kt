@@ -299,4 +299,47 @@ class MigrationTest {
             roomDb.close()
         }
     }
+
+    /**
+     * 40 -> 41 adds `queuedAt` and `trashedAt` to `Notebook` and `trashedAt` to `Folder`
+     * (docs/plans/library-features.md); rows keep their fields, the new ones read as null.
+     */
+    @Test(timeout = 60000)
+    @Throws(IOException::class)
+    fun migrate40To41_addsQueueAndTrashColumns() {
+        val dbName = "migration-test-41"
+        val oldDb = helper.createDatabase(dbName, 40)
+        oldDb.execSQL("INSERT INTO Folder (id, title, parentFolderId, createdAt, updatedAt) VALUES ('f1', 'F', NULL, 1, 2)")
+        oldDb.execSQL(
+            """
+            INSERT INTO Notebook (id, title, openPageId, pageIds, parentFolderId, defaultBackground, defaultBackgroundType,
+                createdAt, updatedAt, rating)
+            VALUES ('nb1', 'Book', 'p1', '["p1"]', 'f1', 'blank', 'native', 1, 2, 7)
+            """.trimIndent()
+        )
+        oldDb.close()
+        val db = helper.runMigrationsAndValidate(dbName, 41, true)
+        db.query("SELECT rating, queuedAt, trashedAt FROM Notebook WHERE id = 'nb1'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(7, it.getInt(0)); assertTrue(it.isNull(1)); assertTrue(it.isNull(2))
+        }
+        db.query("SELECT trashedAt FROM Folder WHERE id = 'f1'").use {
+            assertTrue(it.moveToFirst()); assertTrue(it.isNull(0))
+        }
+        db.close()
+        val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(MIGRATION_32_33, MIGRATION_37_38).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                assertEquals(1, roomDb.notebookDao().setQueuedAt("nb1", Date(5)))
+                assertEquals(1, roomDb.notebookDao().setTrashedAt("nb1", Date(6)))
+                assertEquals(1, roomDb.folderDao().setTrashedAt("f1", Date(7)))
+                val nb = roomDb.notebookDao().getById("nb1")!!
+                assertEquals(Date(5), nb.queuedAt); assertEquals(Date(6), nb.trashedAt); assertEquals(Date(2), nb.updatedAt)
+                assertEquals(Date(7), roomDb.folderDao().get("f1")!!.trashedAt)
+            }
+        } finally {
+            roomDb.close()
+        }
+    }
 }

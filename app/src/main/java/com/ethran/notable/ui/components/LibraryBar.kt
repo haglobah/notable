@@ -53,6 +53,7 @@ import com.ethran.notable.ui.viewmodels.QueryFilters
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowDown
 import compose.icons.feathericons.ArrowUp
+import compose.icons.feathericons.EyeOff
 import compose.icons.feathericons.HelpCircle
 import compose.icons.feathericons.X
 
@@ -75,7 +76,8 @@ private val MENUS = listOf(
     FacetMenu("kind", R.string.bar_type, { it.kinds }, { v -> KIND_NAMES[v]?.let { stringResource(it) } ?: v }),
 )
 
-private val STATES = listOf("reading" to R.string.filter_reading, "unread" to R.string.filter_unread, "finished" to R.string.filter_finished)
+private val STATES = listOf("reading" to R.string.filter_reading, "unread" to R.string.filter_unread,
+    "finished" to R.string.filter_finished, "next" to R.string.filter_next)
 
 @StringRes
 private fun sortLabel(key: SortKey?) = when (key) {
@@ -111,7 +113,8 @@ private fun directionLabel(key: SortKey, descending: Boolean) = when (key) {
  * docs/plans/design-system.md): two rows of 44 dp controls from the design system.
  * 1: the search field (clear, query syntax), "Recent" (the notebooks opened last; a tap opens
  * one), the sort (the key opens the menu, the arrow flips it), then [trailing] (the settings gear).
- * 2: All · Reading · Unread · Finished, the facet menus, Clear; it scrolls sideways and never
+ * "Read next" sits after "Recent" when the list has books (docs/plans/library-features.md).
+ * 2: All · Reading · Unread · Finished · Read next, the facet menus, Hide finished, Clear; it scrolls sideways and never
  * wraps. Filters are query tokens ([QueryFilters]).
  */
 @Composable
@@ -122,6 +125,8 @@ fun LibraryBar(
     onToggleFilter: (field: String, value: String) -> Unit,
     onSort: (SortKey?, Boolean?) -> Unit,
     onOpenNotebook: (Notebook) -> Unit = {},
+    /** Hide finished books (docs/plans/library-features.md); remembered per device. */
+    onHideFinished: (Boolean) -> Unit = {},
     /** At the far right of the search row: navigation such as the settings gear. */
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
@@ -130,6 +135,7 @@ fun LibraryBar(
             horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm)) {
             SearchField(query, onQueryChange, Modifier.weight(1f))
             if (browse.recent.isNotEmpty()) RecentControl(browse.recent, onOpenNotebook)
+            if (browse.readNext.isNotEmpty()) ReadNextControl(browse.readNext, onOpenNotebook)
             SortControl(browse, onSort)
             trailing()
         }
@@ -144,6 +150,8 @@ fun LibraryBar(
                 if (values.isEmpty()) continue // a menu without values isn't shown
                 FacetButton(m, values, query, onToggleFilter)
             }
+            NButton(stringResource(R.string.bar_hide_finished), onClick = { onHideFinished(!browse.hideFinished) },
+                selected = browse.hideFinished, icon = FeatherIcons.EyeOff)
             if (QueryFilters.hasFilters(query)) NButton(stringResource(R.string.bar_clear),
                 onClick = { onQueryChange(QueryFilters.clearFilters(query)) },
                 style = NButtonStyle.Quiet, icon = FeatherIcons.X)
@@ -218,6 +226,23 @@ private fun RecentControl(recent: List<Notebook>, onOpen: (Notebook) -> Unit) {
         if (open) NLazyMenu(onDismiss = { open = false }) {
             items(recent, key = { it.id }) { nb ->
                 NMenuItem(nb.title, meta = nb.readAt?.let { whenOpened(it.time) }, onClick = {
+                    open = false
+                    onOpen(nb)
+                })
+            }
+        }
+    }
+}
+
+/** "Read next": the books put on the list, oldest first; a tap opens one. */
+@Composable
+private fun ReadNextControl(books: List<Notebook>, onOpen: (Notebook) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        NSelectTrigger(stringResource(R.string.bar_read_next) + " ${books.size}", { open = !open })
+        if (open) NLazyMenu(onDismiss = { open = false }) {
+            items(books, key = { it.id }) { nb ->
+                NMenuItem(nb.title, meta = nb.bookMeta?.authors?.firstOrNull(), onClick = {
                     open = false
                     onOpen(nb)
                 })

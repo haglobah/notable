@@ -33,7 +33,11 @@ export type Library = {
   quickNotebookId?: string
 }
 
-export type Folder = { id: string; title: string; parentId: string | null; createdAt: Date; updatedAt: Date }
+export type Folder = {
+  id: string; title: string; parentId: string | null; createdAt: Date; updatedAt: Date
+  /** In the trash since then (docs/plans/library-features.md); null when restored; absent when never trashed. */
+  trashedAt?: Date | null
+}
 
 /** "quickPage": a single page living directly in a folder (Room: page.notebookId == null). */
 export type EntryKind = "notebook" | "quickPage"
@@ -60,6 +64,10 @@ export type NotebookEntry = {
   readPage?: number
   /** 1 to 10; null when cleared; absent when never rated. */
   rating?: number | null
+  /** On the Read next list since then; null when taken off; absent when never queued. */
+  queuedAt?: Date | null
+  /** In the trash since then; null when restored; absent when never trashed. */
+  trashedAt?: Date | null
 }
 
 /** A book's metadata, written whole once at import. Every key is present. */

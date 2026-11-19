@@ -7,6 +7,8 @@ import type { BookMeta, CodeImage, Library, Notebook, NotebookEntry, Page, Sourc
 type J = any
 
 const d = (v: string) => new Date(v)
+const dn = (v: string | null) => (v === null ? null : d(v))
+const isoN = (v: Date | null) => (v === null ? null : v.toISOString())
 const b64 = (v: string) => Uint8Array.from(Buffer.from(v, "base64"))
 
 export function libraryFromJson(j: J): Library {
@@ -14,13 +16,15 @@ export function libraryFromJson(j: J): Library {
     ...(j.codeDocUrl === undefined ? {} : { codeDocUrl: j.codeDocUrl }),
     ...(j.quickNotebookId === undefined ? {} : { quickNotebookId: j.quickNotebookId }),
     folders: Object.fromEntries(Object.entries<J>(j.folders).map(([id, f]) =>
-      [id, { id, title: f.title, parentId: f.parentId, createdAt: d(f.createdAt), updatedAt: d(f.updatedAt) }])),
+      [id, { id, title: f.title, parentId: f.parentId, createdAt: d(f.createdAt), updatedAt: d(f.updatedAt), ...(f.trashedAt === undefined ? {} : { trashedAt: dn(f.trashedAt) }) }])),
     notebooks: Object.fromEntries(Object.entries<J>(j.notebooks).map(([id, n]) =>
       [id, { id, docUrl: n.docUrl, title: n.title, folderId: n.folderId, kind: n.kind, source: n.source as Source, createdAt: d(n.createdAt), updatedAt: d(n.updatedAt), ...bookFieldsFromJson(n) }])),
   }
 }
 
-const bookFieldsFromJson = (n: J): Pick<NotebookEntry, "meta" | "readAt" | "finishedAt" | "pageCount" | "readPage" | "rating"> => ({
+const bookFieldsFromJson = (n: J): Pick<NotebookEntry, "meta" | "readAt" | "finishedAt" | "pageCount" | "readPage" | "rating" | "queuedAt" | "trashedAt"> => ({
+  ...(n.queuedAt === undefined ? {} : { queuedAt: dn(n.queuedAt) }),
+  ...(n.trashedAt === undefined ? {} : { trashedAt: dn(n.trashedAt) }),
   ...(n.pageCount === undefined ? {} : { pageCount: n.pageCount }),
   ...(n.readPage === undefined ? {} : { readPage: n.readPage }),
   ...(n.rating === undefined ? {} : { rating: n.rating }),
@@ -30,6 +34,8 @@ const bookFieldsFromJson = (n: J): Pick<NotebookEntry, "meta" | "readAt" | "fini
 })
 
 const bookFieldsToJson = (n: NotebookEntry): J => ({
+  ...(n.queuedAt === undefined ? {} : { queuedAt: isoN(n.queuedAt) }),
+  ...(n.trashedAt === undefined ? {} : { trashedAt: isoN(n.trashedAt) }),
   ...(n.pageCount === undefined ? {} : { pageCount: n.pageCount }),
   ...(n.readPage === undefined ? {} : { readPage: n.readPage }),
   ...(n.rating === undefined ? {} : { rating: n.rating }),
@@ -68,7 +74,7 @@ export function libraryToJson(l: Library): J {
     ...(l.codeDocUrl === undefined ? {} : { codeDocUrl: l.codeDocUrl }),
     ...(l.quickNotebookId === undefined ? {} : { quickNotebookId: l.quickNotebookId }),
     folders: Object.fromEntries(Object.values(l.folders).map(f =>
-      [f.id, { title: f.title, parentId: f.parentId, createdAt: f.createdAt.toISOString(), updatedAt: f.updatedAt.toISOString() }])),
+      [f.id, { title: f.title, parentId: f.parentId, createdAt: f.createdAt.toISOString(), updatedAt: f.updatedAt.toISOString(), ...(f.trashedAt === undefined ? {} : { trashedAt: isoN(f.trashedAt) }) }])),
     notebooks: Object.fromEntries(Object.values(l.notebooks).map(n =>
       [n.id, { docUrl: n.docUrl, title: n.title, folderId: n.folderId, kind: n.kind, source: n.source, createdAt: n.createdAt.toISOString(), updatedAt: n.updatedAt.toISOString(), ...bookFieldsToJson(n) }])),
   }
