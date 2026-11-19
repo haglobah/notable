@@ -102,6 +102,7 @@ fun NotableNavHost(
                     goToLibrary = {appNavigator.goToLibrary(it)},
                     goToPages = { bookId -> appNavigator.goToPages(bookId) },
                     goToBugReport = { appNavigator.goToBugReport() },
+                    goToEditor = { pageId, bId -> appNavigator.goToEditor(pageId, bId) },
                     bookId = bookId,
                     initialPageId = currentPageId,
                     isQuickNavOpen = appNavigator.isQuickNavOpen,

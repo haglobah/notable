@@ -340,6 +340,13 @@
     <string name="menu_group_edit">Edycja</string>
     <string name="menu_group_help">Pomoc</string>
     <string name="menu_group_commands">Polecenia</string>
+    <string name="panel_recent">Ostatnie</string>
+    <string name="panel_favorites">Ulubione strony</string>
+    <string name="panel_no_recent">Nie otwarto jeszcze żadnego zeszytu</string>
+    <string name="panel_no_favorites">Brak ulubionych stron</string>
+    <string name="panel_close">Zamknij</string>
+    <string name="browse_page">Strona %1$d z %2$d</string>
+    <string name="browse_return">Wróć do miejsca początkowego</string>
     <string name="page_menu_move_left">Przesuń w lewo</string>
     <string name="page_menu_move_right">Przesuń w prawo</string>
     <string name="page_menu_insert_after">Wstaw stronę za</string>

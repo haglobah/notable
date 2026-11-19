@@ -319,6 +319,13 @@
     <string name="menu_group_edit">Edit</string>
     <string name="menu_group_help">Help</string>
     <string name="menu_group_commands">Commands</string>
+    <string name="panel_recent">Recent</string>
+    <string name="panel_favorites">Favorite pages</string>
+    <string name="panel_no_recent">No notebooks opened yet</string>
+    <string name="panel_no_favorites">No favorite pages yet</string>
+    <string name="panel_close">Close</string>
+    <string name="browse_page">Page %1$d of %2$d</string>
+    <string name="browse_return">Back to where you started</string>
     <string name="page_menu_move_left">Move left</string>
     <string name="page_menu_move_right">Move right</string>
     <string name="page_menu_insert_after">Insert page after</string>
