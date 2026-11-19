@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -19,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,6 +30,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.ethran.notable.R
 import com.ethran.notable.ui.design.NControlSize
+import com.ethran.notable.ui.design.NIcon
 import com.ethran.notable.ui.design.NIconButton
 import com.ethran.notable.ui.design.NotableShape
 import com.ethran.notable.ui.design.NotableSize
@@ -33,6 +38,7 @@ import com.ethran.notable.ui.design.NotableSpace
 import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.theme.InkaTheme
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Check
 import compose.icons.feathericons.MoreHorizontal
 
 /**
@@ -59,14 +65,21 @@ fun NotebookCard(
     folderPath: String? = null,
     /** 1 to 10, shown as "★ 8". */
     rating: Int? = null,
+    /** On the Read next list. */
+    queued: Boolean = false,
+    /** Null: not selecting. Else whether this card is selected; a tap then toggles it. */
+    selected: Boolean? = null,
+    onToggleSelected: () -> Unit = {},
+    /** A long press; by default the details. The library uses it to start selecting. */
+    onLongPress: (() -> Unit)? = null,
 ) {
     val c = NotableTheme.colors
     val t = NotableTheme.type
     Column(modifier = modifier.fillMaxWidth().combinedClickable(
         interactionSource = remember { MutableInteractionSource() }, indication = null,
-        onClick = { onOpen(bookId, openPageId ?: pageIds.first()) },
-        onLongClick = { onOpenSettings(bookId) }
-    )) {
+        onClick = { if (selected != null) onToggleSelected() else onOpen(bookId, openPageId ?: pageIds.first()) },
+        onLongClick = { if (onLongPress != null) onLongPress() else onOpenSettings(bookId) }
+    ).semantics { if (selected != null) this.selected = selected }) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -80,8 +93,10 @@ fun NotebookCard(
                 pageId = pageIds[0],
                 onPreviewMissing = onPreviewMissing
             )
-            // Keep the paper edge visible above the loaded preview.
-            Box(Modifier.matchParentSize().border(NotableSize.hairline, c.rule, NotableShape.paper))
+            // Keep the paper edge visible above the loaded preview; a selected card gets an ink frame.
+            Box(Modifier.matchParentSize().border(
+                if (selected == true) 3.dp else NotableSize.hairline, if (selected == true) c.ink else c.rule, NotableShape.paper))
+            if (selected != null) SelectMark(selected, Modifier.align(Alignment.TopEnd).padding(NotableSpace.sm))
         }
         Row(Modifier.fillMaxWidth().padding(top = NotableSpace.sm), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f).padding(top = NotableSpace.xs)) {
@@ -107,17 +122,31 @@ fun NotebookCard(
                 val status = listOfNotNull(
                     rating?.let { stringResource(R.string.rating_value, it) },
                     if (finished) stringResource(R.string.library_finished) else null,
+                    if (queued && !finished) stringResource(R.string.library_read_next) else null,
                 )
                 if (status.isNotEmpty()) Meta(status.joinToString(" · "), Modifier.padding(top = NotableSpace.xxs))
                 if (!folderPath.isNullOrEmpty()) Meta(folderPath, Modifier.padding(top = NotableSpace.xxs))
             }
-            NIconButton(
+            if (selected == null) NIconButton(
                 icon = FeatherIcons.MoreHorizontal,
                 contentDescription = stringResource(R.string.library_notebook_details, title),
                 onClick = { onOpenSettings(bookId) },
                 size = NControlSize.Compact,
             )
         }
+    }
+}
+
+/** The selection mark on a cover: an ink disc with a check when selected, an empty ring when not. */
+@Composable
+fun SelectMark(selected: Boolean, modifier: Modifier = Modifier) {
+    val c = NotableTheme.colors
+    Box(
+        modifier.size(28.dp).background(if (selected) c.ink else c.paper, CircleShape)
+            .border(2.dp, c.ink, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) NIcon(FeatherIcons.Check, tint = c.paper, size = 18.dp)
     }
 }
 

@@ -110,10 +110,11 @@ fun FolderConfigDialog(folderRepository: FolderRepository,
         NDivider()
         Spacer(Modifier.height(NotableSpace.xl))
         NButton(
-            stringResource(R.string.folder_delete),
+            stringResource(R.string.folder_trash),
             onClick = {
                 scope.launch {
-                    withContext(Dispatchers.IO) { edits.deleteFolder(folderId) }
+                    // To the trash, with everything in it; restorable for 30 days (library-features).
+                    withContext(Dispatchers.IO) { edits.trashFolder(folderId) }
                     onClose()
                 }
             },

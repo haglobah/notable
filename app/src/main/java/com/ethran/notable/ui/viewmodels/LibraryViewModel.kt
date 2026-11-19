@@ -40,6 +40,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** Something in the library that can be selected (docs/plans/library-features.md). */
+sealed interface LibraryItem {
+    val id: String
+    data class Book(override val id: String) : LibraryItem
+    data class Shelf(override val id: String) : LibraryItem
+}
+
+/** One row of the trash: what it is, its name, and when it was trashed. */
+data class TrashRow(val item: LibrarySearch.TrashItem, val title: String, val trashedAt: java.util.Date)
+
 /** The chosen sort; [isDescending] resolves the key's default. */
 data class LibrarySort(val key: LibrarySearch.SortKey? = null, val descending: Boolean? = null) {
     val isDescending: Boolean get() = descending ?: key?.defaultDescending ?: false
@@ -58,6 +68,9 @@ data class LibraryBrowse(
     val everywhere: Boolean = false,
     val inFolder: Boolean = false,
     val recent: List<Notebook> = emptyList(),
+    /** The Read next list, oldest queued first. */
+    val readNext: List<Notebook> = emptyList(),
+    val hideFinished: Boolean = false,
 )
 
 data class LibraryUiState(
@@ -129,18 +142,40 @@ class LibraryViewModel @Inject constructor(
         )
     )
 
+    @Volatile private var lastBrowse = LibraryBrowse()
+
+    /** Per device (AppSettings): finished books stay out of the library's lists. */
+    private val _hideFinished = MutableStateFlow(GlobalAppSettings.current.libraryHideFinished)
+
     @OptIn(FlowPreview::class)
     val browse: StateFlow<LibraryBrowse> = combine(
-        _query.debounce(300), _folderId, _sort, _everywhere, _dbDataFlow,
-    ) { q, folderId, sort, everywhere, _ -> BrowseInput(q, folderId, sort, everywhere) }
-        .mapLatest { input -> withContext(Dispatchers.IO) { browseOf(input) } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LibraryBrowse())
+        combine(_query.debounce(300), _hideFinished) { q, h -> q to h }, _folderId, _sort, _everywhere, _dbDataFlow,
+    ) { (q, hide), folderId, sort, everywhere, _ -> BrowseInput(q, folderId, sort, everywhere, hide) }
+        .mapLatest { input ->
+            withContext(Dispatchers.IO) {
+                // A failed read keeps the last result rather than taking the app down.
+                try {
+                    browseOf(input)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").e("library browse failed: ${e.message}", e)
+                    lastBrowse
+                }
+            }.also { lastBrowse = it }
+        }
+        // Until the first search is done, the bar shows the saved sort and Hide finished.
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LibraryBrowse(sort = _sort.value, hideFinished = _hideFinished.value))
 
-    private data class BrowseInput(val query: String, val folderId: String?, val sort: LibrarySort, val everywhere: Boolean)
+    private data class BrowseInput(val query: String, val folderId: String?, val sort: LibrarySort, val everywhere: Boolean, val hideFinished: Boolean)
 
     private suspend fun browseOf(input: BrowseInput): LibraryBrowse {
         val folders = folderRepository.getAll()
         val books = bookRepository.getAll()
+        val trashed = LibrarySearchIndex.trashedNotebookIds(folders, books)
+        // An explicit `is:` filter asks for states by name, finished included: it wins over hiding.
+        val hide = input.hideFinished && QueryFilters.selected(input.query, "is").isEmpty()
+        fun List<Notebook>.shown() = if (hide) filter { it.finishedAt == null } else this
         val quick = pageRepository.getAllQuickPages()
         // At the root a query covers the library; in a folder, the folder and its subfolders.
         val searchScope = if (input.folderId == null || input.everywhere) LibrarySearch.Scope.All
@@ -156,10 +191,12 @@ class LibraryViewModel @Inject constructor(
             folders, books, quick,
         ).notebooks
         return LibraryBrowse(
-            results = results, sortedBooks = sorted,
+            results = results?.let { r -> r.copy(notebooks = r.notebooks.shown()) }, sortedBooks = sorted?.shown(),
             facets = LibrarySearchIndex.facets(searchScope, folders, books, quick),
             sort = input.sort, everywhere = input.everywhere, inFolder = input.folderId != null,
-            recent = RecentNotebooks.of(books),
+            recent = RecentNotebooks.of(books.filter { it.id !in trashed }),
+            readNext = LibrarySearchIndex.readNext(folders, books).filter { it.pageIds.isNotEmpty() },
+            hideFinished = input.hideFinished,
         )
     }
 
@@ -170,6 +207,154 @@ class LibraryViewModel @Inject constructor(
     /** A filter bar value: adds it to, or removes it from, field [field] of the query text. */
     fun toggleFilter(field: String, value: String) {
         _query.value = QueryFilters.toggle(_query.value, field, value)
+    }
+
+    fun setHideFinished(on: Boolean) {
+        _hideFinished.value = on
+        viewModelScope.launch(Dispatchers.IO) {
+            appRepository.kvProxy.setAppSettings(GlobalAppSettings.current.copy(libraryHideFinished = on))
+        }
+    }
+
+    /* ---------------- selection and bulk actions (docs/plans/library-features.md) ---------------- */
+
+    private val _selection = MutableStateFlow<Set<LibraryItem>>(emptySet())
+    /** Empty: not selecting. A long press starts it; then taps add and remove. */
+    val selection: StateFlow<Set<LibraryItem>> = _selection
+
+    fun toggleSelected(item: LibraryItem) {
+        _selection.value = _selection.value.let { if (item in it) it - item else it + item }
+    }
+
+    fun selectAll(items: Collection<LibraryItem>) {
+        _selection.value = _selection.value + items
+    }
+
+    fun clearSelection() {
+        _selection.value = emptySet()
+    }
+
+    /** Runs [action] on each selected item off the main thread, ends the selection, and says how it went. */
+    private fun bulk(done: (Int) -> String, undo: (suspend (Set<LibraryItem>) -> Unit)? = null,
+                     action: suspend (LibraryItem) -> Boolean) {
+        val items = _selection.value
+        if (items.isEmpty()) return
+        _selection.value = emptySet()
+        viewModelScope.launch(Dispatchers.IO) {
+            var n = 0
+            var failure: String? = null
+            for (item in items) {
+                try {
+                    if (action(item)) n++
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failure = e.message ?: e.javaClass.simpleName
+                }
+            }
+            val text = done(n) + (failure?.let { " (failed: $it)" } ?: "")
+            val id = java.util.UUID.randomUUID().toString()
+            // Undo replaces the snack with its outcome, so it can't be tapped twice.
+            val actions = if (undo != null && n > 0) listOf("Undo" to {
+                viewModelScope.launch(Dispatchers.IO) {
+                    val result = runCatching { undo(items) }.exceptionOrNull()
+                    snackDispatcher.showOrUpdateSnack(SnackConf(id = id, duration = 3000,
+                        text = result?.let { "Could not undo: ${it.message}" } ?: "Restored ${items(items.size)}"))
+                }
+                Unit
+            }) else null
+            snackDispatcher.showOrUpdateSnack(SnackConf(id = id, text = text, duration = if (actions != null) 10_000 else 3000, actions = actions))
+        }
+    }
+
+    private fun items(n: Int) = if (n == 1) "1 item" else "$n items"
+    private fun books(n: Int) = if (n == 1) "1 book" else "$n books"
+
+    /** Moves the selection into [folderId] (null: the root). A folder can't go into itself. */
+    fun moveSelected(folderId: String?) = bulk({ "Moved ${items(it)}" }) { item ->
+        when (item) {
+            is LibraryItem.Book -> { appRepository.edits.moveNotebook(item.id, folderId); true }
+            is LibraryItem.Shelf -> appRepository.edits.moveFolder(item.id, folderId)
+        }
+    }
+
+    /** "Mark as read" ([finished]) or "Mark as unread" for the selected notebooks; folders are skipped. */
+    fun setSelectedFinished(finished: Boolean) =
+        bulk({ if (finished) "Marked ${books(it)} as read" else "Marked ${books(it)} as unread" }) { item ->
+            if (item !is LibraryItem.Book) return@bulk false
+            appRepository.edits.setNotebookFinished(item.id, finished); true
+        }
+
+    /** Puts the selected notebooks on the Read next list, or takes them off. */
+    fun setSelectedQueued(queued: Boolean) =
+        bulk({ if (queued) "Added ${books(it)} to Read next" else "Took ${books(it)} off Read next" }) { item ->
+            if (item !is LibraryItem.Book) return@bulk false
+            appRepository.edits.setNotebookQueued(item.id, queued); true
+        }
+
+    /** To the trash, with an Undo. */
+    fun trashSelected() = bulk(
+        done = { "Moved ${items(it)} to the trash" },
+        // Folders first: a book restored while its folder is still in the trash would go to the root.
+        undo = { items -> items.sortedBy { if (it is LibraryItem.Shelf) 0 else 1 }.forEach { restore(it) } },
+    ) { item ->
+        when (item) {
+            is LibraryItem.Book -> appRepository.edits.trashNotebook(item.id)
+            is LibraryItem.Shelf -> appRepository.edits.trashFolder(item.id)
+        }
+        true
+    }
+
+    private suspend fun restore(item: LibraryItem) = when (item) {
+        is LibraryItem.Book -> appRepository.edits.restoreNotebook(item.id)
+        is LibraryItem.Shelf -> appRepository.edits.restoreFolder(item.id)
+    }
+
+    /* ------------------------------ the trash ------------------------------ */
+
+    private val _trash = MutableStateFlow<List<TrashRow>>(emptyList())
+    /** Filled by [loadTrash] when the trash opens. */
+    val trash: StateFlow<List<TrashRow>> = _trash
+
+    fun loadTrash() {
+        viewModelScope.launch(Dispatchers.IO) { _trash.value = trashRows() }
+    }
+
+    private fun trashRows(): List<TrashRow> {
+        val lib = LibrarySearchIndex.library(folderRepository.getAll(), bookRepository.getAll(), emptyList())
+        return LibrarySearch.trashOf(lib).map { t ->
+            val title = when (t) {
+                is LibrarySearch.TrashItem.Folder -> t.folder.title
+                is LibrarySearch.TrashItem.Notebook -> t.entry.title
+            }
+            TrashRow(t, title, t.trashedAt)
+        }
+    }
+
+    private fun trashEdit(what: String, edit: suspend () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                edit()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                snackDispatcher.showOrUpdateSnack(SnackConf(text = "Could not $what: ${e.message}", duration = 4000))
+            }
+            _trash.value = trashRows()
+        }
+    }
+
+    fun restoreFromTrash(row: TrashRow) = trashEdit("restore ${row.title}") {
+        when (val t = row.item) {
+            is LibrarySearch.TrashItem.Folder -> appRepository.edits.restoreFolder(t.id)
+            is LibrarySearch.TrashItem.Notebook -> appRepository.edits.restoreNotebook(t.id)
+        }
+    }
+
+    fun deleteForever(row: TrashRow) = trashEdit("delete ${row.title}") { appRepository.edits.deleteTrashItem(row.item) }
+
+    fun emptyTrash() = trashEdit("empty the trash") {
+        trashRows().forEach { appRepository.edits.deleteTrashItem(it.item) }
     }
 
     fun setEverywhere(on: Boolean) {
@@ -189,15 +374,16 @@ class LibraryViewModel @Inject constructor(
 
     // 3. Expose the final UI State
     val uiState: StateFlow<LibraryUiState> = combine(
-        _folderId, _isLatestVersion, _isImporting, _breadcrumbFolders, _dbDataFlow
-    ) { folderId, isLatestVersion, isImporting, breadcrumbs, dbData ->
+        combine(_folderId, _hideFinished) { f, h -> f to h }, _isLatestVersion, _isImporting, _breadcrumbFolders, _dbDataFlow
+    ) { (folderId, hideFinished), isLatestVersion, isImporting, breadcrumbs, dbData ->
         LibraryUiState(
             folderId = folderId,
             isLatestVersion = isLatestVersion,
             isImporting = isImporting,
             breadcrumbFolders = breadcrumbs,
-            folders = dbData.folders,
-            books = dbData.books,
+            // The trash (docs/plans/library-features.md): what's in it stays out of the folder views.
+            folders = dbData.folders.filter { it.trashedAt == null },
+            books = dbData.books.filter { it.trashedAt == null && !(hideFinished && it.finishedAt != null) },
             singlePages = dbData.singlePages,
         )
     }.stateIn(
@@ -229,6 +415,15 @@ class LibraryViewModel @Inject constructor(
             }
             refreshQuickNotebook()
             try {
+                // The trash empties itself after 30 days (docs/plans/library-features.md).
+                val gone = appRepository.edits.emptyExpiredTrash()
+                if (gone > 0) io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").i("deleted $gone trash items older than 30 days")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").e("emptying the trash failed: ${e.message}", e)
+            }
+            try {
                 val n = appRepository.edits.backfillPageCounts()
                 if (n > 0) io.shipbook.shipbooksdk.ShipBook.getLogger("LibraryViewModel").i("synced the page count of $n notebooks")
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -245,6 +440,7 @@ class LibraryViewModel @Inject constructor(
 
     fun loadFolder(folderId: String?) {
         pageDataManager.cancelLoadingPages()
+        _selection.value = emptySet()
         _folderId.value = folderId
 
         // Resolve breadcrumbs in background thread

@@ -47,6 +47,10 @@ fun ShowFolderSelectionDialog(
     notebookName: String,
     initialFolderId: String?,
     onCancel: () -> Unit,
+    /** Folders that can't be a target: the ones being moved (a folder can't go into itself). */
+    excludeIds: Set<String> = emptySet(),
+    /** Instead of "Move “name”", e.g. "Move 3 items". */
+    title: String? = null,
     onConfirm: (String?) -> Unit
 ) {
 
@@ -63,7 +67,7 @@ fun ShowFolderSelectionDialog(
     val c = NotableTheme.colors
 
     NDialog(
-        title = stringResource(R.string.move_heading, notebookName),
+        title = title ?: stringResource(R.string.move_heading, notebookName),
         onDismiss = onCancel,
         maxWidth = 560.dp,
         actions = {
@@ -82,7 +86,8 @@ fun ShowFolderSelectionDialog(
                 icon = FeatherIcons.CornerLeftUp,
                 enabled = currentFolderId != null,
             )
-            val folders = availableFolders.orEmpty()
+            // Folders in the trash, and those being moved, aren't places to move to.
+            val folders = availableFolders.orEmpty().filter { it.trashedAt == null && it.id !in excludeIds }
             folders.forEach { folder ->
                 NMenuItem(
                     folder.title,

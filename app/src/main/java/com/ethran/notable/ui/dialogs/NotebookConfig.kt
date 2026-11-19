@@ -45,6 +45,7 @@ import com.ethran.notable.ui.design.NIcon
 import com.ethran.notable.ui.design.NNotice
 import com.ethran.notable.ui.design.NSettingRow
 import com.ethran.notable.ui.design.NTextField
+import com.ethran.notable.ui.design.NToggleRow
 import com.ethran.notable.ui.design.NotableShape
 import com.ethran.notable.ui.design.NotableSize
 import com.ethran.notable.ui.design.NotableSpace
@@ -82,7 +83,6 @@ fun NotebookConfigDialog(
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var retry by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var showDelete by remember { mutableStateOf(false) }
     var showMove by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
     var showBackground by remember { mutableStateOf(false) }
@@ -132,22 +132,6 @@ fun NotebookConfigDialog(
                 perform { io { edits.setNotebookBackground(bookId, type, value) } }
             },
             onClose = { showBackground = false },
-        )
-        return
-    }
-    if (showDelete) {
-        ShowSimpleConfirmationDialog(
-            title = stringResource(R.string.details_delete_title),
-            message = stringResource(R.string.details_delete_message, title),
-            confirmButtonText = stringResource(R.string.dialog_delete),
-            destructive = true,
-            onConfirm = {
-                showDelete = false
-                perform {
-                    io { edits.deleteNotebook(bookId) }
-                    onClose()
-                }
-            }, onCancel = { showDelete = false },
         )
         return
     }
@@ -223,7 +207,11 @@ fun NotebookConfigDialog(
                 modifier = Modifier.padding(bottom = NotableSpace.sm))
             RatingPicker(book.rating, onRate = { r -> perform { io { edits.rateNotebook(bookId, r) } } })
         }
-        NDivider()
+        NToggleRow(stringResource(R.string.details_read), checked = book.finishedAt != null, enabled = !busy,
+            onCheckedChange = { on -> perform { io { edits.setNotebookFinished(bookId, on) } } })
+        NToggleRow(stringResource(R.string.details_read_next), checked = book.queuedAt != null, enabled = !busy,
+            description = stringResource(R.string.details_read_next_hint),
+            onCheckedChange = { on -> perform { io { edits.setNotebookQueued(bookId, on) } } })
         NotebookLinkRow(isLinkedInit = book.linkedExternalUri != null,
             linkedUriInit = book.linkedExternalUri, defaultPath = "",
             enabled = !busy, onLinkChanged = { uri ->
@@ -246,8 +234,9 @@ fun NotebookConfigDialog(
         Spacer(Modifier.height(NotableSpace.xl))
         NDivider()
         Spacer(Modifier.height(NotableSpace.xl))
-        NButton(stringResource(R.string.details_delete_title),
-            onClick = { perform { showDelete = true } }, style = NButtonStyle.Danger,
+        // To the trash, restorable for 30 days (docs/plans/library-features.md): no confirmation.
+        NButton(stringResource(R.string.details_trash),
+            onClick = { perform { io { edits.trashNotebook(bookId) }; onClose() } }, style = NButtonStyle.Danger,
             icon = FeatherIcons.Trash2, enabled = !busy)
     }
 }
