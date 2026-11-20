@@ -14,6 +14,7 @@ import com.ethran.notable.data.AppRepository
 import com.ethran.notable.editor.EditorDestination
 import com.ethran.notable.editor.EditorView
 import com.ethran.notable.io.ExportEngine
+import com.ethran.notable.ui.components.WithRecentsEdgeSwipe
 import com.ethran.notable.ui.views.BugReportDestination
 import com.ethran.notable.ui.views.BugReportScreen
 import com.ethran.notable.ui.views.Library
@@ -53,17 +54,19 @@ fun NotableNavHost(
                     nullable = true
                 }),
             ) {
-                Library(
-                    navController = appNavigator.navController,
-                    folderId = it.arguments?.getString(LibraryDestination.FOLDER_ID_ARG),
-                    goToPage = { pageId -> appNavigator.goToPage(appRepository, pageId) },
-                    onCreateNewQuickPage = { folderId ->
-                        appNavigator.onCreateNewQuickPage(
-                            appRepository,
-                            folderId
-                        )
-                    }
-                )
+                WithRecentsEdgeSwipe(goToEditor = { pageId, bId -> appNavigator.goToEditor(pageId, bId) }) {
+                    Library(
+                        navController = appNavigator.navController,
+                        folderId = it.arguments?.getString(LibraryDestination.FOLDER_ID_ARG),
+                        goToPage = { pageId -> appNavigator.goToPage(appRepository, pageId) },
+                        onCreateNewQuickPage = { folderId ->
+                            appNavigator.onCreateNewQuickPage(
+                                appRepository,
+                                folderId
+                            )
+                        }
+                    )
+                }
                 appNavigator.cleanCurrentPageId()
             }
             composable(
@@ -122,11 +125,15 @@ fun NotableNavHost(
                     type = NavType.StringType
                 }),
             ) {
-                PagesView(
-                    goToLibrary = { folderId -> appNavigator.goToLibrary(folderId) },
-                    goToEditor = { pageId, bId -> appNavigator.goToEditor(pageId, bId) },
-                    bookId = it.arguments?.getString(PagesDestination.BOOK_ID_ARG)!!,
-                )
+                val bookId = it.arguments?.getString(PagesDestination.BOOK_ID_ARG)!!
+                val goToEditor = { pageId: String, bId: String? -> appNavigator.goToEditor(pageId, bId) }
+                WithRecentsEdgeSwipe(goToEditor = goToEditor, currentBookId = bookId) {
+                    PagesView(
+                        goToLibrary = { folderId -> appNavigator.goToLibrary(folderId) },
+                        goToEditor = goToEditor,
+                        bookId = bookId,
+                    )
+                }
             }
             composable(
                 route = SettingsDestination.route,

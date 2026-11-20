@@ -67,12 +67,13 @@ fun isInwardSwipe(edge: EdgeSwipe, travel: Offset, minPx: Float): Boolean {
  * the toolbar and the editor's gesture receiver, without consuming them; once the finger has clearly
  * moved inward it consumes the rest of the gesture, so it doesn't also turn the page (a swipe in
  * from the right is a leftward swipe) or click a toolbar button under the finger. A second finger
- * leaves the gesture to the others.
+ * leaves the gesture to the others. Only swipes from [edges] are claimed; the others pass untouched.
  */
 fun Modifier.edgeSwipeGestures(
     enabled: Boolean,
+    edges: Set<EdgeSwipe> = EdgeSwipe.entries.toSet(),
     onSwipe: (EdgeSwipe) -> Unit,
-): Modifier = this.pointerInput(enabled) {
+): Modifier = this.pointerInput(enabled, edges) {
     if (!enabled) return@pointerInput
     val edgePx = EDGE_ZONE.toPx()
     val claimPx = EDGE_CLAIM.toPx()
@@ -81,7 +82,8 @@ fun Modifier.edgeSwipeGestures(
         try {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             if (down.type != PointerType.Touch) return@awaitEachGesture
-            val edge = edgeSwipeZone(down.position, size, edgePx) ?: return@awaitEachGesture
+            val edge = edgeSwipeZone(down.position, size, edgePx)?.takeIf { it in edges }
+                ?: return@awaitEachGesture
             var claimed = false
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
