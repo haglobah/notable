@@ -25,6 +25,7 @@ import com.ethran.notable.editor.ui.ScrollIndicator
 import com.ethran.notable.editor.ui.SelectedBitmap
 import com.ethran.notable.editor.ui.QuickBrowsePanel
 import com.ethran.notable.editor.ui.RecentsPanel
+import com.ethran.notable.editor.ui.toolbar.CustomViewBar
 import com.ethran.notable.editor.ui.toolbar.PositionedToolbar
 import com.ethran.notable.gestures.EdgeSwipe
 import com.ethran.notable.gestures.edgeSwipeGestures
@@ -198,6 +199,9 @@ fun EditorView(
                         CanvasEventBus.reloadFromDb.emit(Unit)
                     }
 
+                    is CanvasCommand.ApplyView -> editorControlTower.applyView(command.view)
+                    CanvasCommand.CaptureCustomView -> editorControlTower.captureCustomView()
+
                     is CanvasCommand.CopyImageToCanvas -> {
                         CanvasEventBus.addImageByUri.value = command.uri
                     }
@@ -279,6 +283,7 @@ fun EditorView(
             PositionedToolbar(
                 viewModel = viewModel, onDrawingStateCheck = { viewModel.updateDrawingState() })
             HorizontalScrollIndicator(viewModel = viewModel, page = page)
+            if (toolbarState.isChoosingCustomView) CustomViewBar(viewModel::onToolbarAction)
             val closePanel = { viewModel.onToolbarAction(ToolbarAction.OpenEdgePanel(EdgePanel.None)) }
             when (toolbarState.edgePanel) {
                 EdgePanel.Recents -> {

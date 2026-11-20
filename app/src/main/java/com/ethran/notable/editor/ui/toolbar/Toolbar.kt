@@ -52,7 +52,10 @@ fun ToolbarContent(
     }
 
     // On exit or change of toolbar states, check if we should allow raw drawing
-    LaunchedEffect(uiState.isBackgroundSelectorModalOpen, uiState.isMenuOpen) {
+    LaunchedEffect(
+        uiState.isBackgroundSelectorModalOpen, uiState.isMenuOpen,
+        uiState.isShareDialogOpen, uiState.isViewDialogOpen,
+    ) {
         onDrawingStateCheck()
     }
 
@@ -67,6 +70,9 @@ fun ToolbarContent(
             onClose = { onAction(ToolbarAction.ToggleBackgroundSelector(false)) }
         )
     }
+
+    if (uiState.isShareDialogOpen) ShareDialog(uiState, onAction)
+    if (uiState.isViewDialogOpen) ViewDialog(uiState, onAction)
 
     if (!uiState.isToolbarOpen) {
         CollapsedToolbarButton(uiState, onAction)

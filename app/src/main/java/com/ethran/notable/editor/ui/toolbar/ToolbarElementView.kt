@@ -116,14 +116,14 @@ fun ToolbarElementView(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .height(35.dp)
+                        .height(BUTTON_SIZE.dp)
+                        .inkClickable { onAction(ToolbarAction.NavigateToPages) }
                         .padding(horizontal = NotableSpace.md)
                 ) {
                     Text(
                         text = uiState.pageNumberInfo,
                         style = NotableTheme.type.label,
                         color = NotableTheme.colors.ink,
-                        modifier = Modifier.inkClickable { onAction(ToolbarAction.NavigateToPages) },
                         textAlign = TextAlign.Center
                     )
                 }
@@ -240,7 +240,7 @@ private fun EraserSubmenu(
         offset = with(density) {
             IntOffset(
                 0,
-                43.dp.roundToPx()
+                (BUTTON_SIZE + 6).dp.roundToPx()
             )
         },
         onDismissRequest = {

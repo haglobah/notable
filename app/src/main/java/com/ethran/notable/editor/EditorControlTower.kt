@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import androidx.compose.ui.geometry.Offset
+import com.ethran.notable.editor.state.FixedView
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.editor.state.ClipboardStore
@@ -200,13 +201,23 @@ class EditorControlTower(
         }
     }
 
-    fun resetZoomAndScroll() {
+    /** Back to the notebook's fixed view, or to zoom 1 at the left edge without one. */
+    fun resetZoomAndScroll() = applyView(page.fixedView())
+
+    /** Shows the page at [view]; null: zoom 1 at the left edge, keeping the vertical scroll. */
+    fun applyView(view: FixedView?) {
         scope.launch {
-            page.scroll = Offset(0f, page.scroll.y)
-            page.applyZoomAndRedraw(1f)
-            // Request UI update
+            scrollInProgress.withLock {
+                if (view == null) page.showView(1f, Offset(0f, page.scroll.y))
+                else page.fixedViewTarget(view).let { (zoom, target) -> page.showView(zoom, target) }
+            }
             CanvasEventBus.refreshUiImmediately.emit(Unit)
         }
+    }
+
+    /** Hands the view the page shows now to the editor, as the notebook's custom view. */
+    fun captureCustomView() {
+        viewModel.onCustomViewCaptured(page.zoomLevel.value, page.scroll)
     }
 
     private fun onOpenPageCut(offset: Offset) {

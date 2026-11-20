@@ -2,6 +2,7 @@ package com.ethran.notable.data.datastore
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
+import com.ethran.notable.editor.state.FixedView
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarLayout
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarPen
 import kotlinx.serialization.Serializable
@@ -10,7 +11,8 @@ import kotlinx.serialization.Serializable
 // Define the target page size (A4 in points: 595 x 842)
 const val A4_WIDTH = 595
 const val A4_HEIGHT = 842
-const val BUTTON_SIZE = 37
+// The editor toolbar's height (and its buttons' hit size), dp.
+const val BUTTON_SIZE = 48
 
 
 object GlobalAppSettings {
@@ -83,6 +85,8 @@ data class AppSettings(
     val librarySort: String? = null,
     /** Null: the sort key's own default direction. */
     val librarySortDescending: Boolean? = null,
+    /** Notebooks shown at one fixed view on every page (editor/state/FixedView.kt), by id. */
+    val fixedViews: Map<String, FixedView> = emptyMap(),
 
     // Debug
     val showWelcome: Boolean = true,
