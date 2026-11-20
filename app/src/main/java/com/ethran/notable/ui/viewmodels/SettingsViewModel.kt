@@ -1,9 +1,5 @@
 package com.ethran.notable.ui.viewmodels
 
-import android.content.Context
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ethran.notable.R
@@ -11,11 +7,9 @@ import com.ethran.notable.data.datastore.AppSettings
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.data.db.KvProxy
 import com.ethran.notable.data.events.AppEventBus
-import com.ethran.notable.utils.isLatestVersion
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class GestureRowModel(
@@ -33,21 +27,6 @@ class SettingsViewModel @Inject constructor(
     // We use the GlobalAppSettings object directly.
     val settings: AppSettings
         get() = GlobalAppSettings.current
-
-    var isLatestVersion: Boolean by mutableStateOf(true)
-        private set
-
-    /**
-     * Checks if the app is the latest version.
-     */
-    fun checkUpdate(context: Context, force: Boolean = false) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val result = isLatestVersion(context, appEventBus, force)
-            withContext(Dispatchers.Main) {
-                isLatestVersion = result
-            }
-        }
-    }
 
     fun updateSettings(newSettings: AppSettings) {
         GlobalAppSettings.update(newSettings)

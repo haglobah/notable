@@ -21,6 +21,7 @@ import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.data.db.Notebook
 import com.ethran.notable.data.db.Page
 import com.ethran.notable.editor.state.ClipboardStore
+import com.ethran.notable.editor.state.FixedView
 import com.ethran.notable.ui.viewmodels.RecentNotebooks
 import com.ethran.notable.editor.state.History
 import com.ethran.notable.editor.state.Mode
@@ -115,6 +116,15 @@ data class ToolbarUiState(
     val rating: Int? = null,
     /** A contents or search dialog is open over the page. */
     val isBookPanelOpen: Boolean = false,
+
+    /** The share and export choices, opened from the menu. */
+    val isShareDialogOpen: Boolean = false,
+    /** The notebook's view choices (fit width, fit page, custom), opened from the menu. */
+    val isViewDialogOpen: Boolean = false,
+    /** The notebook's fixed view; null: each page keeps its own zoom. */
+    val fixedView: FixedView? = null,
+    /** Pinch and pan, then Set: the custom fixed view is being chosen. */
+    val isChoosingCustomView: Boolean = false,
     /** A panel opened by an edge swipe: recent notebooks (left) or the pages (right). */
     val edgePanel: EdgePanel = EdgePanel.None,
 ) {
@@ -126,10 +136,9 @@ data class ToolbarUiState(
     val isDrawingAllowed: Boolean
         get() = !isSelectionActive &&
                 !(isMenuOpen || isStrokeSelectionOpen || isBackgroundSelectorModalOpen || isBookPanelOpen)
-                && edgePanel == EdgePanel.None
+                && !(isShareDialogOpen || isViewDialogOpen || edgePanel != EdgePanel.None)
                 && !isQuickNavOpen
 }
-
 
 /** The panels an edge swipe opens over the page, after reMarkable's drawer and quick browse. */
 enum class EdgePanel {
@@ -193,6 +202,13 @@ sealed class ToolbarAction {
     object ClearSearchHighlights : ToolbarAction()
 
     object CloseAllMenus : ToolbarAction()
+
+    data class ToggleShareDialog(val isOpen: Boolean) : ToolbarAction()
+    data class ToggleViewDialog(val isOpen: Boolean) : ToolbarAction()
+    /** Null: free zoom per page. [FixedView.Fit.Custom] starts choosing the view (pinch, pan, Set). */
+    data class ChooseFixedView(val fit: FixedView.Fit?) : ToolbarAction()
+    object SetCustomView : ToolbarAction()
+    object CancelCustomView : ToolbarAction()
     data class OpenEdgePanel(val panel: EdgePanel) : ToolbarAction()
     data class UpdateQuickNavOpen(val isOpen: Boolean) : ToolbarAction()
 }
@@ -209,6 +225,10 @@ sealed class CanvasCommand {
     object ResetView : CanvasCommand()
     object ClearAllStrokes : CanvasCommand()
     object RefreshCanvas : CanvasCommand()
+    /** Show the page at [view], or at zoom 1 when null. */
+    data class ApplyView(val view: FixedView?) : CanvasCommand()
+    /** Take the current zoom and scroll as the notebook's custom view. */
+    object CaptureCustomView : CanvasCommand()
     data class CopyImageToCanvas(val uri: Uri) : CanvasCommand()
 }
 
@@ -440,6 +460,20 @@ class EditorViewModel @Inject constructor(
                 if (bookReading.setRating(action.rating)) _toolbarState.update { it.copy(rating = action.rating) }
             }
             ToolbarAction.CloseAllMenus -> handleCloseAllMenus()
+            is ToolbarAction.ToggleShareDialog -> {
+                _toolbarState.update { it.copy(isShareDialogOpen = action.isOpen) }
+                updateDrawingState()
+            }
+            is ToolbarAction.ToggleViewDialog -> {
+                _toolbarState.update { it.copy(isViewDialogOpen = action.isOpen) }
+                updateDrawingState()
+            }
+            is ToolbarAction.ChooseFixedView -> chooseFixedView(action.fit)
+            ToolbarAction.SetCustomView -> sendCanvasCommand(CanvasCommand.CaptureCustomView)
+            ToolbarAction.CancelCustomView -> {
+                _toolbarState.update { it.copy(isChoosingCustomView = false) }
+                sendCanvasCommand(CanvasCommand.ApplyView(_toolbarState.value.fixedView))
+            }
             is ToolbarAction.OpenEdgePanel -> openEdgePanel(action.panel)
             is ToolbarAction.UpdateQuickNavOpen -> {
                 _toolbarState.update { it.copy(isQuickNavOpen = action.isOpen) }
@@ -518,6 +552,8 @@ class EditorViewModel @Inject constructor(
                 isMenuOpen = false,
                 isStrokeSelectionOpen = false,
                 isBackgroundSelectorModalOpen = false,
+                isShareDialogOpen = false,
+                isViewDialogOpen = false,
                 edgePanel = EdgePanel.None,
             )
         }
@@ -681,10 +717,43 @@ class EditorViewModel @Inject constructor(
                 isBookActive = bookId != null,
                 pageNumberInfo = if (bookId != null) "${pageIndex + 1}/$totalPages" else "1/1",
                 currentPageNumber = pageIndex,
+                fixedView = bookId?.let { id -> GlobalAppSettings.current.fixedViews[id] },
                 backgroundType = page.backgroundType,
                 backgroundPath = page.background,
                 backgroundPageNumber = bgPageNumber
             )
+        }
+    }
+
+    // --------------------------------------------------------
+    // Fixed view (reMarkable's "Adjust view")
+    // --------------------------------------------------------
+
+    private fun chooseFixedView(fit: FixedView.Fit?) {
+        _toolbarState.update { it.copy(isViewDialogOpen = false) }
+        updateDrawingState()
+        when (fit) {
+            // Pinch and pan to the view, then Set (SetCustomView).
+            FixedView.Fit.Custom -> _toolbarState.update { it.copy(isChoosingCustomView = true) }
+            null -> saveFixedView(null)
+            else -> saveFixedView(FixedView(fit))
+        }
+    }
+
+    /** Called with the view the page shows when Set is tapped. */
+    fun onCustomViewCaptured(zoom: Float, scroll: androidx.compose.ui.geometry.Offset) {
+        _toolbarState.update { it.copy(isChoosingCustomView = false) }
+        saveFixedView(FixedView(FixedView.Fit.Custom, zoom, scroll.x, scroll.y))
+    }
+
+    private fun saveFixedView(view: FixedView?) {
+        val id = bookId ?: return
+        _toolbarState.update { it.copy(fixedView = view) }
+        sendCanvasCommand(CanvasCommand.ApplyView(view))
+        viewModelScope.launch(Dispatchers.IO) {
+            val settings = GlobalAppSettings.current
+            val views = if (view == null) settings.fixedViews - id else settings.fixedViews + (id to view)
+            appRepository.kvProxy.setAppSettings(settings.copy(fixedViews = views))
         }
     }
 

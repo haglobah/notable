@@ -312,7 +312,7 @@ fun LibraryContent(
                         // Navigation lives with the bar, at its far right; a dot marks an update.
                         trailing = {
                             NIconButton(FeatherIcons.Trash2, stringResource(R.string.trash_title), onOpenTrash)
-                            SettingsButton(updateAvailable = !uiState.isLatestVersion, onClick = onNavigateToSettings)
+                            SettingsButton(onClick = onNavigateToSettings)
                         })
                     Spacer(Modifier.height(NotableSpace.xl))
                     if (results != null) {
@@ -353,10 +353,10 @@ fun LibraryContent(
     }
 }
 
-/** The settings gear; [updateAvailable] adds an ink dot at its corner. */
+/** The settings gear. */
 @Composable
-private fun SettingsButton(updateAvailable: Boolean, onClick: () -> Unit) =
-    NIconButton(FeatherIcons.Settings, stringResource(R.string.settings_title), onClick, badge = updateAvailable)
+private fun SettingsButton(onClick: () -> Unit) =
+    NIconButton(FeatherIcons.Settings, stringResource(R.string.settings_title), onClick)
 
 @Composable
 fun FolderList(
@@ -552,7 +552,6 @@ fun LibraryContentPreview() {
     // 1. Create a dummy UI state with mock data
     val mockUiState = LibraryUiState(
         folderId = null,
-        isLatestVersion = true,
         isImporting = false,
         breadcrumbFolders = listOf(
             // Optional: Add mock breadcrumbs if you want to preview nested folder state
@@ -593,7 +592,6 @@ fun LibraryContentPreview() {
 fun LibraryContentUpdatePreview() {
     val mockUiState = LibraryUiState(
         folderId = "folder_1",
-        isLatestVersion = false, // Will show the red badge on the settings icon
         isImporting = true,      // Will hide the delete warning for empty books
         breadcrumbFolders = emptyList(),
         folders = emptyList(),

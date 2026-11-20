@@ -21,7 +21,6 @@ import com.ethran.notable.editor.utils.PreviewSaveMode
 import com.ethran.notable.ui.SnackConf
 import com.ethran.notable.ui.SnackDispatcher
 import com.ethran.notable.utils.fold
-import com.ethran.notable.utils.isLatestVersion
 import com.ethran.notable.data.events.AppEventBus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -75,7 +74,6 @@ data class LibraryBrowse(
 
 data class LibraryUiState(
     val folderId: String? = null,
-    val isLatestVersion: Boolean = true,
     val isImporting: Boolean = false,
     val breadcrumbFolders: List<Folder> = emptyList(),
     val folders: List<Folder> = emptyList(),
@@ -111,7 +109,6 @@ class LibraryViewModel @Inject constructor(
     private val _isImporting = MutableStateFlow(false)
     private val _newlyCreatedBookId = MutableStateFlow<String?>(null)
     val newlyCreatedBookId: StateFlow<String?> = _newlyCreatedBookId
-    private val _isLatestVersion = MutableStateFlow(true)
     private val _breadcrumbFolders = MutableStateFlow<List<Folder>>(emptyList())
 
     // 1. Convert LiveData to Flow and switch automatically when folderId changes
@@ -374,11 +371,10 @@ class LibraryViewModel @Inject constructor(
 
     // 3. Expose the final UI State
     val uiState: StateFlow<LibraryUiState> = combine(
-        combine(_folderId, _hideFinished) { f, h -> f to h }, _isLatestVersion, _isImporting, _breadcrumbFolders, _dbDataFlow
-    ) { (folderId, hideFinished), isLatestVersion, isImporting, breadcrumbs, dbData ->
+        combine(_folderId, _hideFinished) { f, h -> f to h }, _isImporting, _breadcrumbFolders, _dbDataFlow
+    ) { (folderId, hideFinished), isImporting, breadcrumbs, dbData ->
         LibraryUiState(
             folderId = folderId,
-            isLatestVersion = isLatestVersion,
             isImporting = isImporting,
             breadcrumbFolders = breadcrumbs,
             // The trash (docs/plans/library-features.md): what's in it stays out of the folder views.
@@ -394,10 +390,6 @@ class LibraryViewModel @Inject constructor(
 
 
     init {
-        // Run network/heavy checks in the background
-        viewModelScope.launch(Dispatchers.IO) {
-            _isLatestVersion.value = isLatestVersion(context, appEventBus, true)
-        }
         // Entries written before pageCount existed, or behind the notebook (docs/plans/ebook-features.md).
         viewModelScope.launch(Dispatchers.IO) {
             try {

@@ -3,6 +3,7 @@ package com.ethran.notable.editor.ui.toolbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
@@ -24,8 +25,8 @@ import com.ethran.notable.ui.design.inkClickable
  * radius, the icon in paper (the same look as a selected NIconButton). A pen's color is user
  * data and shows as a small ringed dot in the bottom-right corner, never as the button fill.
  *
- * Sizes stay what the toolbar layout relies on: 2 + 5 dp around a 24 dp icon (38 dp, clipped to
- * BUTTON_SIZE by the bar). The color dot is drawn, not laid out, so a pen button costs no extra
+ * Sizes fill the bar's BUTTON_SIZE (48 dp): 2 + 8 dp around a 28 dp icon, so each button is an
+ * easy finger target. The color dot is drawn, not laid out, so a pen button costs no extra
  * layout nodes on the hot path.
  */
 @Composable
@@ -50,14 +51,18 @@ fun ToolbarButton(
             .padding(NotableSpace.xxs)
             .then(if (isSelected) Modifier.background(c.ink, NotableShape.control) else Modifier)
             .nColorMark(penColor, c)
-            .padding(5.dp),
+            .padding(8.dp),
         contentAlignment = Alignment.Center,
     ) {
         when {
-            iconId != null -> Icon(painterResource(iconId), contentDescription, tint = tint)
-            vectorIcon != null -> Icon(vectorIcon, contentDescription, tint = tint)
-            imageVector != null -> Icon(imageVector, contentDescription, tint = tint)
+            iconId != null -> Icon(painterResource(iconId), contentDescription, Modifier.size(ToolbarIcon), tint = tint)
+            vectorIcon != null -> Icon(vectorIcon, contentDescription, Modifier.size(ToolbarIcon), tint = tint)
+            imageVector != null -> Icon(imageVector, contentDescription, Modifier.size(ToolbarIcon), tint = tint)
             text != null -> Text(text, style = NotableTheme.type.label, color = tint)
         }
     }
 }
+
+
+/** Icons on the toolbar: larger than menu icons, for the finger. */
+private val ToolbarIcon = 28.dp

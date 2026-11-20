@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,13 +41,14 @@ import com.ethran.notable.data.datastore.BUTTON_SIZE
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.editor.utils.PenSetting
 import com.ethran.notable.ui.components.ScaledPopup
-import com.ethran.notable.ui.design.NSegmented
 import com.ethran.notable.ui.design.NotableShape
 import com.ethran.notable.ui.design.NotableSize
 import com.ethran.notable.ui.design.NotableSpace
 import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.design.inkClickable
 import com.ethran.notable.ui.design.nSurface
+import androidx.compose.ui.unit.Dp
+import kotlin.math.ln
 import kotlin.math.roundToInt
 
 
@@ -58,7 +63,7 @@ fun StrokeMenu(
     val density = LocalDensity.current
 
     ScaledPopup(
-        offset = with(density) { IntOffset(0, 43.dp.roundToPx()) },
+        offset = with(density) { IntOffset(0, (BUTTON_SIZE + 6).dp.roundToPx()) },
         onDismissRequest = { onClose() },
         properties = PopupProperties(focusable = true),
         alignment = Alignment.TopCenter
@@ -199,7 +204,11 @@ private fun ColorPicker(
     }
 }
 
-/** The size choice as a segmented control: one segment per size the pen offers. */
+/**
+ * The size choice: one segment per size the pen offers, each showing a short stroke over its
+ * number. The strokes thicken from the pen's smallest size to its largest (log scale, so 3 and 5
+ * still look different), as reMarkable draws its thickness choices. The chosen segment is ink.
+ */
 @Composable
 private fun ThicknessPicker(
     value: PenSetting,
@@ -207,18 +216,60 @@ private fun ThicknessPicker(
     sizeOptions: List<Pair<String, Float>>,
     modifier: Modifier = Modifier
 ) {
-    NSegmented(
-        options = sizeOptions.indices.map { it to sizeOptions[it].first },
-        selected = sizeOptions.indexOfFirst { it.second == value.strokeSize },
-        onSelect = { i ->
-            onChange(
-                PenSetting(
-                    strokeSize = sizeOptions[i].second, color = value.color
-                )
-            )
-        },
-        modifier = modifier,
-    )
+    val c = NotableTheme.colors
+    val sizes = sizeOptions.map { it.second }
+    Row(
+        modifier
+            .clip(NotableShape.control)
+            .border(NotableSize.hairline, c.ink, NotableShape.control),
+    ) {
+        sizeOptions.forEachIndexed { i, (label, strokeSize) ->
+            val on = strokeSize == value.strokeSize
+            if (i > 0) Box(Modifier.width(NotableSize.hairline).height(SizeSegment.height).background(c.ink))
+            Column(
+                Modifier
+                    .size(SizeSegment)
+                    .background(if (on) c.ink else c.paper)
+                    .inkClickable(onClickLabel = label) {
+                        onChange(PenSetting(strokeSize = strokeSize, color = value.color))
+                    }
+                    .padding(vertical = NotableSpace.xs),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                val inkColor = if (on) c.paper else c.ink
+                val width = sizeIconWidth(strokeSize, sizes)
+                Canvas(Modifier.weight(1f).fillMaxWidth()) {
+                    val w = width.toPx()
+                    val left = 10.dp.toPx() + w / 2
+                    val right = size.width - 10.dp.toPx() - w / 2
+                    val mid = size.height / 2
+                    val swing = (size.height / 2 - w / 2).coerceAtMost(6.dp.toPx()).coerceAtLeast(0f)
+                    val stroke = Path().apply {
+                        moveTo(left, mid + swing / 2)
+                        cubicTo(left + (right - left) / 3, mid - swing, left + 2 * (right - left) / 3, mid + swing, right, mid - swing / 2)
+                    }
+                    drawPath(stroke, inkColor, style = Stroke(width = w, cap = StrokeCap.Round))
+                }
+                Text(label, style = NotableTheme.type.meta, color = inkColor, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** One size segment: the stroke icon over its number. */
+private val SizeSegment = DpSize(64.dp, 64.dp)
+
+/** Thinnest and thickest stroke icon. */
+private val SizeIconMin = 2.dp
+private val SizeIconMax = 14.dp
+
+/** The icon thickness of [size] among a pen's [sizes]: log-spaced from thinnest to thickest. */
+internal fun sizeIconWidth(size: Float, sizes: List<Float>): Dp {
+    val lo = sizes.filter { it > 0f }.minOrNull() ?: return SizeIconMin
+    val hi = sizes.maxOrNull() ?: return SizeIconMin
+    if (hi <= lo || size <= 0f) return if (size >= hi) SizeIconMax else SizeIconMin
+    val t = (ln(size / lo) / ln(hi / lo)).coerceIn(0f, 1f)
+    return SizeIconMin + (SizeIconMax - SizeIconMin) * t
 }
 
 private val ColorSwatch = 44.dp

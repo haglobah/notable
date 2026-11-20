@@ -29,7 +29,6 @@ import com.ethran.notable.editor.ToolbarUiState
 import com.ethran.notable.editor.state.Mode
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarPen
 import com.ethran.notable.editor.utils.Pen
-import com.ethran.notable.io.ExportFormat
 import com.ethran.notable.ui.components.RatingPicker
 import com.ethran.notable.ui.components.ScaledPopup
 import com.ethran.notable.ui.design.NMenuDivider
@@ -41,11 +40,11 @@ import com.ethran.notable.ui.design.nSurface
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.CheckCircle
 import compose.icons.feathericons.Circle
-import compose.icons.feathericons.Download
 import compose.icons.feathericons.Flag
 import compose.icons.feathericons.Home
 import compose.icons.feathericons.Layout
 import compose.icons.feathericons.List
+import compose.icons.feathericons.Maximize
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Share2
 import compose.icons.feathericons.Star
@@ -71,7 +70,7 @@ fun ToolbarMenu(
         offset = with(density) {
             IntOffset(
                 (-10).dp.roundToPx(),
-                50.dp.roundToPx()
+                (BUTTON_SIZE + 6).dp.roundToPx()
             )
         },
         properties = PopupProperties(focusable = true),
@@ -139,41 +138,19 @@ private fun ToolbarMenuContent(
                 modifier = Modifier.padding(horizontal = NotableSpace.lg, vertical = NotableSpace.sm))
         }
 
-        // Page exports
+        // Every share and export choice sits behind one row (ShareDialog).
         NMenuDivider()
-        NMenuHeader(stringResource(R.string.menu_group_page))
-        NMenuItem(stringResource(R.string.share_page_pdf), icon = FeatherIcons.Share2, onClick = {
-            run(ToolbarAction.SharePdf(book = false))
+        NMenuItem(stringResource(R.string.menu_share), icon = FeatherIcons.Share2, onClick = {
+            run(ToolbarAction.ToggleShareDialog(true))
         })
-        NMenuItem(stringResource(R.string.export_page_to, "PDF"), icon = FeatherIcons.Download, onClick = {
-            run(ToolbarAction.ExportPage(ExportFormat.PDF))
-        })
-        NMenuItem(stringResource(R.string.export_page_to, "PNG"), icon = FeatherIcons.Download, onClick = {
-            run(ToolbarAction.ExportPage(ExportFormat.PNG))
-        })
-        NMenuItem(stringResource(R.string.export_page_to, "JPEG"), icon = FeatherIcons.Download, onClick = {
-            run(ToolbarAction.ExportPage(ExportFormat.JPEG))
-        })
-        NMenuItem(stringResource(R.string.export_page_to, "xopp"), icon = FeatherIcons.Download, onClick = {
-            run(ToolbarAction.ExportPage(ExportFormat.XOPP))
-        })
-
-        // Book exports
+        // One view for every page of the notebook (FixedView), as reMarkable's "Adjust view".
         if (uiState.notebookId != null) {
-            NMenuDivider()
-            NMenuHeader(stringResource(R.string.menu_group_notebook))
-            NMenuItem(stringResource(R.string.share_book_pdf), icon = FeatherIcons.Share2, onClick = {
-                run(ToolbarAction.SharePdf(book = true))
-            })
-            NMenuItem(stringResource(R.string.export_book_to, "PDF"), icon = FeatherIcons.Download, onClick = {
-                run(ToolbarAction.ExportBook(ExportFormat.PDF))
-            })
-            NMenuItem(stringResource(R.string.export_book_to, "PNG"), icon = FeatherIcons.Download, onClick = {
-                run(ToolbarAction.ExportBook(ExportFormat.PNG))
-            })
-            NMenuItem(stringResource(R.string.export_book_to, "xopp"), icon = FeatherIcons.Download, onClick = {
-                run(ToolbarAction.ExportBook(ExportFormat.XOPP))
-            })
+            NMenuItem(
+                stringResource(R.string.menu_view),
+                icon = FeatherIcons.Maximize,
+                meta = uiState.fixedView?.let { stringResource(fitLabel(it.fit)) },
+                onClick = { run(ToolbarAction.ToggleViewDialog(true)) },
+            )
         }
 
         NMenuDivider()

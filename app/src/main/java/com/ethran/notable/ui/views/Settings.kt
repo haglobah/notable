@@ -6,10 +6,8 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +39,6 @@ import com.ethran.notable.ui.components.GesturesSettings
 import com.ethran.notable.ui.components.ToolbarSettings
 import com.ethran.notable.ui.design.NButton
 import com.ethran.notable.ui.design.NButtonStyle
-import com.ethran.notable.ui.design.NNotice
 import com.ethran.notable.ui.design.NTabs
 import com.ethran.notable.ui.design.NTopBar
 import com.ethran.notable.ui.design.NotableSpace
@@ -52,10 +48,7 @@ import com.ethran.notable.ui.viewmodels.GestureRowModel
 import com.ethran.notable.ui.viewmodels.SettingsViewModel
 import com.ethran.notable.utils.isNext
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.ArrowUpCircle
-import compose.icons.feathericons.ExternalLink
 import compose.icons.feathericons.Heart
-import compose.icons.feathericons.RefreshCw
 import kotlinx.coroutines.launch
 
 /** Settings content stays readable on a wide tablet: a left-aligned column, not a full-bleed one. */
@@ -76,10 +69,6 @@ fun SettingsView(
     val context = LocalContext.current
     val settings = viewModel.settings
 
-    LaunchedEffect(Unit) {
-        viewModel.checkUpdate(context, force = false)
-    }
-
     val versionString = remember {
         "v${BuildConfig.VERSION_NAME}${if (isNext) " [NEXT]" else ""}"
     }
@@ -87,13 +76,9 @@ fun SettingsView(
     SettingsContent(
         versionString = versionString,
         settings = settings,
-        isLatestVersion = viewModel.isLatestVersion,
         onBack = onBack,
         goToWelcome = goToWelcome,
         goToSystemInfo = goToSystemInfo,
-        onCheckUpdate = { force ->
-            viewModel.checkUpdate(context, force)
-        },
         onUpdateSettings = { viewModel.updateSettings(it) },
         listOfGestures = viewModel.getGestureRows(),
         availableGestures = viewModel.availableGestures,
@@ -104,11 +89,9 @@ fun SettingsView(
 fun SettingsContent(
     versionString: String,
     settings: AppSettings,
-    isLatestVersion: Boolean,
     onBack: () -> Unit,
     goToWelcome: () -> Unit,
     goToSystemInfo: () -> Unit,
-    onCheckUpdate: (Boolean) -> Unit,
     onUpdateSettings: (AppSettings) -> Unit,
     selectedTabInitial: Int = 0,
     listOfGestures: List<GestureRowModel> = emptyList(),
@@ -160,7 +143,7 @@ fun SettingsContent(
                 when (selectedTab) {
                     0 -> {
                         GeneralSettings(settings, onUpdateSettings)
-                        SettingsFooter(isLatestVersion, onCheckUpdate)
+                        SettingsFooter()
                     }
 
                     1 -> GesturesSettings(
@@ -181,45 +164,24 @@ fun SettingsContent(
     }
 }
 
-/** Updates and sponsoring: two quiet buttons of one height under the General settings. */
+/** Sponsoring: a quiet button under the General settings. */
 @Composable
-private fun SettingsFooter(isLatestVersion: Boolean, onCheckUpdate: (Boolean) -> Unit) {
+private fun SettingsFooter() {
     val context = LocalContext.current
     val snackState = LocalSnackContext.current
     val scope = rememberCoroutineScope()
-    fun open(url: String) = openInBrowser(context, url) {
-        scope.launch { snackState.displaySnack(SnackConf(text = it, duration = 3000)) }
-    }
 
-    Column(Modifier.padding(top = NotableSpace.xl), verticalArrangement = Arrangement.spacedBy(NotableSpace.lg)) {
-        if (!isLatestVersion) {
-            NNotice(
-                text = stringResource(R.string.app_new_version),
-                icon = FeatherIcons.ArrowUpCircle,
-                actions = {
-                    NButton(
-                        stringResource(R.string.app_see_release),
-                        onClick = { open("https://github.com/ethran/notable/releases") },
-                        style = NButtonStyle.Primary,
-                        icon = FeatherIcons.ExternalLink,
-                    )
-                },
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(NotableSpace.sm)) {
-            if (isLatestVersion) NButton(
-                stringResource(R.string.app_check_updates),
-                onClick = { onCheckUpdate(true) },
-                icon = FeatherIcons.RefreshCw,
-            )
-            NButton(
-                stringResource(R.string.sponsor_button_text),
-                onClick = { open("https://github.com/sponsors/ethran") },
-                style = NButtonStyle.Quiet,
-                icon = FeatherIcons.Heart,
-            )
-        }
-    }
+    NButton(
+        stringResource(R.string.sponsor_button_text),
+        onClick = {
+            openInBrowser(context, "https://github.com/sponsors/ethran") {
+                scope.launch { snackState.displaySnack(SnackConf(text = it, duration = 3000)) }
+            }
+        },
+        modifier = Modifier.padding(top = NotableSpace.xl),
+        style = NButtonStyle.Quiet,
+        icon = FeatherIcons.Heart,
+    )
 }
 
 
@@ -246,11 +208,9 @@ fun SettingsPreviewGeneral() {
         SettingsContent(
             versionString = "v1.0.0",
             settings = AppSettings(version = 1),
-            isLatestVersion = true,
             onBack = {},
             goToWelcome = {},
             goToSystemInfo = {},
-            onCheckUpdate = {},
             onUpdateSettings = {},
             selectedTabInitial = 0
         )
@@ -271,11 +231,9 @@ fun SettingsPreviewGestures() {
         SettingsContent(
             versionString = "v1.0.0",
             settings = AppSettings(version = 1),
-            isLatestVersion = true,
             onBack = {},
             goToWelcome = {},
             goToSystemInfo = {},
-            onCheckUpdate = {},
             onUpdateSettings = {},
             selectedTabInitial = 1,
             listOfGestures = dummyRows
@@ -290,11 +248,9 @@ fun SettingsPreviewDebug() {
         SettingsContent(
             versionString = "v1.0.0",
             settings = AppSettings(version = 1),
-            isLatestVersion = true,
             onBack = {},
             goToWelcome = {},
             goToSystemInfo = {},
-            onCheckUpdate = {},
             onUpdateSettings = {},
             selectedTabInitial = 3
         )
@@ -317,11 +273,9 @@ fun SettingsPreviewSync() {
         SettingsContent(
             versionString = "v1.0.0",
             settings = AppSettings(version = 1),
-            isLatestVersion = true,
             onBack = {},
             goToWelcome = {},
             goToSystemInfo = {},
-            onCheckUpdate = {},
             onUpdateSettings = {},
             selectedTabInitial = 2,
         )

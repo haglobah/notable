@@ -21,10 +21,6 @@
     <string name="continuous_stroke_slider">Płynny regulator grubości kreski</string>
     <string name="rename_on_create">Otwórz ustawienia notatknika przy tworzeniu nowego</string>
 
-    <string name="app_new_version">Wygląda na to, że nowa wersja Notable jest dostępna na GitHubie!</string>
-    <string name="app_see_release">Zobacz wersję w przeglądarce</string>
-    <string name="app_latest_version">Aplikacja jest aktualna.</string>
-    <string name="app_check_updates">Sprawdź dostępność aktualizacji</string>
 
     <string name="gestures_double_tap_action">Podwójne stuknięcie</string>
     <string name="gestures_two_finger_tap_action">Stuknięcie dwoma palcami</string>
@@ -340,6 +336,24 @@
     <string name="menu_group_edit">Edycja</string>
     <string name="menu_group_help">Pomoc</string>
     <string name="menu_group_commands">Polecenia</string>
+    <string name="menu_share">Udostępnij i eksportuj…</string>
+    <string name="menu_view">Widok strony…</string>
+    <string name="share_title">Udostępnij i eksportuj</string>
+    <string name="share_scope_page">Ta strona</string>
+    <string name="share_scope_notebook">Cały zeszyt</string>
+    <string name="share_as_pdf">Udostępnij jako PDF</string>
+    <string name="export_as">Zapisz jako %1$s</string>
+    <string name="view_title">Widok strony</string>
+    <string name="view_help">Dotyczy każdej strony zeszytu: przewracanie stron zachowuje widok.</string>
+    <string name="view_free">Swobodne powiększenie</string>
+    <string name="view_free_meta">Każda strona ma własne</string>
+    <string name="view_fit_width">Dopasuj do szerokości</string>
+    <string name="view_fit_page">Dopasuj do strony</string>
+    <string name="view_custom">Własny widok</string>
+    <string name="view_custom_meta">Uszczypnij i przesuń, potem Ustaw</string>
+    <string name="view_custom_hint">Uszczypnij i przesuń do widoku, potem dotknij Ustaw</string>
+    <string name="view_set">Ustaw</string>
+    <string name="cancel_view">Anuluj</string>
     <string name="panel_recent">Ostatnie</string>
     <string name="panel_favorites">Ulubione strony</string>
     <string name="panel_no_recent">Nie otwarto jeszcze żadnego zeszytu</string>

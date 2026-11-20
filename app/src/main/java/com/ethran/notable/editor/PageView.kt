@@ -22,6 +22,7 @@ import com.ethran.notable.SCREEN_WIDTH
 import com.ethran.notable.data.CachedBackground
 import com.ethran.notable.data.PageDataManager
 import com.ethran.notable.data.datastore.GlobalAppSettings
+import com.ethran.notable.editor.state.FixedView
 import com.ethran.notable.data.db.Image
 import com.ethran.notable.data.db.Stroke
 import com.ethran.notable.data.model.BackgroundType
@@ -184,8 +185,9 @@ class PageView(
             if(currentPageId.isEmpty())
                 log.e("Current page id is empty")
 
+            val viewMoved = moveToFixedView()
             zoomLevel.value = pageDataManager.getPageZoom(currentPageId)
-            pageDataManager.getCachedBitmap(currentPageId)?.let { cached ->
+            pageDataManager.getCachedBitmap(currentPageId)?.takeIf { !viewMoved }?.let { cached ->
                 log.i("PageView: using cached bitmap")
                 windowedBitmap = cached
                 windowedCanvas = Canvas(windowedBitmap)
@@ -229,8 +231,11 @@ class PageView(
         coroutineScope.launch(Dispatchers.IO) {
             pageDataManager.onExit(oldId, windowedBitmap)
             pageDataManager.setPage(newPageId)
+            // A notebook with a fixed view shows every page at it; the cached bitmap of a page
+            // last seen at another view is stale then.
+            val viewMoved = moveToFixedView()
             zoomLevel.value = pageDataManager.getPageZoom(currentPageId)
-            pageDataManager.getCachedBitmap(newPageId)?.let { cached ->
+            pageDataManager.getCachedBitmap(newPageId)?.takeIf { !viewMoved }?.let { cached ->
                 log.i("PageView: using cached bitmap")
                 windowedBitmap = cached
                 windowedCanvas = Canvas(windowedBitmap)
@@ -253,6 +258,39 @@ class PageView(
             loadPage()
             log.d("Page loaded (updatePageID($currentPageId))")
         }
+    }
+
+    /** The open notebook's fixed view, if it has one. */
+    fun fixedView(): FixedView? =
+        pageDataManager.pageFromDb?.notebookId?.let { GlobalAppSettings.current.fixedViews[it] }
+
+    /** The zoom and scroll that show the current page at [view]. */
+    fun fixedViewTarget(view: FixedView): Pair<Float, Offset> {
+        // The page is as wide as the screen at zoom 1; a background tells its height.
+        val bg = currentBackground.bitmap
+        val aspect = if (bg != null && bg.width > 0) bg.height.toFloat() / bg.width else FixedView.A4_ASPECT
+        return view.target(viewWidth, viewHeight, aspect)
+    }
+
+    /**
+     * Puts the current page at the notebook's fixed view before it is drawn. Returns whether the
+     * page's zoom or scroll changed (its cached bitmap is then stale).
+     */
+    private fun moveToFixedView(): Boolean {
+        val view = fixedView() ?: return false
+        val (zoom, target) = fixedViewTarget(view)
+        val moved = pageDataManager.getPageZoom(currentPageId) != zoom || scroll != target
+        if (moved) {
+            pageDataManager.setPageZoom(currentPageId, zoom)
+            scroll = target
+        }
+        return moved
+    }
+
+    /** Shows the current page at [zoom] and [target] scroll, redrawn. */
+    suspend fun showView(zoom: Float, target: Offset) {
+        scroll = target
+        applyZoomAndRedraw(zoom)
     }
 
     private fun recreateCanvas() {
