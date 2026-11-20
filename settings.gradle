@@ -22,3 +22,6 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Notable"
 include ':app'
+// Throwaway spike: can a device-owner app disable the status bar on the Boox? (spikes/device-owner)
+include ':spike-device-owner'
+project(':spike-device-owner').projectDir = file('spikes/device-owner')

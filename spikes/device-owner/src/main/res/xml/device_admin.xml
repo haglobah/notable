@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A device owner needs no legacy policies for what the spike calls. -->
+<device-admin>
+    <uses-policies />
+</device-admin>
