@@ -96,33 +96,25 @@ class ImportEngine @Inject constructor(
         if (options.fileType != null && mimeType != options.fileType)
             return AppResult.Error(DomainError.UnexpectedState("File type mismatch. Expected: ${options.fileType}, Actual: $mimeType"))
 
-        val bookTitle = sanitizeNotebookName(options.bookTitle ?: getFileName(uri))
-        log.d("Starting import for uri: $uri, mimeType: $mimeType, fileName: $bookTitle")
-
-        // strip extension if present in bookTitle (from options or getFileName)
-        val finalTitle = if (bookTitle.endsWith(".xopp", ignoreCase = true)) {
-            bookTitle.removeSuffix(".xopp")
-        } else if (bookTitle.endsWith(".pdf", ignoreCase = true)) {
-            bookTitle.removeSuffix(".pdf")
-        } else if (bookTitle.endsWith(".epub", ignoreCase = true)) {
-            bookTitle.dropLast(".epub".length)
-        } else {
-            bookTitle
-        }
+        val fileName = getFileName(uri)
+        // The extension comes off before sanitizing, which trims the end and caps the length.
+        val bookTitle = sanitizeNotebookName(withoutExtension(options.bookTitle ?: fileName))
+        log.d("Starting import for uri: $uri, mimeType: $mimeType, fileName: $fileName, title: $bookTitle")
 
         if (options.saveToBookId != null)
             TODO("Implement logic to save into an existing book (ID: ${options.saveToBookId})")
 
         val optionsWithTitle = options.copy(
-            bookTitle = finalTitle,
+            bookTitle = bookTitle,
         )
         // A title the caller chose wins over the book's own; a file name does not.
         val titleFromFile = options.bookTitle == null
 
+        // The type comes from the file's own name, never from a title given in the options.
         return when {
-            XoppFile.isXoppFile(mimeType, bookTitle) -> handleImportXopp(uri, optionsWithTitle)
-            isPdfFile(mimeType, bookTitle) -> handleImportPDF(uri, optionsWithTitle, titleFromFile)
-            isEpubFile(mimeType, bookTitle) -> handleImportEpub(uri, optionsWithTitle, titleFromFile)
+            XoppFile.isXoppFile(mimeType, fileName) -> handleImportXopp(uri, optionsWithTitle)
+            isPdfFile(mimeType, fileName) -> handleImportPDF(uri, optionsWithTitle, titleFromFile)
+            isEpubFile(mimeType, fileName) -> handleImportEpub(uri, optionsWithTitle, titleFromFile)
             else -> {
                 val errorMessage = "Unsupported file type: $mimeType"
                 log.w(errorMessage)
@@ -213,6 +205,9 @@ class ImportEngine @Inject constructor(
             ?: return AppResult.Error(DomainError.UnexpectedState("Couldn't determine file path. Does the app have permission to read external storage?"))
 
         val filePath = fileToSave.toString()
+        // Checked before the notebook exists, so an unreadable PDF leaves nothing behind.
+        if (getPdfPageCount(filePath) == 0)
+            return AppResult.Error(DomainError.UnexpectedState("No pages could be read from ${fileToSave.name}"))
         val extracted = readBookMeta(fileToSave.name) { BookText.pdfMeta(filePath) }
 
         val book = Notebook(
@@ -315,8 +310,10 @@ class ImportEngine @Inject constructor(
 
 
     /**
-     * Extracts the book title from a file URI.
+     * The file name of a URI, with its extension, which tells the file type when the URI has
+     * no MIME type, as a `file:` URI doesn't.
      */
+    /** The file's name with its extension: the provider's display name, else the URI's last segment. */
     private fun getFileName(uri: Uri): String {
         // The provider's display name ("Paper.pdf"); a content URI's last segment is often an id.
         val displayName = runCatching {
@@ -324,16 +321,14 @@ class ImportEngine @Inject constructor(
                 if (c.moveToFirst()) c.getString(0) else null
             }
         }.getOrNull()
-        val fileName = displayName?.takeIf { it.isNotBlank() }
+        return displayName?.takeIf { it.isNotBlank() }
             ?: uri.lastPathSegment?.substringAfterLast("/") ?: "Imported Book"
-        return if (fileName.endsWith(".xopp", ignoreCase = true)) {
-            fileName.removeSuffix(".xopp")
-        } else if (fileName.endsWith(".pdf", ignoreCase = true)) {
-            fileName.removeSuffix(".pdf")
-        } else {
-            fileName
-        }
     }
+
+    /** [name] without a `.xopp`, `.pdf` or `.epub` extension, in any case. */
+    private fun withoutExtension(name: String): String =
+        listOf(".xopp", ".pdf", ".epub").firstOrNull { name.endsWith(it, ignoreCase = true) }
+            ?.let { name.dropLast(it.length) } ?: name
 
 
     private fun sanitizeNotebookName(raw: String, maxLen: Int = 100): String {

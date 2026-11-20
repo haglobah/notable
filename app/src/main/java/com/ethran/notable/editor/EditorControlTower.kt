@@ -16,6 +16,7 @@ import com.ethran.notable.editor.state.SelectionState
 import com.ethran.notable.editor.utils.offsetStroke
 import com.ethran.notable.editor.utils.refreshScreen
 import com.ethran.notable.editor.utils.selectImagesAndStrokes
+import com.ethran.notable.editor.utils.selectContentInRectangle
 import com.ethran.notable.gestures.GestureActions
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineScope
@@ -42,11 +43,12 @@ class EditorControlTower(
     private val logEditorControlTower = ShipBook.getLogger("EditorControlTower")
     private var changePageObserverJob: Job? = null
 
-    // Accumulated, not-yet-rendered scroll delta in screen coordinates. Input events add
-    // into this; a single consumer coroutine drains and renders it. StateFlow conflation
-    // means a burst of input collapses to one render pass per frame the renderer can keep
-    // up with.
-    private val pendingScroll = MutableStateFlow(Offset.Zero)
+    // Accumulated, not-yet-rendered scroll delta in screen coordinates, for the page the
+    // gesture was made on. Input events add into this; a single consumer coroutine drains
+    // and renders it. StateFlow conflation means a burst of input collapses to one render
+    // pass per frame the renderer can keep up with.
+    private data class PendingScroll(val pageId: String, val delta: Offset)
+    private val pendingScroll = MutableStateFlow(PendingScroll("", Offset.Zero))
     private var scrollConsumerJob: Job? = null
 
     fun registerObservers() {
@@ -60,7 +62,6 @@ class EditorControlTower(
                 // Switch to Main thread for Compose state mutations
                 withContext(Dispatchers.Main) {
                     viewModel.changePage(pageId)
-                    history.cleanHistory()
                 }
                 // no need for this, we are listening for change of current page,
                 // in EditorView
@@ -85,7 +86,11 @@ class EditorControlTower(
     override fun requestScroll(delta: Offset) {
         if (delta == Offset.Zero) return
         if (!page.isTransformationAllowed) return
-        pendingScroll.update { it + delta }
+        val pageId = page.currentPageId
+        // A delta for another page replaces what is left of the previous page's.
+        pendingScroll.update {
+            if (it.pageId == pageId) it.copy(delta = it.delta + delta) else PendingScroll(pageId, delta)
+        }
     }
 
     /**
@@ -98,15 +103,16 @@ class EditorControlTower(
         if (scrollConsumerJob?.isActive == true) return
         scrollConsumerJob = scope.launch(Dispatchers.Main.immediate) {
             pendingScroll.collect {
-                val delta = pendingScroll.getAndUpdate { Offset.Zero }
+                val (pageId, delta) = pendingScroll.getAndUpdate { it.copy(delta = Offset.Zero) }
                 if (delta == Offset.Zero) return@collect
                 scrollInProgress.withLock {
                     if (viewModel.toolbarState.value.mode == Mode.Select &&
                         viewModel.selectionState.firstPageCut != null
                     ) {
-                        onOpenPageCut(delta / page.zoomLevel.value)
+                        // Dropped if queued on a page left; the cut belongs to that page.
+                        if (pageId == page.currentPageId) onOpenPageCut(delta / page.zoom)
                     } else {
-                        onPageScroll(-delta)
+                        onPageScroll(pageId, -delta)
                     }
                 }
                 CanvasEventBus.refreshUiImmediately.emit(Unit)
@@ -115,13 +121,8 @@ class EditorControlTower(
     }
 
 
-    override fun setIsDrawing(value: Boolean) {
-        if (viewModel.toolbarState.value.isDrawing == value) {
-            logEditorControlTower.w("IsDrawing already set to $value")
-            return
-        }
-        scope.launch { CanvasEventBus.isDrawing.emit(value) }
-    }
+    override fun setSelectionGestureActive(active: Boolean) =
+        viewModel.setSelectionGestureActive(active)
 
     override fun toggleTool() {
         val mode = viewModel.toolbarState.value.mode
@@ -158,13 +159,11 @@ class EditorControlTower(
     override fun goToNextPage() {
         logEditorControlTower.i("Going to next page")
         viewModel.goToNextPage()
-        history.cleanHistory()
     }
 
     override fun goToPreviousPage() {
         logEditorControlTower.i("Going to previous page")
         viewModel.goToPreviousPage()
-        history.cleanHistory()
     }
 
     override fun undo() {
@@ -190,12 +189,15 @@ class EditorControlTower(
         // with the select tool merely armed, zooming is fine.
         if (viewModel.selectionState.isNonEmpty() || viewModel.selectionState.firstPageCut != null)
             return
+        // Steps queue up behind slower ones; those still queued when the page changes are dropped,
+        // so they never zoom the page shown after the one they were made on.
+        val pageId = page.currentPageId
         scope.launch {
             scrollInProgress.withLock {
                 if (GlobalAppSettings.current.simpleRendering || !GlobalAppSettings.current.continuousZoom)
-                    page.simpleUpdateZoom(delta)
+                    page.simpleUpdateZoom(pageId, delta)
                 else
-                    page.updateZoom(delta, center)
+                    page.updateZoom(pageId, delta, center)
             }
             CanvasEventBus.refreshUiImmediately.emit(Unit)
         }
@@ -206,10 +208,11 @@ class EditorControlTower(
 
     /** Shows the page at [view]; null: zoom 1 at the left edge, keeping the vertical scroll. */
     fun applyView(view: FixedView?) {
+        val pageId = page.currentPageId
         scope.launch {
             scrollInProgress.withLock {
-                if (view == null) page.showView(1f, Offset(0f, page.scroll.y))
-                else page.fixedViewTarget(view).let { (zoom, target) -> page.showView(zoom, target) }
+                if (view == null) page.resetView(pageId)
+                else page.showView(page.fixedViewport(view, pageId))
             }
             CanvasEventBus.refreshUiImmediately.emit(Unit)
         }
@@ -217,7 +220,7 @@ class EditorControlTower(
 
     /** Hands the view the page shows now to the editor, as the notebook's custom view. */
     fun captureCustomView() {
-        viewModel.onCustomViewCaptured(page.zoomLevel.value, page.scroll)
+        viewModel.onCustomViewCaptured(page.zoom, page.scroll)
     }
 
     private fun onOpenPageCut(offset: Offset) {
@@ -226,6 +229,7 @@ class EditorControlTower(
 
         // commit to history
         history.addOperationsToHistory(
+            page.currentPageId,
             listOf(
                 Operation.DeleteStroke(result.movedStrokes.map { it.id }),
                 Operation.AddStroke(result.previousStrokes)
@@ -235,12 +239,12 @@ class EditorControlTower(
         viewModel.selectionState.reset()
     }
 
-    private suspend fun onPageScroll(dragDelta: Offset) {
+    private suspend fun onPageScroll(pageId: String, dragDelta: Offset) {
         // scroll is in Page coordinates
         if (GlobalAppSettings.current.simpleRendering)
-            page.simpleUpdateScroll(dragDelta)
+            page.simpleUpdateScroll(pageId, dragDelta)
         else
-            page.updateScroll(dragDelta)
+            page.updateScroll(pageId, dragDelta)
     }
 
 
@@ -254,7 +258,6 @@ class EditorControlTower(
 
     fun deleteSelection() {
         viewModel.selectionState.deleteSelectionAndCommit(page, history)
-        setIsDrawing(true)
         scope.launch {
             CanvasEventBus.refreshUi.emit(Unit)
         }
@@ -338,17 +341,12 @@ class EditorControlTower(
 
     override fun showHint(text: String) = viewModel.showHint(text)
 
-    override fun selectRectangle(rect: Rect) {
-        // Take shared ownership of the EPD animation mode now, before the
-        // gesture receiver releases its handle: the selection flow runs
-        // asynchronously, and the overlap keeps fast refresh on across the
-        // hand-over. Released in SelectionState.reset() or by Select.kt if
-        // the rectangle selects nothing.
-        viewModel.selectionState.holdRefresh()
-        scope.launch {
-            CanvasEventBus.rectangleToSelectByGesture.emit(rect)
-        }
-    }
+    /**
+     * Selects synchronously, so the selection is active before the gesture clears its own flag
+     * and the pen never turns on in between. The selection takes its own EPD refresh handle
+     * before the gesture receiver releases the gesture's.
+     */
+    override fun selectRectangle(rect: Rect) = selectContentInRectangle(page, scope, viewModel, rect)
 
     override fun redrawCanvas() {
         scope.launch {

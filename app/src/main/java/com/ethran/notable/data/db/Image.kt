@@ -119,8 +119,15 @@ class ImageRepository @Inject constructor(
         db.update(images)
     }
 
+    /** Inserts [images], replacing the stored ones with the same ids. */
+    suspend fun upsert(images: List<Image>) {
+        db.upsert(images)
+    }
+
     suspend fun deleteAll(ids: List<String>) {
-        db.deleteAll(ids)
+        ids.chunked(900).forEach { batch ->
+            db.deleteAll(batch)
+        }
     }
 
     suspend fun getImageWithPointsById(imageId: String): Image {

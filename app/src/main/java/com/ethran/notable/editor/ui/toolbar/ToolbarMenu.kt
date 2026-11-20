@@ -43,6 +43,7 @@ import compose.icons.feathericons.Circle
 import compose.icons.feathericons.Flag
 import compose.icons.feathericons.Home
 import compose.icons.feathericons.Layout
+import compose.icons.feathericons.Link
 import compose.icons.feathericons.List
 import compose.icons.feathericons.Maximize
 import compose.icons.feathericons.Search
@@ -143,6 +144,15 @@ private fun ToolbarMenuContent(
         NMenuItem(stringResource(R.string.menu_share), icon = FeatherIcons.Share2, onClick = {
             run(ToolbarAction.ToggleShareDialog(true))
         })
+        // notable:// links (readme.md, "Links"), as Markdown or Org per Settings → General.
+        NMenuItem(stringResource(R.string.copy_page_link), icon = FeatherIcons.Link, onClick = {
+            run(ToolbarAction.CopyPageLink)
+        })
+        if (uiState.notebookId != null) {
+            NMenuItem(stringResource(R.string.copy_book_link), icon = FeatherIcons.Link, onClick = {
+                run(ToolbarAction.CopyBookLink)
+            })
+        }
         // One view for every page of the notebook (FixedView), as reMarkable's "Adjust view".
         if (uiState.notebookId != null) {
             NMenuItem(

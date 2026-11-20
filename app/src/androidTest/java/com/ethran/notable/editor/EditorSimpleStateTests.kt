@@ -1,10 +1,13 @@
 package com.ethran.notable.editor
 
+import com.ethran.notable.io.ThumbnailUpdates
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.PageDataManager
+import com.ethran.notable.data.PagePreviewStore
+import com.ethran.notable.data.PageSaver
 import com.ethran.notable.data.datastore.EditorSettingCacheManager
 import com.ethran.notable.data.db.AppDatabase
 import com.ethran.notable.data.db.BookRepository
@@ -82,6 +85,7 @@ class EditorSimpleStateTests {
 
         val exportEngine = mockk<ExportEngine>(relaxed = true)
         val pageDataManager = mockk<PageDataManager>(relaxed = true)
+        val pageSaver = mockk<PageSaver>(relaxed = true)
         val snackDispatcher = mockk<SnackDispatcher>(relaxed = true)
         val historyFactory = mockk<History.Factory>(relaxed = true)
 
@@ -91,6 +95,9 @@ class EditorSimpleStateTests {
             editorSettingCacheManager = editorSettingCacheManager,
             exportEngine = exportEngine,
             pageDataManager = pageDataManager,
+            pageLeases = PageLeases(pageDataManager),
+            pageSaver = pageSaver,
+            pagePreviewStore = PagePreviewStore(context, pageDataManager, appRepository, ThumbnailUpdates()),
             snackDispatcher = snackDispatcher,
             historyFactory = historyFactory,
             editorImage = com.ethran.notable.image.EditorImage.None,

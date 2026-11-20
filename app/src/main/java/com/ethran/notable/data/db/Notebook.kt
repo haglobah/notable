@@ -14,6 +14,7 @@ import androidx.room.Upsert
 import com.ethran.notable.data.model.BackgroundType
 import com.ethran.notable.data.model.BookMeta
 import io.shipbook.shipbooksdk.ShipBook
+import java.io.File
 import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
@@ -88,6 +89,9 @@ interface NotebookDao {
     @Query("SELECT * FROM notebook WHERE id = (:notebookId)")
     suspend fun getById(notebookId: String): Notebook?
 
+    @Query("SELECT * FROM notebook WHERE defaultBackgroundType = :type")
+    suspend fun getAllWithBackgroundType(type: String): List<Notebook>
+
     @Query("UPDATE notebook SET openPageId=:pageId WHERE id=:notebookId")
     suspend fun setOpenPageId(notebookId: String, pageId: String)
 
@@ -129,6 +133,10 @@ interface NotebookDao {
     /** Device-local: the docs don't hold it, so it's written to Room alone. */
     @Query("UPDATE notebook SET linkedExternalUri=:uri WHERE id=:id")
     suspend fun setLinkedExternalUri(id: String, uri: String?): Int
+    // Bumps only the edit timestamp of the notebook holding the page, without a read-modify-write
+    // of the whole row that could overwrite a concurrent change to its other columns.
+    @Query("UPDATE notebook SET updatedAt=:updatedAt WHERE id = (SELECT notebookId FROM page WHERE id = :pageId)")
+    suspend fun touchUpdatedAtForPage(pageId: String, updatedAt: Date)
 
     @Insert
     suspend fun create(notebook: Notebook): Long
@@ -158,7 +166,8 @@ class BookRepository @Inject constructor(
         return notebookDao.getAll()
     }
 
-    suspend fun create(notebook: Notebook) {
+    /** Creates [notebook] with one page; returns that page's id. */
+    suspend fun create(notebook: Notebook): String {
         notebookDao.create(notebook)
         val page = Page(
             notebookId = notebook.id,
@@ -169,6 +178,7 @@ class BookRepository @Inject constructor(
 
         notebookDao.setPageIds(notebook.id, listOf(page.id), Date())
         notebookDao.setOpenPageId(notebook.id, page.id)
+        return page.id
     }
 
     suspend fun createEmpty(notebook: Notebook) {
@@ -191,6 +201,25 @@ class BookRepository @Inject constructor(
 
     fun getByIdLive(notebookId: String): LiveData<Notebook?> {
         return notebookDao.getByIdLive(notebookId)
+    }
+
+    /**
+     * The notebook linked to the PDF at [path], the most recently edited one if there are
+     * several. Paths are compared resolved, so `/sdcard/…` finds `/storage/emulated/0/…`.
+     */
+    suspend fun getLinkedToPdf(path: String): Notebook? {
+        val target = canonicalPath(path)
+        return notebookDao.getAllWithBackgroundType(BackgroundType.AutoPdf.key)
+            .filter { canonicalPath(it.defaultBackground) == target }
+            .maxByOrNull { it.updatedAt }
+    }
+
+    private fun canonicalPath(path: String): String =
+        runCatching { File(path).canonicalPath }.getOrDefault(path)
+
+    /** Advances the edit timestamp of the notebook holding [pageId]; no-op for a loose page. */
+    suspend fun touchUpdatedAtForPage(pageId: String, updatedAt: Date = Date()) {
+        notebookDao.touchUpdatedAtForPage(pageId, updatedAt)
     }
 
     suspend fun setOpenPageId(id: String, pageId: String) {

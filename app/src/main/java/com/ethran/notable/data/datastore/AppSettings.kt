@@ -5,6 +5,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import com.ethran.notable.editor.state.FixedView
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarLayout
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarPen
+import com.ethran.notable.navigation.LinkFormat
 import kotlinx.serialization.Serializable
 
 
@@ -89,6 +90,7 @@ data class AppSettings(
     val libraryHideFinished: Boolean = false,
     /** Notebooks shown at one fixed view on every page (editor/state/FixedView.kt), by id. */
     val fixedViews: Map<String, FixedView> = emptyMap(),
+    val linkFormat: LinkFormat = LinkFormat.Markdown,
 
     // Debug
     val showWelcome: Boolean = true,

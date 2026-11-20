@@ -459,4 +459,9 @@
     </plurals>
     <string name="pages_duplicate">Duplikuj</string>
     <string name="pages_delete">Usuń</string>
+    <string name="details_notebook_buttons_duplicate">Duplikuj</string>
+    <string name="copy_page_link">Kopiuj link do strony</string>
+    <string name="copy_book_link">Kopiuj link do zeszytu</string>
+    <string name="copy_link">Kopiuj link</string>
+    <string name="link_format">Format kopiowanego linku</string>
 </resources>

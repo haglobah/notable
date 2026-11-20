@@ -29,8 +29,19 @@ class CanvasRefreshManager(
 ) {
     private val log = ShipBook.getLogger("DrawCanvas")
 
+    /**
+     * Screen area of strokes drawn since the firmware layer was last dropped. Only the firmware
+     * shows them, so [commitErase] pushes them with the erased area before dropping its layer.
+     */
+    private val firmwareInk = Rect()
+
+    /** Notes [area] as drawn on the panel by the firmware only, see [firmwareInk]. */
+    fun addFirmwareInk(area: Rect) {
+        synchronized(firmwareInk) { firmwareInk.union(area) }
+    }
+
     fun refreshUi(dirtyRect: Rect?) {
-        log.d("refreshUi: scroll: ${page.scroll}, zoom: ${page.zoomLevel.value}")
+        log.d("refreshUi: scroll: ${page.scroll}, zoom: ${page.zoom}")
 
         // post what page drawn to visible surface
         drawCanvasToView(dirtyRect)
@@ -76,10 +87,14 @@ class CanvasRefreshManager(
      * indicator and erased strokes disappear in one transition with no gap to draw into.
      * ORDER IS CRITICAL: push first, then drop. See docs/onyx-sdk/onyx-pen-up-refresh-and-screen-freeze.md.
      * Must be called after the page bitmap has already been repainted (after handleErase /
-     * handleScribbleToErase).
+     * handleScribbleToErase). Strokes shown only by the firmware ([firmwareInk]) are pushed too.
      */
     fun commitErase(dirtyRect: Rect?, areaErase: Boolean = false) {
-        val dirty = dirtyRect ?: Rect(0, 0, page.viewWidth, page.viewHeight)
+        val dirty = Rect(dirtyRect ?: Rect(0, 0, page.viewWidth, page.viewHeight))
+        synchronized(firmwareInk) {
+            dirty.union(firmwareInk)
+            firmwareInk.setEmpty()
+        }
         // 1. Block input immediately so no stroke can start during the swap/settle.
         touchHelper?.setRawInputReaderEnable(false)
         drawCanvas.coroutineScope.launch {
@@ -133,52 +148,56 @@ class CanvasRefreshManager(
         }
     }
 
-    fun drawCanvasToView(dirtyRect: Rect?, onPosted: (() -> Unit)? = null) {
-        drawCanvas.post {
-            val zoneToRedraw = dirtyRect ?: Rect(0, 0, page.viewWidth, page.viewHeight)
-            var canvas: Canvas? = null
-            try {
-                log.v("Canvas refresh started, dirtyRect: $zoneToRedraw, bitmap: ${page.windowedBitmap.hashCode()}, thread: ${Thread.currentThread().name}")
-                // Lock the canvas only for the dirtyRect region
-                canvas = drawCanvas.holder.lockCanvas(zoneToRedraw)
-                if (canvas == null) {
-                    log.e(
-                        "FAILED to lock canvas (surface invalid/destroyed or locked by another " +
-                            "thread). page=${page.currentPageId}, dirtyRect=$zoneToRedraw, " +
-                            "surfaceValid=${drawCanvas.holder.surface?.isValid}, " +
-                            "thread=${Thread.currentThread().name}"
-                    )
-                    return@post
-                }
-                canvas.drawBitmap(page.windowedBitmap, zoneToRedraw, zoneToRedraw, Paint())
+    fun drawCanvasToView(dirtyRect: Rect?) {
+        drawCanvas.post { drawCanvasToViewSync(dirtyRect) }
+    }
 
-                if (viewModel.toolbarState.value.mode == Mode.Select) {
-                    // render selection, but only within dirtyRect
-                    viewModel.selectionState.firstPageCut?.let { cutPoints ->
-                        log.i("render cut")
-                        val path = pointsToPath(cutPoints.map {
-                            SimplePointF(
-                                it.x - page.scroll.x, it.y - page.scroll.y
-                            )
-                        })
-                        canvas.drawPath(path, selectPaint)
-                    }
+    /**
+     * [drawCanvasToView] without the post: draws the page (and the page-cut line in Select mode)
+     * to the surface now. Main thread only.
+     */
+    fun drawCanvasToViewSync(dirtyRect: Rect?) {
+        val zoneToRedraw = dirtyRect ?: Rect(0, 0, page.viewWidth, page.viewHeight)
+        var canvas: Canvas? = null
+        try {
+            log.v("Canvas refresh started, dirtyRect: $zoneToRedraw, bitmap: ${page.windowedBitmap.hashCode()}, thread: ${Thread.currentThread().name}")
+            // Lock the canvas only for the dirtyRect region
+            canvas = drawCanvas.holder.lockCanvas(zoneToRedraw)
+            if (canvas == null) {
+                log.e(
+                    "FAILED to lock canvas (surface invalid/destroyed or locked by another " +
+                        "thread). page=${page.currentPageId}, dirtyRect=$zoneToRedraw, " +
+                        "surfaceValid=${drawCanvas.holder.surface?.isValid}, " +
+                        "thread=${Thread.currentThread().name}"
+                )
+                return
+            }
+            canvas.drawBitmap(page.windowedBitmap, zoneToRedraw, zoneToRedraw, Paint())
+
+            if (viewModel.toolbarState.value.mode == Mode.Select) {
+                // render selection, but only within dirtyRect
+                viewModel.selectionState.firstPageCut?.let { cutPoints ->
+                    log.i("render cut")
+                    val path = pointsToPath(cutPoints.map {
+                        SimplePointF(
+                            it.x - page.scroll.x, it.y - page.scroll.y
+                        )
+                    })
+                    canvas.drawPath(path, selectPaint)
                 }
+            }
+        } catch (e: IllegalStateException) {
+            log.w("Surface released during draw", e)
+            // ignore — surface is gone
+        } finally {
+            try {
+                if (canvas != null) {
+                    log.d("drawCanvasToView: page=${page.currentPageId} bitmap=${page.windowedBitmap.hashCode()}")
+                    drawCanvas.holder.unlockCanvasAndPost(canvas)
+                }
+                log.v("Canvas refreshed")
             } catch (e: IllegalStateException) {
-                log.w("Surface released during draw", e)
-                // ignore — surface is gone
-            } finally {
-                try {
-                    if (canvas != null) {
-                        log.d("drawCanvasToView: page=${page.currentPageId} bitmap=${page.windowedBitmap.hashCode()}")
-                        drawCanvas.holder.unlockCanvasAndPost(canvas)
-                    }
-                    log.v("Canvas refreshed")
-                } catch (e: IllegalStateException) {
-                    log.w("Surface released during unlock", e)
-                } finally {
-                    onPosted?.invoke()
-                }
+                log.w("Surface released during unlock", e)
             }
         }
     }

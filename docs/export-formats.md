@@ -11,7 +11,6 @@ Overview
     - Book(bookId): all pages of a notebook
     - Page(pageId): a single page
 - Options (ExportOptions):
-    - copyToClipboard: copy a convenience link for some formats/targets
     - targetFolderUri: destination directory (SAF or file://)
     - overwrite: best-effort replacement of existing files (currently **not working** - replaces all the files.)
     - fileName: base name override (extension added automatically)
@@ -29,7 +28,7 @@ Core (Maintainer: @Ethran)
     - Each page as tall as its content plus 50 px, like the PDF projection, and at least one
       screen; wider than the screen when content reaches past its right edge
 - JPEG
-    - Same as PNG, but no clipboard link
+    - Same as PNG
 - XOPP (Xournal++)
     - Book/Page: gzipped XML via XoppFile.writeToXoppStream
     - Includes tools, colors, pressure-derived widths; images embedded as base64

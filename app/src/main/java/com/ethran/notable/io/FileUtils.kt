@@ -2,6 +2,7 @@ package com.ethran.notable.io
 
 import com.ethran.notable.BuildConfig
 import android.content.ContentUris
+import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
@@ -36,7 +37,7 @@ private val fileUtilsLog = ShipBook.getLogger("FileUtilsLogger")
 fun getLinkedFilesDir(): File {
     val documentsDir =
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-    val dbDir = File(documentsDir, "/notable${BuildConfig.STORAGE_DIR_SUFFIX}/Linked")
+    val dbDir = File(documentsDir, "/notable/Linked")
     if (!dbDir.exists()) {
         dbDir.mkdirs()
     }
@@ -149,6 +150,11 @@ fun getFileNameFromUri(
         if (nameIndex >= 0 && cursor.moveToFirst()) {
             fileName = cursor.getString(nameIndex)
         }
+    }
+
+    // A file: Uri has no provider; its last segment is the name.
+    if (fileName.isNullOrBlank() && fileUri.scheme == ContentResolver.SCHEME_FILE) {
+        fileName = fileUri.lastPathSegment
     }
 
     // Fallback if provider did not supply a name

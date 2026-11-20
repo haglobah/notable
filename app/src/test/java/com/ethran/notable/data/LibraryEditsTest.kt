@@ -54,6 +54,11 @@ private class Store {
     val notebookDao = object : NotebookDao {
         override fun getAllInFolder(folderId: String?): LiveData<List<Notebook>> = throw NotImplementedError()
         override fun getAll() = notebooks.values.toList()
+        override suspend fun getAllWithBackgroundType(type: String) = notebooks.values.filter { it.defaultBackgroundType == type }
+        override suspend fun touchUpdatedAtForPage(pageId: String, updatedAt: Date) {
+            val nb = notebooks.values.firstOrNull { pageId in it.pageIds } ?: return
+            notebooks[nb.id] = nb.copy(updatedAt = updatedAt)
+        }
         override fun getByIdLive(notebookId: String): LiveData<Notebook?> = throw NotImplementedError()
         override suspend fun getById(notebookId: String) = notebooks[notebookId]
         override suspend fun setOpenPageId(notebookId: String, pageId: String) {

@@ -101,17 +101,16 @@ internal class DebugEditHook(
         when (val op = intent.getStringExtra("op")) {
             "draw" -> {
                 val n = int("n", 1)
-                val ids = mutableListOf<String>()
                 val pen = viewModel.toolbarState.value.pen
                 val setting = viewModel.toolbarState.value.activePenSetting
-                repeat(n) { i ->
+                val pageId = page.currentPageId
+                // Each stroke is recorded in the history as it is drawn, as with the pen.
+                val drawn = (0 until n).count { i ->
                     val top = y + i * (h / n)
-                    handleDraw(page, ids, setting.strokeSize, setting.color, pen, zigzag(x, top, w, h / n))
+                    handleDraw(page, pageId, history, setting.strokeSize, setting.color, pen, zigzag(x, top, w, h / n))
                 }
-                // What DrawCanvas.commitToHistory does after a burst of strokes.
-                history.addOperationsToHistory(listOf(Operation.DeleteStroke(ids.toList())))
                 CanvasEventBus.refreshUi.emit(Unit)
-                log.i("DebugEdit draw page=${page.currentPageId} ids=${ids.joinToString(",")}")
+                log.i("DebugEdit draw page=$pageId strokes=$drawn")
             }
 
             "erase" -> {
@@ -185,7 +184,6 @@ internal class DebugEditHook(
     private fun commitSelection() {
         tower.applySelectionDisplace()
         viewModel.selectionState.reset()
-        tower.setIsDrawing(true)
     }
 
     private fun zigzag(x: Float, y: Float, w: Float, h: Float): List<StrokePoint> =

@@ -1,10 +1,12 @@
 package com.ethran.notable.testing
 
+import com.ethran.notable.io.ThumbnailUpdates
 import android.content.Context
 import android.os.Looper
 import androidx.compose.runtime.snapshots.Snapshot
-import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.PageDataManager
+import com.ethran.notable.data.PagePreviewStore
+import com.ethran.notable.data.PageSaver
 import com.ethran.notable.data.datastore.EditorSettingCacheManager
 import com.ethran.notable.data.db.AppDatabase
 import com.ethran.notable.data.db.BookRepository
@@ -15,8 +17,8 @@ import com.ethran.notable.data.db.KvRepository
 import com.ethran.notable.data.db.PageRepository
 import com.ethran.notable.data.db.Stroke
 import com.ethran.notable.data.db.StrokePoint
-import com.ethran.notable.data.db.StrokeRepository
 import com.ethran.notable.editor.EditorViewModel
+import com.ethran.notable.editor.PageLeases
 import com.ethran.notable.editor.state.History
 import com.ethran.notable.editor.state.SelectionState
 import com.ethran.notable.editor.utils.Pen
@@ -37,32 +39,16 @@ import java.util.concurrent.ConcurrentLinkedQueue
  */
 
 /** Builds a real [EditorViewModel] backed by an in-memory Room DB, mocking side-effecting deps. */
-internal fun createEditorViewModelForTest(context: Context, db: AppDatabase): EditorViewModel {
-    val bookRepository = BookRepository(db.notebookDao(), db.pageDao())
-    val pageRepository = PageRepository(db.pageDao())
-    val strokeRepository = StrokeRepository(db.strokeDao())
-    val imageRepository = ImageRepository(db.ImageDao())
-    val folderRepository = FolderRepository(db.folderDao())
-
-    val kvRepository = KvRepository(db.kvDao(), context)
-    val kvProxy = KvProxy(kvRepository)
-    val appRepository = AppRepository(
-        bookRepository = bookRepository,
-        pageRepository = pageRepository,
-        strokeRepository = strokeRepository,
-        imageRepository = imageRepository,
-        folderRepository = folderRepository,
-        kvProxy = kvProxy,
-        edits = com.ethran.notable.data.LibraryEdits(
-            bookRepository, pageRepository, folderRepository, strokeRepository, imageRepository,
-            com.ethran.notable.data.ContentMirror.None,
-        ),
-    )
-
-    val editorSettingCacheManager = EditorSettingCacheManager(kvRepository)
+internal fun createEditorViewModelForTest(
+    context: Context,
+    db: AppDatabase,
+    pageDataManager: PageDataManager = mockk(relaxed = true),
+): EditorViewModel {
+    val appRepository = createAppRepositoryForTest(context, db)
+    val editorSettingCacheManager = EditorSettingCacheManager(KvRepository(db.kvDao(), context))
 
     val exportEngine = mockk<ExportEngine>(relaxed = true)
-    val pageDataManager = mockk<PageDataManager>(relaxed = true)
+    val pageSaver = mockk<PageSaver>(relaxed = true)
     val snackDispatcher = mockk<SnackDispatcher>(relaxed = true)
 
     val historyFactory = mockk<History.Factory>().also {
@@ -75,6 +61,9 @@ internal fun createEditorViewModelForTest(context: Context, db: AppDatabase): Ed
         editorSettingCacheManager = editorSettingCacheManager,
         exportEngine = exportEngine,
         pageDataManager = pageDataManager,
+        pageLeases = PageLeases(pageDataManager),
+        pageSaver = pageSaver,
+        pagePreviewStore = PagePreviewStore(context, pageDataManager, appRepository, ThumbnailUpdates()),
         snackDispatcher = snackDispatcher,
         historyFactory = historyFactory,
         editorImage = com.ethran.notable.image.EditorImage.None,
@@ -134,8 +123,8 @@ internal fun SelectionState.snapshotDelegateStatesForTest(): Set<Any> {
     return setOf(
         delegate("firstPageCut\$delegate"),
         delegate("secondPageCut\$delegate"),
-        delegate("selectedStrokes\$delegate"),
-        delegate("selectedImages\$delegate"),
+        delegate("strokes\$delegate"),
+        delegate("images\$delegate"),
         delegate("selectedBitmap\$delegate"),
         delegate("selectionStartOffset\$delegate"),
         delegate("selectionDisplaceOffset\$delegate"),

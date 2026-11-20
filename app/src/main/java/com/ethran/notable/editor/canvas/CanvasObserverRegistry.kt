@@ -1,16 +1,16 @@
 package com.ethran.notable.editor.canvas
 
+import android.graphics.Bitmap
 import android.graphics.Rect
-import androidx.compose.ui.geometry.Offset
 import com.ethran.notable.editor.EditorViewModel
 import com.ethran.notable.editor.PageView
+import com.ethran.notable.editor.PageViewport
 import com.ethran.notable.editor.state.History
 import com.ethran.notable.editor.state.Mode
 import com.ethran.notable.editor.utils.ImageHandler
 import com.ethran.notable.editor.utils.cleanAllStrokes
 import com.ethran.notable.editor.utils.loadPagePreviewOrFallback
 import com.ethran.notable.editor.utils.partialRefreshRegionOnce
-import com.ethran.notable.editor.utils.selectRectangle
 import com.onyx.android.sdk.extension.isNull
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+
 
 class CanvasObserverRegistry(
     private val coroutineScope: CoroutineScope,
@@ -73,10 +75,8 @@ class CanvasObserverRegistry(
         observeRefreshUiImmediately()
         observeForceUpdate()
         observeRefreshUi()
-        observeFocusChange()
-        observeZoomLevel()
-        observeDrawingState()
-        observeSelectionGesture()
+        observeResume()
+        observeZoom()
         observeClearPage()
         observeRestartAfterConfChange()
         observeReloadFromDb()
@@ -85,16 +85,13 @@ class CanvasObserverRegistry(
         observeIsDrawingSnapshot()
         observeToolbar()
         observeMode()
-        observeHistory()
-        observeSaveCurrent()
         observeQuickNav()
         observeRestoreCanvas()
     }
 
-    // Last (scroll, zoom) actually pushed by an immediate refresh. Used to drop redundant
+    // Last bitmap and viewport actually pushed by an immediate refresh. Used to drop redundant
     // refreshes — see observeRefreshUiImmediately.
-    private var lastImmediateScroll: Offset? = null
-    private var lastImmediateZoom: Float = Float.NaN
+    private var lastImmediate: Pair<Bitmap, PageViewport>? = null
 
     private fun observeRefreshUiImmediately() {
         observerScope.launch(Dispatchers.Main) {
@@ -103,17 +100,16 @@ class CanvasObserverRegistry(
                 // Dedup by content: the collector drains in bursts on Main, so several scroll
                 // steps that settled to the same scroll get drained back-to-back. Pushing the
                 // identical bitmap to the EPD (and freezing the screen) again is wasted work, so
-                // skip when scroll+zoom are unchanged. Select mode is exempt: page-cut drag
+                // skip when the bitmap and the viewport are unchanged; two pages at the same
+                // viewport differ only in their bitmap. Select mode is exempt: page-cut drag
                 // changes content without moving scroll.
-                val scroll = page.scroll
-                val zoom = page.zoomLevel.value
+                val shown = page.windowedBitmap to page.viewport.value
                 val inSelect = viewModel.toolbarState.value.mode == Mode.Select
-                if (!inSelect && scroll == lastImmediateScroll && zoom == lastImmediateZoom) {
-                    log.v("Refreshing UI! skipped — unchanged (scroll=$scroll, zoom=$zoom)")
+                if (!inSelect && shown == lastImmediate) {
+                    log.v("Refreshing UI! skipped — unchanged ($shown)")
                     return@collect
                 }
-                lastImmediateScroll = scroll
-                lastImmediateZoom = zoom
+                lastImmediate = shown
                 log.v("Refreshing UI!")
                 val zoneToRedraw = Rect(0, 0, page.viewWidth, page.viewHeight)
                 refreshManager.refreshUi(zoneToRedraw)
@@ -150,45 +146,41 @@ class CanvasObserverRegistry(
         }
     }
 
-    private fun observeFocusChange() {
+    /**
+     * Redraws after a resume (wake-up, return from another app) or a focus regain (a popup, dialog
+     * or another window closed): the panel may show something else by then.
+     */
+    private fun observeResume() {
         observerScope.launch {
-            CanvasEventBus.onFocusChange.collect { hasFocus ->
-                log.v("App has focus: $hasFocus")
-                if (hasFocus) {
-                    inputHandler.updatePenAndStroke() // The setting might been changed by other app.
-                    drawCanvas.refreshManager.drawCanvasToView(null)
-                    viewModel.updateDrawingState()
-                } else {
-                    CanvasEventBus.isDrawing.emit(false)
-                }
+            CanvasEventBus.isResumed.drop(1).collect { resumed ->
+                log.v("App resumed: $resumed")
+                if (resumed) redrawIfPenStaysOff()
+            }
+        }
+        observerScope.launch {
+            CanvasEventBus.hasWindowFocus.drop(1).collect { hasFocus ->
+                log.v("Window focus: $hasFocus")
+                if (hasFocus) redrawIfPenStaysOff()
             }
         }
     }
 
-    private fun observeZoomLevel() {
+    /**
+     * If the pen turns on, the enable path draws the page first, so drawing it here too would be a
+     * second full-page draw. If something still keeps the pen off (a popup open across a wake-up,
+     * a selection), nothing else draws it. The ViewModel mirrors resume and focus inline on Main,
+     * before this observer runs, so `isDrawing` is already current here.
+     */
+    private fun redrawIfPenStaysOff() {
+        if (viewModel.toolbarState.value.isDrawing) return
+        drawCanvas.refreshManager.drawCanvasToView(null)
+    }
+
+    private fun observeZoom() {
         observerScope.launch {
-            page.zoomLevel.drop(1).collect {
-                log.v("zoom level change: ${page.zoomLevel.value}")
-                pageDataManager.setPageZoom(page.currentPageId, page.zoomLevel.value)
+            page.viewport.map { it.zoom }.distinctUntilChanged().drop(1).collect { zoom ->
+                log.v("zoom level change: $zoom")
                 inputHandler.updatePenAndStroke()
-            }
-        }
-    }
-
-    private fun observeDrawingState() {
-        observerScope.launch {
-            CanvasEventBus.isDrawing.collect {
-                log.v("drawing state changed to $it!")
-                viewModel.setDrawingStateFromCanvas(it)
-            }
-        }
-    }
-
-    private fun observeSelectionGesture() {
-        observerScope.launch {
-            CanvasEventBus.rectangleToSelectByGesture.collect {
-                log.v("Area to Select (screen): $it")
-                selectRectangle(page, drawCanvas.coroutineScope, viewModel, it)
             }
         }
     }
@@ -228,7 +220,7 @@ class CanvasObserverRegistry(
                 }
                 log.d("remote edit on open page: +${edit.upsertStrokes.size} -${edit.deleteStrokes.size} strokes")
                 if (edit.pageChanged) page.refreshCurrentPage()
-                pageDataManager.recomputeHeight(edit.pageId)
+                page.updateContentHeight()
                 // Not forceUpdate: its refresh pauses the live ink for 300–500 ms
                 // (resetScreenFreeze), so strokes written meanwhile only show up afterwards.
                 // Pushing the bitmap directly leaves the firmware's ink layer alone.
@@ -252,7 +244,9 @@ class CanvasObserverRegistry(
     }
 
     private fun observePenChanges() {
-        observerScope.launch(Dispatchers.Default) {
+        // On Main, like every other caller of updatePenAndStroke: the pen style setters must not
+        // run from two threads at once.
+        observerScope.launch {
             viewModel.toolbarState
                 // Preset id, not just the base pen type: switching between two ballpen
                 // presets changes color/size without changing `pen`.
@@ -298,11 +292,6 @@ class CanvasObserverRegistry(
                 .drop(1)
                 .collect {
                     log.v("isDrawing change to $it")
-                    // We need to close all menus
-                    if (it) {
-                        CanvasEventBus.closeMenusSignal.emit(Unit)
-//                        waitForEpdRefresh()
-                    }
                     inputHandler.updateIsDrawing()
                 }
         }
@@ -338,39 +327,13 @@ class CanvasObserverRegistry(
     }
 
     @OptIn(FlowPreview::class)
-    private fun observeHistory() {
-        observerScope.launch {
-            // After 500ms add to history strokes
-            CanvasEventBus.commitHistorySignal.debounce(500).collect {
-                log.v("Commiting to history")
-                drawCanvas.commitToHistory()
-            }
-        }
-        observerScope.launch {
-            CanvasEventBus.commitHistorySignalImmediately.collect {
-                drawCanvas.commitToHistory()
-                CanvasEventBus.commitCompletion.complete(Unit)
-            }
-        }
-    }
-
-
-    private fun observeSaveCurrent() {
-        observerScope.launch {
-            CanvasEventBus.saveCurrent.collect {
-                // Push current bitmap to persist layer so preview has something to load
-                pageDataManager.cacheBitmap(page.currentPageId, page.windowedBitmap)
-                pageDataManager.requestPreviewSave(page.currentPageId)
-            }
-        }
-    }
-
-    @OptIn(FlowPreview::class)
     private fun observeQuickNav() {
         observerScope.launch {
             CanvasEventBus.previewPage.debounce(50).collectLatest { pageId ->
                 if (!CanvasEventBus.isScrubbing.value) return@collectLatest // dropped — scrub already ended
-                val pageNumber = pageDataManager.getPageNumberInCurrentNotebook(pageId)
+                // Null for a loose page, or if sync has just deleted the notebook.
+                val pageNumber = page.openPage.record?.notebookId
+                    ?.let { viewModel.appRepository.bookRepository.getPageIndex(it, pageId) }
                 val pageUpdatedAtMs = pageDataManager.getPageUpdatedAt(pageId)
 
                 log.d("QuickNav IO load started for page $pageId")

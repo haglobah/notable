@@ -14,7 +14,6 @@ import androidx.navigation.compose.rememberNavController
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.editor.EditorDestination
-import com.ethran.notable.editor.canvas.CanvasEventBus
 import com.ethran.notable.editor.utils.refreshScreen
 import com.ethran.notable.ui.views.BugReportDestination
 import com.ethran.notable.ui.views.LibraryDestination
@@ -63,12 +62,10 @@ class NotableNavigator(
             "quickNavSourcePageId", currentPageId
         )
         isQuickNavOpen = true
-        updateDrawingState()
     }
 
     fun closeQuickNav() {
         isQuickNavOpen = false
-        updateDrawingState()
         if (quickNavSourcePageId == currentPageId) {
             // User didn't use the QuickNav, so remove the savedStateHandle
             navController.currentBackStackEntry?.savedStateHandle?.remove<String>("quickNavSourcePageId")
@@ -101,14 +98,6 @@ class NotableNavigator(
         return isQuickNavOpen && quickNavSourcePageId != currentPageId
     }
 
-    // Updates the drawing state based on whether QuickNav is open
-    fun updateDrawingState() {
-        coroutineScope.launch {
-            log.d("Changing drawing state, isQuickNavOpen: $isQuickNavOpen")
-            CanvasEventBus.isDrawing.emit(!isQuickNavOpen)
-        }
-    }
-
     fun goToLibrary(folderId: String?) {
         navController.navigate(LibraryDestination.createRoute(folderId))
     }
@@ -116,6 +105,26 @@ class NotableNavigator(
     fun goToEditor(pageId: String, bookId: String?) {
         navController.navigate(EditorDestination.createRoute(pageId, bookId))
     }
+
+    /**
+     * Like [goToEditor], but stays put when [pageId] is already open in the editor, and replaces
+     * the editor when it has another page of the same notebook open, so following links doesn't
+     * pile up pages to go back through.
+     */
+    fun showPage(pageId: String, bookId: String?) {
+        val editor = navController.currentBackStackEntry
+            ?.takeIf { it.destination.route == EditorDestination.routeWithArgs }
+        if (editor != null && pageId == currentPageId) return
+        val sameBook = editor?.takeIf {
+            bookId != null && it.arguments?.getString(EditorDestination.BOOK_ID_ARG) == bookId
+        }
+        navController.navigate(EditorDestination.createRoute(pageId, bookId)) {
+            if (sameBook != null) popUpTo(sameBook.destination.id) { inclusive = true }
+        }
+    }
+
+    val isOnWelcome: Boolean
+        get() = navController.currentDestination?.route == WelcomeDestination.route
 
     fun goBack() {
         navController.popBackStack()

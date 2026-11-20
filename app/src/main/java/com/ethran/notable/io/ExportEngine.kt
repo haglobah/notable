@@ -1,8 +1,6 @@
 package com.ethran.notable.io
 
 import com.ethran.notable.BuildConfig
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
@@ -16,6 +14,10 @@ import android.net.Uri
 import android.os.Environment
 import androidx.core.net.toUri
 import com.ethran.notable.data.AppRepository
+import com.ethran.notable.data.PageSaver
+import com.ethran.notable.data.datastore.A4_HEIGHT
+import com.ethran.notable.data.datastore.A4_WIDTH
+import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.data.events.AppEvent
 import com.ethran.notable.data.events.AppEventBus
 import com.ethran.notable.data.db.BookRepository
@@ -23,6 +25,12 @@ import com.ethran.notable.data.db.PageRepository
 import com.ethran.notable.di.ApplicationScope
 import com.ethran.notable.di.IoDispatcher
 import com.ethran.notable.ui.components.getFolderList
+import com.ethran.notable.utils.AppResult
+import com.ethran.notable.utils.DomainError
+import com.ethran.notable.utils.ensureNotMainThread
+import com.ethran.notable.utils.flatMap
+import com.ethran.notable.utils.fold
+import com.ethran.notable.utils.onError
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineDispatcher
@@ -38,6 +46,7 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
 
 /* ---------------------------- Public API ---------------------------- */
 
@@ -49,7 +58,6 @@ sealed class ExportTarget {
 }
 
 data class ExportOptions(
-    val copyToClipboard: Boolean = true,
     val targetFolderUri: Uri? = null, // can be made to also get from it fileName.
     val overwrite: Boolean = false,   // TODO: Fix it -- for now it does not work correctly (it overwrites the files too often)
     val fileName: String? = null
@@ -64,6 +72,7 @@ class ExportEngine @Inject constructor(
     private val pageContentRenderer: PageContentRenderer,
     private val pdfProjection: PdfProjection,
     private val appEventBus: AppEventBus,
+    private val pageSaver: PageSaver,
     @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     @param:ApplicationScope private val applicationScope: CoroutineScope
 ) {
@@ -75,6 +84,8 @@ class ExportEngine @Inject constructor(
     suspend fun export(
         target: ExportTarget, format: ExportFormat, options: ExportOptions = ExportOptions()
     ): String {
+        // Exporters read pages from the database, so it must have every edit made so far.
+        pageSaver.saveAll().onError { return "Export cancelled: ${it.userMessage}" }
         // prepare file name and folder
         val (folderUri, baseFileName) = createFileNameAndFolder(target, format, options)
         // TODO: Retrieve all necessary data from the target, so that specific format exporter does not need to handle reading from db.
@@ -107,16 +118,27 @@ class ExportEngine @Inject constructor(
 
             try {
                 log.i("Exporting book to linked file, uri: $uriStr")
-                export(
-                    target = ExportTarget.Book(bookId),
-                    format = ExportFormat.XOPP,
-                    options = ExportOptions(
-                        copyToClipboard = false,
-                        targetFolderUri = uriStr.toUri(),
-                        overwrite = true
+                val target = ExportTarget.Book(bookId)
+                // The file is written from the database, so without every edit saved it would be
+                // overwritten with an older version of the book.
+                pageSaver.saveAll()
+                    .flatMap {
+                        val (folderUri, fileName) = createFileNameAndFolder(
+                            target, ExportFormat.XOPP,
+                            ExportOptions(targetFolderUri = uriStr.toUri()),
+                        )
+                        writeFile(folderUri, "$fileName.xopp", "application/x-xopp", overwrite = true) { out ->
+                            xoppFile.writeToXoppStream(target, out)
+                        }
+                    }
+                    .fold(
+                        onSuccess = { log.i("Linked export finished") },
+                        onError = {
+                            appEventBus.emit(
+                                AppEvent.LogMessage("exportToLinkedFileAsync", "Linked file not updated: ${it.userMessage}")
+                            )
+                        },
                     )
-                )
-                log.i("Linked export successful")
             } catch (e: Exception) {
                 appEventBus.emit(
                     AppEvent.LogMessage(
@@ -147,7 +169,6 @@ class ExportEngine @Inject constructor(
                 log.e("PDF projection failed: ${e.message}", e)
                 return "Error exporting $baseFileName.pdf: ${e.message}"
             }
-            if (target is ExportTarget.Page && options.copyToClipboard) copyPagePngLink(context, target.pageId)
             val saved = saveStream(
                 folderUri = folderUri,
                 fileName = baseFileName,
@@ -236,9 +257,6 @@ class ExportEngine @Inject constructor(
                         ext, mime, options.overwrite, bytes
                     )
                 }
-                if (options.copyToClipboard && format == ExportFormat.PNG) {
-                    copyPagePngLink(context, pageId)
-                }
                 return "Page exported: $baseFileName.$ext"
             }
 
@@ -252,9 +270,6 @@ class ExportEngine @Inject constructor(
                         val bytes = bmp.toBytes(compressFormat)
                         saveBytes(folderUri, fileName, ext, mime, options.overwrite, bytes)
                     }
-                }
-                if (options.copyToClipboard) {
-                    log.w("Can't copy book links or images to clipboard -- batch export.")
                 }
                 return "Book exported: ${book.title} (${book.pageIds.size} pages)"
             }
@@ -388,7 +403,7 @@ class ExportEngine @Inject constructor(
         val documentsDir =
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
 
-        val targetPath = listOfNotBlank("notable${BuildConfig.STORAGE_DIR_SUFFIX}", subfolderPath).joinToString(File.separator)
+        val targetPath = listOfNotBlank("notable", subfolderPath).joinToString(File.separator)
         val dir = File(documentsDir, targetPath)
         if (!dir.exists()) dir.mkdirs()
         return dir.toUri()
@@ -489,11 +504,6 @@ class ExportEngine @Inject constructor(
         writer = writer
     )
 
-    /**
-     * Central writer that handles directory types:
-     * - SAF directory Uris (tree/document) via DocumentsContract
-     * - file:// directory Uris via java.io.File
-     */
     private suspend fun saveInternal(
         folderUri: Uri,
         fileName: String,
@@ -501,8 +511,24 @@ class ExportEngine @Inject constructor(
         mimeType: String,
         overwrite: Boolean,
         writer: suspend (OutputStream) -> Unit
-    ): String = withContext(ioDispatcher) {
+    ): String {
         val displayName = if (extension.isBlank()) fileName else "$fileName.$extension"
+        return writeFile(folderUri, displayName, mimeType, overwrite, writer)
+            .fold(onSuccess = { "Saved $displayName" }, onError = { it.userMessage })
+    }
+
+    /**
+     * Writes [displayName] into [folderUri]. Handles both directory types:
+     * - SAF directory Uris (tree/document) via DocumentsContract
+     * - file:// directory Uris via java.io.File
+     */
+    private suspend fun writeFile(
+        folderUri: Uri,
+        displayName: String,
+        mimeType: String,
+        overwrite: Boolean,
+        writer: suspend (OutputStream) -> Unit
+    ): AppResult<Unit, DomainError> = withContext(ioDispatcher) {
         try {
             val dest = createOrGetFileInDir(folderUri, displayName, mimeType, overwrite)
                 ?: throw IOException(
@@ -523,37 +549,18 @@ class ExportEngine @Inject constructor(
 
                 else -> throw IOException("Unsupported Uri scheme: ${dest.scheme}")
             }
-
-            "Saved $displayName"
+            AppResult.Success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: OutOfMemoryError) {
             log.e("Save error (OOM): ${e.message}")
-            "Not enough memory to save $displayName"
+            AppResult.Error(DomainError.FileError("Not enough memory to save $displayName"))
         } catch (e: Exception) {
             log.e("Save error: ${e.message}")
-            "Error saving $displayName"
+            AppResult.Error(DomainError.FileError("Error saving $displayName: ${e.message}"))
         }
     }
 
-
-    /* -------------------- Clipboard Helpers -------------------- */
-
-    private fun copyPagePngLink(context: Context, pageId: String) {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val text = """
-            [[../attachments/Notable/Pages/notable-page-$pageId.png]]
-            [[Notable Link][notable://page-$pageId]]
-        """.trimIndent()
-        clipboard.setPrimaryClip(ClipData.newPlainText("Notable Page Link", text))
-    }
-
-    private fun copyBookPdfLink(context: Context, bookId: String, bookName: String) {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val text = """
-            [[../attachments/Notable/Notebooks/$bookName.pdf]]
-            [[Notable Book Link][notable://book-$bookId]]
-        """.trimIndent()
-        clipboard.setPrimaryClip(ClipData.newPlainText("Notable Book PDF Link", text))
-    }
 
     /* -------------------- Utilities -------------------- */
 

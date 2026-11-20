@@ -8,6 +8,7 @@ import com.ethran.notable.data.datastore.AppSettings
 import com.ethran.notable.ui.design.NSelectRow
 import com.ethran.notable.ui.design.NSliderRow
 import com.ethran.notable.ui.design.NToggleRow
+import com.ethran.notable.navigation.LinkFormat
 
 
 @Composable
@@ -31,6 +32,14 @@ fun GeneralSettings(
                 AppSettings.Position.Bottom to stringResource(R.string.toolbar_position_bottom)
             ), value = settings.toolbarPosition, onChange = { newPosition ->
                 onSettingsChange(settings.copy(toolbarPosition = newPosition))
+            })
+        NSelectRow(
+            title = stringResource(R.string.link_format), options = listOf(
+                LinkFormat.Plain to "Plain",
+                LinkFormat.Markdown to "Markdown",
+                LinkFormat.Org to "Org",
+            ), value = settings.linkFormat, onChange = {
+                onSettingsChange(settings.copy(linkFormat = it))
             })
 
         NToggleRow(

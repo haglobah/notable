@@ -10,12 +10,12 @@ import com.ethran.notable.editor.drawing.OnyxStrokeStyle
 import com.ethran.notable.editor.drawing.StrokeRenderer
 import com.ethran.notable.editor.drawing.StrokeStyleRegistry
 import com.ethran.notable.editor.drawing.drawBallPenStroke
+import com.ethran.notable.editor.drawing.drawMarkerStroke
 import com.onyx.android.sdk.data.note.ShapeCreateArgs
 import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.NeoBrushPenWrapper
 import com.onyx.android.sdk.pen.NeoCharcoalPenV2Wrapper
 import com.onyx.android.sdk.pen.NeoCharcoalPenWrapper
-import com.onyx.android.sdk.pen.NeoMarkerPenWrapper
 import com.onyx.android.sdk.pen.PenRenderArgs
 import io.shipbook.shipbooksdk.ShipBook
 
@@ -126,15 +126,10 @@ object OnyxStrokeRenderer : StrokeRenderer {
                         )
                     }
 
-                    OnyxStrokeStyle.Marker -> {
-                        NeoMarkerPenWrapper.drawStroke(
-                            canvas,
-                            paint,
-                            strokeToTouchPoints(stroke),
-                            stroke.size,
-                            false
-                        )
-                    }
+                    // Not NeoMarkerPenWrapper: it rasterises into its own screen-sized buffer,
+                    // ignoring this canvas's transform, so strokes past the screen vanish.
+                    OnyxStrokeStyle.Marker ->
+                        drawMarkerStroke(canvas, paint, stroke.size, stroke.points)
 
                     is OnyxStrokeStyle.Charcoal ->
                         NeoCharcoalPenWrapper.drawNormalStroke(

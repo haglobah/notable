@@ -12,9 +12,9 @@
 
 ![Notable App][logo]
 
-# Notable (Fork)
+# Notable
 
-A maintained and customized fork of the archived [olup/notable](https://github.com/olup/notable) project.
+Handwritten notes for Onyx BOOX e-ink tablets. Continues the archived [olup/notable](https://github.com/olup/notable).
 
 [![🐛 Report Bug][bug-shield]][bug-url]
 [![Download Latest][download-shield]][download-url]
@@ -34,7 +34,7 @@ A maintained and customized fork of the archived [olup/notable](https://github.c
 <details>
   <summary>Table of Contents</summary>
 
-- [About This Fork](#about-this-fork)
+- [About](#about)
 - [Features](#features)
 - [Download](#download)
 - [Gestures](#gestures)
@@ -45,6 +45,7 @@ A maintained and customized fork of the archived [olup/notable](https://github.c
 - [Bug Reporting](#bug-reporting)
 - [Screenshots](#screenshots)
 - [Working with LaTeX](#working-with-latex)
+- [Links](#links)
 - [App Distribution](#app-distribution)
 - [For Developers & Contributing](#for-developers--contributing)
 
@@ -53,7 +54,7 @@ A maintained and customized fork of the archived [olup/notable](https://github.c
 
 ---
 
-## About This Fork
+## About
 This project began as a fork of the original Notable app and has since evolved into a continuation of it. The architecture is largely the same, but many of the functions have been rewritten and expanded with a focus on practical, everyday use. Development is active when possible, guided by the principle that the app must be fast and dependable — performance comes first, and the basics need to feel right before new features are introduced. Waiting for things to load is seen as unacceptable, so responsiveness is a core priority.
 
 Future plans include exploring how AI can enhance the app, with a focus on solutions that run directly on the device. A long-term goal is local handwriting conversion to LaTeX or plain text, making advanced features available without relying on external services.
@@ -66,11 +67,13 @@ Future plans include exploring how AI can enhance the app, with a focus on solut
 * 📝 **Quick Pages:** instantly create a new page.
 * 📒 **Notebooks:** group related notes and switch easily between notebooks.
 * 📁 **Folders:** organize notes with folders.
-* 🤏 **Editor mode gestures:** [intuitive gesture controls](#gestures) to enhance editing.
+* 🤏 **Configurable gestures:** [gesture controls](#gestures) in the editor, adjustable in Settings.
+* 🧰 **Customizable toolbar:** choose and reorder tools, and create custom pens.
 * 🌅 **Images:** add, move, scale, and remove images.
 * ➤ **Selection export:** export or share selected handwriting as PNG.
 * ✏️ **Scribble to erase:** erase content by scribbling over it (disabled by default) — contributed by [@niknal357](https://github.com/niknal357).
 * 🔄 **Auto-refresh on background change:** useful when using a tablet as a second display — see [Working with LaTeX](#working-with-latex).
+* ☁️ **Notable Sync:** notebooks sync through Automerge docs and the Notable server (docs/adr/ADR-001-automerge-sync-via-formenos.md).
 
 ---
 
@@ -82,7 +85,7 @@ Alternatively, get the latest build from the main branch via the ["next" release
 Open the **Assets** section of the release and select the `.apk` file.
 
 <details><summary title="Click to show/hide details">❓ Where can I see alternative/older releases?</summary><br/>
-You can go to the original olup <a href="https://github.com/olup/notable/tags" target="_blank">Releases</a> and download alternative versions of the Notable app.
+See <a href="https://github.com/Ethran/notable/releases" target="_blank">all releases</a>, or the <a href="https://github.com/olup/notable/tags" target="_blank">original olup releases</a>.
 </details>
 
 <details><summary title="Click to show/hide details">❓ What is a 'next' release?</summary><br/>
@@ -92,7 +95,7 @@ The "next" release is a pre-release and may contain features implemented but not
 ---
 
 ## Gestures
-Notable features intuitive gesture controls within Editor mode to optimize the editing experience:
+Default gestures in the editor. Most can be changed in **Settings → Gestures**.
 
 #### ☝️ 1 Finger
 * **Swipe up or down:** scroll the page.
@@ -140,9 +143,8 @@ The app supports the following formats:
 This is a rough, unordered list of ideas and in-progress work, not a committed schedule — priorities shift depending on what's needed at the time.
 
 - Currently being worked on:
-  - Customizable toolbar: allow modifying which tools appear and in what order.
   - Non-Onyx device support: make Notable usable on other Android devices, without depending on the Onyx SDK.
-- Sync: groundwork already exists in the codebase, but it's not ready for use yet.
+- Sync: stabilize Notable Sync.
 - Better selection tools:
   - Stroke editing (color, size, etc.)
   - Rotate and flip selection
@@ -184,6 +186,8 @@ If you encounter unexpected behavior, please include an app log with your report
 This will open a new GitHub issue in your browser with useful device information attached, which greatly helps in diagnosing and resolving the problem.  
 
 Bug reporting with logs is currently supported only in notebooks/pages. Issues outside of writing are unlikely to require this level of detail.  
+
+If the app crashes, attach the log from **Settings → Debug → Crash logs**.
 
 ---
 
@@ -237,6 +241,31 @@ in real time on your tablet.
 
 > After each recompilation, Notable will detect the updated PDF and automatically refresh the view.
 
+Instead of importing by hand, you can open the PDF with a [link](#links). The first time Notable
+asks to import it and observes the file; after that the same link jumps to the page.
+
+```sh
+adb push build/main.pdf /sdcard/Documents/main.pdf
+adb shell am start -a android.intent.action.VIEW \
+  -d "'notable://pdf?path=/sdcard/Documents/main.pdf&page=12'"
+```
+
+---
+
+## Links
+
+Notable opens `notable://` links, from a notes app such as Obsidian or Logseq, a browser, or `adb`.
+
+| Link | Opens |
+|---|---|
+| `notable://page/<pageId>` | the page |
+| `notable://book/<bookId>` | the notebook, at the page last open |
+| `notable://pdf?path=<absolute path>&page=<N>` | the notebook that observes this PDF, at page N of the PDF (counted from 1; `page` is optional). If several notebooks observe it, the one edited last |
+
+To get a link, use **Copy link to page** or **Copy link to book** in the editor menu, **Copy link**
+in a page's menu, or **Copy link** in the notebook's settings. The link is copied as Markdown,
+`[Title](notable://…)`, as an Org link, or plain; choose the format in Settings → General.
+
 ---
 
 ## App Distribution
@@ -246,10 +275,12 @@ Notable is not distributed on Google Play or F-Droid. Official builds are provid
 
 ## For Developers & Contributing
 
-- Project file layout: see [docs/file-structure.md](./docs/file-structure.md)  
-- Data model and stroke encoding: see [docs/database-structure.md](./docs/database-structure.md)  
-- Additional documentation will be added as needed  
-  Note: These documents were AI-generated and lightly verified; refer to the code for the authoritative source.
+Contributions are welcome. **Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.**
+
+- Project file layout: see [docs/file-structure.md](./docs/file-structure.md)
+- Data model and stroke encoding: see [docs/database-structure.md](./docs/database-structure.md)
+
+> These documents were AI-generated and lightly verified; the code is the source of truth.
 
 ### Development Notes
 
@@ -268,23 +299,13 @@ emulator or system images. The inputs are pinned in `flake.lock`.
 
 While the new flake files are still untracked, use `nix develop path:.`.
 
-- Edit the `DEBUG_STORE_FILE` in `/app/gradle.properties` to point to your local keystore file. This is typically located in the `.android` directory.
+- Debug builds need no signing setup. Release builds are signed in CI.
 - To debug on a BOOX device, enable developer mode. You can follow [this guide](https://imgur.com/a/i1kb2UQ).
-
-Feel free to open issues or submit pull requests. I appreciate your help!
 
 ---
 
 <!-- MARKDOWN LINKS -->
 [logo]: https://github.com/Ethran/notable/blob/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png?raw=true "Notable Logo"
-[contributors-shield]: https://img.shields.io/github/contributors/Ethran/notable.svg?style=for-the-badge
-[contributors-url]: https://github.com/Ethran/notable/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/Ethran/notable.svg?style=for-the-badge
-[forks-url]: https://github.com/Ethran/notable/network/members
-[stars-shield]: https://img.shields.io/github/stars/Ethran/notable.svg?style=for-the-badge
-[stars-url]: https://github.com/Ethran/notable/stargazers
-[issues-shield]: https://img.shields.io/github/issues/Ethran/notable.svg?style=for-the-badge
-[issues-url]: https://github.com/Ethran/notable/issues
 [license-shield]: https://img.shields.io/github/license/Ethran/notable.svg?style=for-the-badge
 
 [license-url]: https://github.com/Ethran/notable/blob/main/LICENSE
@@ -295,14 +316,8 @@ Feel free to open issues or submit pull requests. I appreciate your help!
 
 [discord-shield]: https://img.shields.io/badge/Discord-Join%20Chat-7289DA?style=for-the-badge&logo=discord
 [discord-url]: https://discord.gg/rvNHgaDmN2
-[kofi-shield]: https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ko--fi-ff5f5f?style=for-the-badge&logo=ko-fi&logoColor=white
-[kofi-url]: https://ko-fi.com/rethran
 
-[sponsor-shield]: https://img.shields.io/badge/Sponsor-GitHub-%23ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white
-[sponsor-url]: https://github.com/sponsors/rethran
-
-[docs-url]: https://github.com/Ethran/notable
 [bug-url]: https://github.com/Ethran/notable/issues/new?template=bug_report.md
-[feature-url]: https://github.com/Ethran/notable/issues/new?labels=enhancement&template=feature-request---.md
+[feature-url]: https://github.com/Ethran/notable/issues/new?labels=enhancement
 [bug-shield]: https://img.shields.io/badge/🐛%20Report%20Bug-red?style=for-the-badge
 [feature-shield]: https://img.shields.io/badge/💡%20Request%20Feature-blueviolet?style=for-the-badge

@@ -66,6 +66,11 @@ class AppRepository @Inject constructor(
         if (edits.duplicatePage(pageId) == null) log.w("duplicatePage: Missing page Data.")
     }
 
+    /** Copies a notebook and its contents, excluding its external link and reading state. */
+    suspend fun duplicateNotebook(notebookId: String): String? {
+        return edits.duplicateNotebook(notebookId)
+    }
+
     suspend fun isObservable(notebookId: String?): Boolean {
         if (notebookId == null) return false
         val book = bookRepository.getById(notebookId = notebookId) ?: return false

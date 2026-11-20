@@ -145,9 +145,10 @@ fun drawOnCanvasFromPage(
     ignoredStrokeIds: List<String> = listOf(),
     ignoredImageIds: List<String> = listOf(),
 ): AppResult<Unit, DomainError> {
-    val zoomLevel = page.zoomLevel.value
-    val backgroundType = page.pageDataManager.getBackgroundType() ?: BackgroundType.Native
-    val background = page.pageDataManager.getBackgroundName()
+    val zoomLevel = page.zoom
+    val shown = page.openPage
+    val backgroundType = shown.backgroundType ?: BackgroundType.Native
+    val background = shown.backgroundName
     pageDrawingLog.d("drawOnCanvasFromPage, zoom: $zoomLevel, background: $background, type: $backgroundType")
 
     var persistentError: DomainError? = null
@@ -156,9 +157,7 @@ fun drawOnCanvasFromPage(
     canvas.withClip(canvasClipBounds) {
         // for debugging:
         drawColor(Color.WHITE)
-
-//        drawBg(page.context, this, backgroundType, background, page.scroll, zoomLevel, page, page.currentPageNumber)
-        page.drawBgToCanvas(null)
+        page.drawBgToCanvas(this)
         if (GlobalAppSettings.current.debugMode) {
             drawDebugRectWithLabels(canvas, RectF(canvasClipBounds), Color.BLACK)
         }

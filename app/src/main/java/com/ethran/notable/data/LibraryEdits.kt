@@ -212,6 +212,40 @@ class LibraryEdits @Inject constructor(
             Import(notebook.id).fill()
         }
 
+    /**
+     * A copy of notebook [notebookId], titled "… (copy)" in the same folder, with copies of its
+     * pages, strokes and images under new ids. Its reading state and external link are not
+     * copied. Returns the copy's id; null when the notebook is gone.
+     */
+    suspend fun duplicateNotebook(notebookId: String): String? {
+        val source = books.getById(notebookId) ?: return null
+        val stamp = Date(now())
+        val copy = Notebook(
+            title = "${source.title} (copy)",
+            parentFolderId = source.parentFolderId,
+            defaultBackground = source.defaultBackground,
+            defaultBackgroundType = source.defaultBackgroundType,
+            bookMeta = source.bookMeta,
+            createdAt = stamp,
+            updatedAt = stamp,
+        )
+        var firstPageId: String? = null
+        importNotebook(copy) {
+            for (sourcePageId in source.pageIds) {
+                val data = pages.getWithDataById(sourcePageId) ?: continue
+                val pageId = UUID.randomUUID().toString()
+                if (firstPageId == null) firstPageId = pageId
+                page(
+                    data.page.copy(id = pageId, scroll = 0, createdAt = stamp, updatedAt = stamp),
+                    data.strokes.map { it.copy(id = UUID.randomUUID().toString(), pageId = pageId, createdAt = stamp, updatedAt = stamp) },
+                    data.images.map { it.copy(id = UUID.randomUUID().toString(), pageId = pageId, createdAt = stamp, updatedAt = stamp) },
+                )
+            }
+        }
+        firstPageId?.let { setOpenPage(copy.id, it) }
+        return copy.id
+    }
+
     /** Room writes of one import; valid only inside [importNotebook]'s block. */
     inner class Import internal constructor(private val notebookId: String) {
         suspend fun page(page: Page, strokes: List<Stroke> = emptyList(), images: List<Image> = emptyList()) {

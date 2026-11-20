@@ -46,7 +46,6 @@ import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.theme.InkaTheme
 import com.ethran.notable.ui.viewmodels.GestureRowModel
 import com.ethran.notable.ui.viewmodels.SettingsViewModel
-import com.ethran.notable.utils.isNext
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Heart
 import kotlinx.coroutines.launch
@@ -70,7 +69,7 @@ fun SettingsView(
     val settings = viewModel.settings
 
     val versionString = remember {
-        "v${BuildConfig.VERSION_NAME}${if (isNext) " [NEXT]" else ""}"
+        "v${BuildConfig.VERSION_NAME}"
     }
 
     SettingsContent(

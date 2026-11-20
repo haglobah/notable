@@ -1,5 +1,16 @@
 package com.ethran.notable.ui.dialogs
 
+import com.ethran.notable.data.PageSaver
+import com.ethran.notable.io.copyLink
+import com.ethran.notable.navigation.DeepLink
+import com.ethran.notable.ui.SnackConf
+import com.ethran.notable.utils.AppResult
+import dagger.hilt.EntryPoint
+import dagger.hilt.EntryPoints
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import compose.icons.feathericons.Copy
+import androidx.compose.ui.platform.LocalContext
 import android.text.format.DateFormat
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +75,12 @@ import kotlinx.coroutines.withContext
 
 private val log = ShipBook.getLogger("NotebookConfig")
 
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface NotebookConfigEntryPoint {
+    fun pageSaver(): PageSaver
+}
+
 @Composable
 fun NotebookConfigDialog(
     appRepository: AppRepository,
@@ -77,6 +94,10 @@ fun NotebookConfigDialog(
     val observedBook by appRepository.bookRepository.getByIdLive(bookId).observeAsState()
     val scope = rememberCoroutineScope()
     val snackManager = LocalSnackContext.current
+    val context = LocalContext.current
+    val pageSaver = remember(context) {
+        EntryPoints.get(context.applicationContext, NotebookConfigEntryPoint::class.java).pageSaver()
+    }
     val book = observedBook ?: return
     var title by remember(bookId) { mutableStateOf(book.title) }
     var savedTitle by remember(bookId) { mutableStateOf(book.title) }
@@ -230,6 +251,26 @@ fun NotebookConfigDialog(
                 onClick = { perform { showMove = true } }, icon = FeatherIcons.FolderPlus, enabled = !busy)
             NButton(stringResource(R.string.details_notebook_buttons_export),
                 onClick = { perform { showExport = true } }, icon = FeatherIcons.Download, enabled = !busy)
+        }
+        Spacer(Modifier.height(NotableSpace.sm))
+        Row(horizontalArrangement = Arrangement.spacedBy(NotableSpace.md)) {
+            NButton(stringResource(R.string.details_notebook_buttons_duplicate), onClick = {
+                perform {
+                    // The copy is read from the database: write pending edits first.
+                    val saved = withContext(Dispatchers.IO) { pageSaver.saveAll() }
+                    if (saved is AppResult.Error<*>) {
+                        snackManager.showOrUpdateSnack(SnackConf(text = saved.error.userMessage, duration = 3000))
+                        return@perform
+                    }
+                    val copyId = withContext(Dispatchers.IO) { edits.duplicateNotebook(bookId) }
+                    snackManager.showOrUpdateSnack(
+                        SnackConf(text = if (copyId != null) "Notebook duplicated." else "Notebook not found.", duration = 2000)
+                    )
+                }
+            }, icon = FeatherIcons.Copy, enabled = !busy)
+            NButton(stringResource(R.string.copy_link), onClick = {
+                copyLink(context, DeepLink.Book(bookId), book.title, snackManager::showOrUpdateSnack)
+            }, icon = FeatherIcons.Link, enabled = !busy)
         }
         Spacer(Modifier.height(NotableSpace.xl))
         NDivider()

@@ -6,12 +6,11 @@ import android.net.Uri
 import android.os.Environment
 import com.ethran.notable.APP_SETTINGS_KEY
 import com.ethran.notable.data.datastore.AppSettings
+import com.ethran.notable.editor.utils.deletePagePreviews
 import com.ethran.notable.io.createFileFromContentUri
 import com.ethran.notable.io.isImageUri
 import com.ethran.notable.io.saveImageFromContentUri
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -42,7 +41,7 @@ fun getDbDirOrNull(): File? {
 fun dbDirPath(): File {
     val documentsDir =
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-    return File(documentsDir, "notabledb${BuildConfig.STORAGE_DIR_SUFFIX}")
+    return File(documentsDir, "notabledb")
 }
 
 fun ensureImagesFolder(): File {
@@ -61,14 +60,6 @@ fun ensureBackgroundsFolder(): File {
         backgroundsDir.mkdirs()
     }
     return backgroundsDir
-}
-
-fun ensurePreviewsFullFolder(context: Context): File {
-    val dir = File(context.filesDir, "pages/previews/full")
-    if (!dir.exists()) {
-        dir.mkdirs()
-    }
-    return dir
 }
 
 
@@ -111,17 +102,5 @@ suspend fun deletePage(appRepository: AppRepository, pageId: String, filesDir: F
     }
     // From its notebook and Room, through the docs; an editor showing it leaves it.
     appRepository.edits.deletePage(pageId, page.notebookId)
-    coroutineScope {
-        launch {
-            val imgFileThumb = File(filesDir, "pages/previews/thumbs/$pageId")
-            if (imgFileThumb.exists()) {
-                imgFileThumb.delete()
-            }
-            val imgFileFull = File(filesDir, "pages/previews/full/$pageId")
-            if (imgFileFull.exists()) {
-                imgFileFull.delete()
-            }
-        }
-
-    }
+    deletePagePreviews(filesDir, pageId)
 }

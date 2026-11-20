@@ -8,6 +8,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.PageDataManager
+import com.ethran.notable.data.PagePreviewStore
+import com.ethran.notable.data.PageSaver
 import com.ethran.notable.data.copyImageToDatabase
 import com.ethran.notable.data.pageAfterDeletion
 import com.ethran.notable.data.datastore.EditorSettingCacheManager
@@ -27,7 +29,6 @@ import com.ethran.notable.editor.state.History
 import com.ethran.notable.editor.state.Mode
 import com.ethran.notable.editor.state.SelectionState
 import com.ethran.notable.editor.ui.toolbar.model.ToolbarPen
-import com.ethran.notable.editor.utils.DeviceCompat
 import com.ethran.notable.editor.utils.Eraser
 import com.ethran.notable.editor.utils.Pen
 import com.ethran.notable.editor.utils.PenSetting
@@ -35,8 +36,11 @@ import com.ethran.notable.image.EditorImage
 import com.ethran.notable.image.ImageCommand
 import com.ethran.notable.image.OpenPage
 import com.ethran.notable.io.ExportEngine
+import com.ethran.notable.navigation.DeepLink
 import com.ethran.notable.io.ExportFormat
 import com.ethran.notable.io.ExportTarget
+import com.ethran.notable.io.copyLink
+import com.ethran.notable.io.pageLinkTitle
 import com.ethran.notable.utils.AppResult
 import com.ethran.notable.ui.SnackConf
 import com.ethran.notable.ui.SnackDispatcher
@@ -50,6 +54,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -57,6 +62,7 @@ import kotlinx.coroutines.withContext
 import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import kotlin.coroutines.cancellation.CancellationException
 
 private val log = ShipBook.getLogger("EditorViewModel")
 
@@ -84,7 +90,9 @@ data class ToolbarUiState(
     // Toolbar visibility & menus
     val isToolbarOpen: Boolean = false,
     val isMenuOpen: Boolean = false,
-    val isStrokeSelectionOpen: Boolean = false,
+    val isEraserMenuOpen: Boolean = false,
+    /** The pen preset whose stroke menu (size and colour popup) is open, or null. */
+    val penMenuPresetId: String? = null,
     val isBackgroundSelectorModalOpen: Boolean = false,
     val showResetView: Boolean = false,
 
@@ -100,9 +108,9 @@ data class ToolbarUiState(
      * AppSettings.toolbarPens kept in sync by the ViewModel (the preset is the source
      * of truth). */
     val penSettings: Map<String, PenSetting> = DEFAULT_PEN_SETTINGS,
+    /** Something is selected. Written only by [EditorViewModel.selectionState]. */
     val isSelectionActive: Boolean = false,
     val hasClipboard: Boolean = false,
-    val isDrawing: Boolean = true,
     val isQuickNavOpen: Boolean = false,
 
     /** Menu commands: built-ins and the live code image's (ADR-002). */
@@ -127,17 +135,33 @@ data class ToolbarUiState(
     val isChoosingCustomView: Boolean = false,
     /** A panel opened by an edge swipe: recent notebooks (left) or the pages (right). */
     val edgePanel: EdgePanel = EdgePanel.None,
+    /** Mirror of [CanvasEventBus.isResumed]. */
+    val isResumed: Boolean = true,
+    /** Mirror of [CanvasEventBus.hasWindowFocus]. */
+    val hasWindowFocus: Boolean = true,
+    /** A finger is holding/dragging a selection rectangle on the canvas. */
+    val isSelectionGestureActive: Boolean = false,
 ) {
     /** The active preset's setting — what the drawing pipeline draws with. The fallback
      * only triggers if the active preset was deleted mid-session. */
     val activePenSetting: PenSetting
         get() = penSettings[penPresetId] ?: PenSetting(5f, android.graphics.Color.BLACK)
 
-    val isDrawingAllowed: Boolean
-        get() = !isSelectionActive &&
-                !(isMenuOpen || isStrokeSelectionOpen || isBackgroundSelectorModalOpen || isBookPanelOpen)
-                && !(isShareDialogOpen || isViewDialogOpen || edgePanel != EdgePanel.None)
-                && !isQuickNavOpen
+    /** The pen of [presetId] is the one in use. It stays selected in Line mode, which draws with it. */
+    fun isPenSelected(presetId: String): Boolean =
+        (mode == Mode.Draw || mode == Mode.Line) && penPresetId == presetId
+
+    /**
+     * Whether the pen draws (raw drawing on). Derived only, never stored: to change it,
+     * change one of its inputs, and the canvas follows the latest state.
+     */
+    val isDrawing: Boolean
+        get() = isResumed && hasWindowFocus &&
+                !isSelectionGestureActive && !isSelectionActive &&
+                !(isMenuOpen || isEraserMenuOpen || isBackgroundSelectorModalOpen || isBookPanelOpen) &&
+                !(isShareDialogOpen || isViewDialogOpen || edgePanel != EdgePanel.None) &&
+                penMenuPresetId == null &&
+                !isQuickNavOpen
 }
 
 /** The panels an edge swipe opens over the page, after reMarkable's drawer and quick browse. */
@@ -157,11 +181,13 @@ enum class EdgePanel {
 sealed class ToolbarAction {
     object ToggleToolbar : ToolbarAction()
     data class ChangeMode(val mode: Mode) : ToolbarAction()
-    data class ChangePen(val presetId: String) : ToolbarAction()
+    /** A pen button was tapped: selects the pen, or toggles its stroke menu if already selected. */
+    data class PenButtonTapped(val presetId: String) : ToolbarAction()
+    object ClosePenMenu : ToolbarAction()
     data class ChangePenSetting(val presetId: String, val setting: PenSetting) : ToolbarAction()
     data class ChangeEraser(val eraser: Eraser) : ToolbarAction()
     object ToggleMenu : ToolbarAction()
-    data class ToggleEraserManu(val isOpen: Boolean) : ToolbarAction()
+    data class ToggleEraserMenu(val isOpen: Boolean) : ToolbarAction()
     data class ToggleBackgroundSelector(val isOpen: Boolean) : ToolbarAction()
     data class ToggleScribbleToErase(val enabled: Boolean) : ToolbarAction()
 
@@ -176,6 +202,8 @@ sealed class ToolbarAction {
     data class ExportBook(val format: ExportFormat) : ToolbarAction()
     /** Share the page ([book] false) or the notebook as the PDF projection. */
     data class SharePdf(val book: Boolean) : ToolbarAction()
+    object CopyPageLink : ToolbarAction()
+    object CopyBookLink : ToolbarAction()
     data class BackgroundChanged(val type: String, val path: String?) : ToolbarAction()
     /** A command of the live code image, or its built-in (ADR-002). */
     data class RunCommand(val id: String) : ToolbarAction()
@@ -201,7 +229,6 @@ sealed class ToolbarAction {
     object DismissJumpBack : ToolbarAction()
     object ClearSearchHighlights : ToolbarAction()
 
-    object CloseAllMenus : ToolbarAction()
 
     data class ToggleShareDialog(val isOpen: Boolean) : ToolbarAction()
     data class ToggleViewDialog(val isOpen: Boolean) : ToolbarAction()
@@ -249,10 +276,13 @@ sealed class EditorUiEvent {
 @HiltViewModel
 class EditorViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val appRepository: AppRepository,
+    val appRepository: AppRepository,
     private val editorSettingCacheManager: EditorSettingCacheManager,
     private val exportEngine: ExportEngine,
     val pageDataManager: PageDataManager,
+    val pageLeases: PageLeases,
+    private val pageSaver: PageSaver,
+    private val pagePreviewStore: PagePreviewStore,
     val snackDispatcher: SnackDispatcher,
     private val historyFactory: History.Factory,
     private val editorImage: EditorImage,
@@ -261,12 +291,26 @@ class EditorViewModel @Inject constructor(
     private val _toolbarState = MutableStateFlow(ToolbarUiState())
     val toolbarState: StateFlow<ToolbarUiState> = _toolbarState.asStateFlow()
 
+    // The page the [PageView] shows, set by [onPageShown], or null while no view is open; drives
+    // [prefetchAround].
+    private val shownPageId = MutableStateFlow<String?>(null)
+
     init {
         viewModelScope.launch {
             ClipboardStore.content.collect { setHasClipboard(it != null) }
         }
         viewModelScope.launch {
             editorImage.commands.collect { commands -> _toolbarState.update { it.copy(commands = commands) } }
+        }
+        viewModelScope.launch {
+            CanvasEventBus.isResumed.collect { resumed ->
+                _toolbarState.update { it.copy(isResumed = resumed) }
+            }
+        }
+        viewModelScope.launch {
+            CanvasEventBus.hasWindowFocus.collect { hasFocus ->
+                _toolbarState.update { it.copy(hasWindowFocus = hasFocus) }
+            }
         }
         // The pen presets in AppSettings are the source of truth for per-pen color/size;
         // mirror them into ToolbarUiState.penSettings so the (non-Compose) drawing
@@ -288,6 +332,9 @@ class EditorViewModel @Inject constructor(
                         )
                     }
                 }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            shownPageId.collectLatest { pageId -> pageId?.let { prefetchAround(it) } }
         }
     }
 
@@ -319,7 +366,11 @@ class EditorViewModel @Inject constructor(
     private val didInitSettings = AtomicBoolean(false)
 
     // ---- Selection state (kept for drawing logic compatibility) ----
-    val selectionState = SelectionState()
+    /** The only writer of [ToolbarUiState.isSelectionActive]. */
+    val selectionState = SelectionState { active ->
+        log.v("selection active: $active")
+        _toolbarState.update { it.copy(isSelectionActive = active) }
+    }
 
     // --------------------------------------------------------
     // Initialization from persisted settings
@@ -354,8 +405,10 @@ class EditorViewModel @Inject constructor(
      * Performs cleanup and exports linked files.
      */
     fun onDispose(page: PageView) {
-        // 1. Finish selection operation
+        // 1. Finish selection operation, and release its EPD refresh handle: nothing else would,
+        // and a held handle keeps the next screen on fast refresh.
         selectionState.applySelectionDisplace(page)
+        selectionState.reset()
         bookId?.let { bookId ->
             exportEngine.exportToLinkedFileAsync(bookId)
         }
@@ -363,6 +416,14 @@ class EditorViewModel @Inject constructor(
         // 3. Cleanup page resources
         page.disposeOldPage()
         if (editorImage.openPage?.id == currentPageId) editorImage.openPage = null
+        // Stops loading the pages around it. Reset, so a view opened again on the same page
+        // prefetches again.
+        shownPageId.value = null
+
+        // Save the edits now rather than after the usual delay: the page previews shown next are
+        // rendered from the database.
+        pageSaver.saveSoon()
+
     }
 
     fun createHistory(page: PageView): History = historyFactory.create(page)
@@ -375,34 +436,38 @@ class EditorViewModel @Inject constructor(
         log.v("onToolbarAction: $action")
         when (action) {
             is ToolbarAction.ToggleToolbar -> {
-                _toolbarState.update { it.copy(isToolbarOpen = !it.isToolbarOpen) }
-                updateDrawingState()
+                // A closed toolbar shows no popups, so none may keep the pen off.
+                _toolbarState.update {
+                    it.copy(
+                        isToolbarOpen = !it.isToolbarOpen,
+                        isMenuOpen = false,
+                        isEraserMenuOpen = false,
+                        penMenuPresetId = null,
+                    )
+                }
                 saveToolbarState()
             }
 
             is ToolbarAction.ChangeMode -> {
                 _toolbarState.update { it.copy(mode = action.mode) }
-                updateDrawingState()
                 saveToolbarState()
             }
 
-            is ToolbarAction.ChangePen -> handlePenChange(action.presetId)
+            is ToolbarAction.PenButtonTapped -> handlePenButtonTap(action.presetId)
+            ToolbarAction.ClosePenMenu -> _toolbarState.update { it.copy(penMenuPresetId = null) }
             is ToolbarAction.ChangePenSetting ->
                 handlePenSettingChange(action.presetId, action.setting)
             is ToolbarAction.ChangeEraser -> handleEraserChange(action.eraser)
             is ToolbarAction.ToggleMenu -> {
                 _toolbarState.update { it.copy(isMenuOpen = !it.isMenuOpen) }
-//                updateDrawingState() // on focus change is doing this
             }
 
-            is ToolbarAction.ToggleEraserManu -> {
-                _toolbarState.update { it.copy(isStrokeSelectionOpen = action.isOpen) }
-//                updateDrawingState() // on focus change is doing this
+            is ToolbarAction.ToggleEraserMenu -> {
+                _toolbarState.update { it.copy(isEraserMenuOpen = action.isOpen) }
             }
 
             is ToolbarAction.ToggleBackgroundSelector -> {
                 _toolbarState.update { it.copy(isBackgroundSelectorModalOpen = action.isOpen) }
-//                updateDrawingState() // on focus change is doing this
             }
 
             is ToolbarAction.ToggleScribbleToErase -> updateScribbleToErase(action.enabled)
@@ -419,6 +484,21 @@ class EditorViewModel @Inject constructor(
             is ToolbarAction.SharePdf -> {
                 val id = bookId
                 handleShare(if (action.book && id != null) ExportTarget.Book(id) else ExportTarget.Page(currentPageId))
+            }
+
+            ToolbarAction.CopyPageLink -> {
+                val pageId = currentPageId
+                viewModelScope.launch {
+                    val title = pageLinkTitle(appRepository, pageId)
+                    copyLink(context, DeepLink.Page(pageId), title, snackDispatcher::showOrUpdateSnack)
+                }
+            }
+
+            ToolbarAction.CopyBookLink -> bookId?.let { id ->
+                viewModelScope.launch {
+                    val title = appRepository.bookRepository.getById(id)?.title ?: "Notable notebook"
+                    copyLink(context, DeepLink.Book(id), title, snackDispatcher::showOrUpdateSnack)
+                }
             }
 
             is ToolbarAction.BackgroundChanged -> handleBackgroundChange(action.type, action.path)
@@ -459,14 +539,11 @@ class EditorViewModel @Inject constructor(
             is ToolbarAction.SetRating -> viewModelScope.launch(Dispatchers.IO) {
                 if (bookReading.setRating(action.rating)) _toolbarState.update { it.copy(rating = action.rating) }
             }
-            ToolbarAction.CloseAllMenus -> handleCloseAllMenus()
             is ToolbarAction.ToggleShareDialog -> {
                 _toolbarState.update { it.copy(isShareDialogOpen = action.isOpen) }
-                updateDrawingState()
             }
             is ToolbarAction.ToggleViewDialog -> {
                 _toolbarState.update { it.copy(isViewDialogOpen = action.isOpen) }
-                updateDrawingState()
             }
             is ToolbarAction.ChooseFixedView -> chooseFixedView(action.fit)
             ToolbarAction.SetCustomView -> sendCanvasCommand(CanvasCommand.CaptureCustomView)
@@ -477,7 +554,6 @@ class EditorViewModel @Inject constructor(
             is ToolbarAction.OpenEdgePanel -> openEdgePanel(action.panel)
             is ToolbarAction.UpdateQuickNavOpen -> {
                 _toolbarState.update { it.copy(isQuickNavOpen = action.isOpen) }
-                updateDrawingState()
             }
         }
     }
@@ -486,26 +562,28 @@ class EditorViewModel @Inject constructor(
     // Toolbar Action Handlers (private)
     // --------------------------------------------------------
 
-    private fun handlePenChange(presetId: String) {
+    private fun handlePenButtonTap(presetId: String) {
         val preset = GlobalAppSettings.current.toolbarPens.find { it.id == presetId } ?: return
-        val state = _toolbarState.value
-        if (state.mode == Mode.Draw && state.penPresetId == presetId) {
-            _toolbarState.update { it.copy(isStrokeSelectionOpen = true) }
+        if (_toolbarState.value.isPenSelected(presetId)) {
+            _toolbarState.update {
+                it.copy(penMenuPresetId = if (it.penMenuPresetId == presetId) null else presetId)
+            }
         } else {
             _toolbarState.update {
-                it.copy(pen = preset.pen, penPresetId = presetId, mode = Mode.Draw)
+                it.copy(
+                    pen = preset.pen, penPresetId = presetId, mode = Mode.Draw,
+                    penMenuPresetId = null,
+                )
             }
             saveToolbarState()
-        }
-        updateDrawingState()
-        viewModelScope.launch {
-            CanvasEventBus.refreshUi.emit(Unit)
+            viewModelScope.launch {
+                CanvasEventBus.refreshUi.emit(Unit)
+            }
         }
     }
 
     private fun handleEraserChange(eraser: Eraser) {
         _toolbarState.update { it.copy(eraser = eraser) }
-        updateDrawingState()
         saveToolbarState()
     }
 
@@ -535,29 +613,12 @@ class EditorViewModel @Inject constructor(
 
     private fun openBookPanel(open: () -> Unit) {
         _toolbarState.update { it.copy(isMenuOpen = false, isBookPanelOpen = true) }
-        updateDrawingState()
         open()
     }
 
     private fun closeBookPanel() {
         bookReading.close()
         _toolbarState.update { it.copy(isBookPanelOpen = false) }
-        updateDrawingState()
-    }
-
-    private fun handleCloseAllMenus() {
-        log.d("Closing all menus in EditorViewModel")
-        _toolbarState.update {
-            it.copy(
-                isMenuOpen = false,
-                isStrokeSelectionOpen = false,
-                isBackgroundSelectorModalOpen = false,
-                isShareDialogOpen = false,
-                isViewDialogOpen = false,
-                edgePanel = EdgePanel.None,
-            )
-        }
-        updateDrawingState()
     }
 
     private fun updateScribbleToErase(enabled: Boolean) {
@@ -651,19 +712,8 @@ class EditorViewModel @Inject constructor(
     // Drawing State
     // --------------------------------------------------------
 
-    /**
-     * Re-evaluates whether drawing should be enabled based on menu and selection states.
-     */
-    fun updateDrawingState() {
-        // It get called three times on canvas creation.
-        val shouldBeDrawing = _toolbarState.value.isDrawingAllowed
-        _toolbarState.update { it.copy(isDrawing = shouldBeDrawing) }
-        log.d("updateDrawingState: Drawing state: $shouldBeDrawing")
-        viewModelScope.launch {
-            if (shouldBeDrawing)
-                DeviceCompat.delayBeforeResumingDrawing()
-            CanvasEventBus.isDrawing.emit(shouldBeDrawing)
-        }
+    fun setSelectionGestureActive(active: Boolean) {
+        _toolbarState.update { it.copy(isSelectionGestureActive = active) }
     }
 
     // --------------------------------------------------------
@@ -731,7 +781,6 @@ class EditorViewModel @Inject constructor(
 
     private fun chooseFixedView(fit: FixedView.Fit?) {
         _toolbarState.update { it.copy(isViewDialogOpen = false) }
-        updateDrawingState()
         when (fit) {
             // Pinch and pan to the view, then Set (SetCustomView).
             FixedView.Fit.Custom -> _toolbarState.update { it.copy(isChoosingCustomView = true) }
@@ -776,8 +825,7 @@ class EditorViewModel @Inject constructor(
     private fun openEdgePanel(panel: EdgePanel) {
         // A loose page has nothing to browse.
         if (panel == EdgePanel.QuickBrowse && bookId == null) return
-        _toolbarState.update { it.copy(edgePanel = panel, isMenuOpen = false, isStrokeSelectionOpen = false) }
-        updateDrawingState()
+        _toolbarState.update { it.copy(edgePanel = panel, isMenuOpen = false, isEraserMenuOpen = false, penMenuPresetId = null) }
         viewModelScope.launch(Dispatchers.IO) {
             when (panel) {
                 EdgePanel.Recents -> {
@@ -869,6 +917,52 @@ class EditorViewModel @Inject constructor(
         } else null
     }
 
+    /**
+     * Called by the [PageView] once it shows [pageId] and holds its lease. The page it left has lost
+     * its lease by then, so [prefetchAround] can cancel that page's load.
+     */
+    fun onPageShown(pageId: String) {
+        shownPageId.value = pageId
+    }
+
+    /** Called by the [PageView] once it has left [pageId], to write the page's preview. */
+    fun onPageLeft(pageId: String) = pagePreviewStore.request(pageId)
+
+    /**
+     * Loads the pages next to the shown [pageId] ahead of a page turn. Loads of pages left behind
+     * stop first, so they don't compete with it; the neighbours load once the shown page has, into
+     * the budget it leaves.
+     */
+    private suspend fun prefetchAround(pageId: String) {
+        try {
+            val neighborIds = neighborsOf(pageId)
+            pageDataManager.cancelLoadsExcept(neighborIds.toSet() + pageId)
+            // The view reloads the shown page's background; here only its load is waited for.
+            pageDataManager.awaitPageLoad(pageId)
+            // Admission control evicts to fit before a load; this only catches an under-estimate.
+            pageDataManager.trimToBudget()
+            pageDataManager.prefetch(neighborIds)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.e("Loading pages around $pageId failed", e)
+        }
+    }
+
+    /**
+     * The next and previous pages in [pageId]'s notebook, next first; empty for a loose page. The
+     * notebook is read from the page record, as the page can be shown before [loadToolbarState]
+     * sets [bookId].
+     */
+    private suspend fun neighborsOf(pageId: String): List<String> {
+        val pageIds = appRepository.pageRepository.getById(pageId)?.notebookId
+            ?.let { appRepository.bookRepository.getById(it)?.pageIds }
+            .orEmpty()
+        val index = pageIds.indexOf(pageId)
+        if (index == -1) return emptyList()
+        return listOfNotNull(pageIds.getOrNull(index + 1), pageIds.getOrNull(index - 1))
+    }
+
     fun goToNextPage() {
         log.v("goToNextPage")
         viewModelScope.launch(Dispatchers.IO) {
@@ -954,23 +1048,6 @@ class EditorViewModel @Inject constructor(
 
     fun setShowResetView(showResetView: Boolean) {
         _toolbarState.update { it.copy(showResetView = showResetView) }
-    }
-
-    fun setSelectionActive(active: Boolean) {
-        log.v("setSelectionActive: $active")
-        if (_toolbarState.value.isSelectionActive != active) {
-            if (active) //selection is active, we can directly update it, and skip other checks
-                viewModelScope.launch {
-                    CanvasEventBus.isDrawing.emit(false)
-                }
-            _toolbarState.update { it.copy(isSelectionActive = active) }
-            if (!active)
-                updateDrawingState()
-        }
-    }
-
-    fun setDrawingStateFromCanvas(isDrawing: Boolean) {
-        _toolbarState.update { it.copy(isDrawing = isDrawing) }
     }
 
     // --------------------------------------------------------

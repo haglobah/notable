@@ -96,11 +96,12 @@ fun selectImagesAndStrokes(
     pageBounds.inset(-padding, -padding)
 
     // create bitmap and draw images and strokes
-    val selectedBitmap = page.toScreenCoordinates(pageBounds).let { boundsScreen ->
+    val viewport = page.viewport.value
+    val selectedBitmap = viewport.toScreen(pageBounds).let { boundsScreen ->
         createBitmap(boundsScreen.width(), boundsScreen.height())
     }
     val selectedCanvas = Canvas(selectedBitmap)
-    selectedCanvas.scale(page.zoomLevel.value, page.zoomLevel.value)
+    selectedCanvas.scale(viewport.zoom, viewport.zoom)
 
     imagesToSelect.forEach {
         drawImage(
@@ -117,9 +118,10 @@ fun selectImagesAndStrokes(
             -pageBounds.takeTopLeftCornel().toOffset()
         )
     }
-    val startOffset = IntOffset(pageBounds.left, pageBounds.top) - page.scroll.toIntOffset()
+    val startOffset = IntOffset(pageBounds.left, pageBounds.top) - viewport.scroll.toIntOffset()
 
-    // set state
+    // set state. These setters mark the selection active synchronously, so isDrawing is already
+    // false when the caller's refreshUi runs and no delayed screen-freeze resume gets armed.
     viewModel.selectionState.selectedImages = imagesToSelect
     viewModel.selectionState.selectedStrokes = strokesToSelect
     // Pre-edit originals for the undo baseline (see SelectionState.initialSelected*). Captured
@@ -132,11 +134,6 @@ fun selectImagesAndStrokes(
     viewModel.selectionState.selectionDisplaceOffset = IntOffset(0, 0)
     viewModel.selectionState.placementMode = PlacementMode.Move
     viewModel.selectionState.holdRefresh()
-    // Exit drawing mode *before* the caller's refreshUi runs: setting it inside the launch
-    // below raced the Select-branch refreshUi in OnyxInputHandler, which then saw
-    // isDrawing==true, armed resetScreenFreeze's delayed resume, and re-froze the screen
-    // after updateIsDrawing() had disabled raw drawing — the "frozen after select" bug.
-    viewModel.setDrawingStateFromCanvas(false)
     page.drawAreaPageCoordinates(
         pageBounds,
         ignoredImageIds = imagesToSelect.map { it.id },
@@ -270,13 +267,14 @@ fun handleSelect(
 /**
  * handles selection, and decide if we should exit the animation mode
  */
-fun selectRectangle(
+fun selectContentInRectangle(
     page: PageView,
     coroutineScope: CoroutineScope,
     viewModel: EditorViewModel,
     rectToSelect: Rect
 ) {
-    val inPageCoordinates = toPageCoordinates(rectToSelect, page.zoomLevel.value, page.scroll)
+    val viewport = page.viewport.value
+    val inPageCoordinates = toPageCoordinates(rectToSelect, viewport.zoom, viewport.scroll)
 
     val imagesToSelect =
         page.pageDataManager.getImagesInRectangle(inPageCoordinates, page.currentPageId)

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">Notable</string>
+    <string name="app_name" translatable="false">notable</string>
     <string name="home_quick_pages">Quick pages</string>
     <string name="home_notebooks">Notebooks</string>
     <string name="home_new_folder">New Folder</string>
@@ -430,4 +430,11 @@
     </plurals>
     <string name="pages_duplicate">Duplicate</string>
     <string name="pages_delete">Delete</string>
+    <string name="details_notebook_buttons_duplicate">Duplicate</string>
+    <string name="copy_page_link">Copy link to page</string>
+    <string name="copy_book_link">Copy link to book</string>
+    <string name="copy_link">Copy link</string>
+    <string name="link_format">Copied link format</string>
+    <string name="no_undo_to_perform">Nothing to undo</string>
+    <string name="no_redo_to_perform">Nothing to redo</string>
 </resources>

@@ -1,5 +1,6 @@
 package com.ethran.notable.editor
 
+import com.ethran.notable.io.ThumbnailUpdates
 import android.content.Context
 import android.os.Looper
 import androidx.compose.runtime.snapshots.Snapshot
@@ -8,6 +9,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.PageDataManager
+import com.ethran.notable.data.PagePreviewStore
+import com.ethran.notable.data.PageSaver
 import com.ethran.notable.data.datastore.EditorSettingCacheManager
 import com.ethran.notable.data.db.AppDatabase
 import com.ethran.notable.data.db.BookRepository
@@ -175,6 +178,7 @@ class EditorSelectionThreadSafetyTests {
 
         val exportEngine = mockk<ExportEngine>(relaxed = true)
         val pageDataManager = mockk<PageDataManager>(relaxed = true)
+        val pageSaver = mockk<PageSaver>(relaxed = true)
         val snackDispatcher = mockk<SnackDispatcher>(relaxed = true)
 
         val historyFactory = mockk<History.Factory>().also {
@@ -187,6 +191,9 @@ class EditorSelectionThreadSafetyTests {
             editorSettingCacheManager = editorSettingCacheManager,
             exportEngine = exportEngine,
             pageDataManager = pageDataManager,
+            pageLeases = PageLeases(pageDataManager),
+            pageSaver = pageSaver,
+            pagePreviewStore = PagePreviewStore(context, pageDataManager, appRepository, ThumbnailUpdates()),
             snackDispatcher = snackDispatcher,
             historyFactory = historyFactory,
             editorImage = com.ethran.notable.image.EditorImage.None,
@@ -234,8 +241,8 @@ private fun SelectionState.snapshotDelegateStatesForTest(): Set<Any> {
     return setOf(
         delegate($$"firstPageCut$delegate"),
         delegate($$"secondPageCut$delegate"),
-        delegate($$"selectedStrokes$delegate"),
-        delegate($$"selectedImages$delegate"),
+        delegate($$"strokes$delegate"),
+        delegate($$"images$delegate"),
         delegate($$"selectedBitmap$delegate"),
         delegate($$"selectionStartOffset$delegate"),
         delegate($$"selectionDisplaceOffset$delegate"),

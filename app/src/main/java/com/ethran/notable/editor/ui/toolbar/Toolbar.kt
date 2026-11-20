@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,19 +43,10 @@ import com.ethran.notable.ui.dialogs.BackgroundSelector
 fun ToolbarContent(
     uiState: ToolbarUiState,
     onAction: (ToolbarAction) -> Unit,
-    onDrawingStateCheck: () -> Unit,
 ) {
     // Activity result launcher for picking images
     val pickMedia = rememberLauncherForActivityResult(contract = PickVisualMedia()) { uri ->
         uri?.let { onAction(ToolbarAction.ImagePicked(it)) }
-    }
-
-    // On exit or change of toolbar states, check if we should allow raw drawing
-    LaunchedEffect(
-        uiState.isBackgroundSelectorModalOpen, uiState.isMenuOpen,
-        uiState.isShareDialogOpen, uiState.isViewDialogOpen,
-    ) {
-        onDrawingStateCheck()
     }
 
     if (uiState.isBackgroundSelectorModalOpen) {
@@ -195,6 +185,5 @@ fun ToolbarPreview() {
     ToolbarContent(
         uiState = uiState,
         onAction = {},
-        onDrawingStateCheck = {}
     )
 }

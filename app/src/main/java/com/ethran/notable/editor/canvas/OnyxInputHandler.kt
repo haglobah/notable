@@ -43,7 +43,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
-import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlin.math.min
 
@@ -53,10 +52,18 @@ class OnyxInputHandler(
     private val viewModel: EditorViewModel,
     private val history: History,
     private val coroutineScope: CoroutineScope,
-    private val strokeHistoryBatch: MutableList<String>,
 ) {
     var isErasing: Boolean = false
     var lastStrokeEndTime: Long = 0
+
+    // The page the pen went down on, for the gesture under way. Pen callbacks arrive on the main
+    // thread, as page swaps do, so a page changed in the middle of a gesture is seen when the
+    // gesture's points arrive, and a stroke, erase or selection is dropped.
+    private var penDownPageId: String? = null
+
+    // Taken once per gesture, when its points arrive; without a recorded pen-down, the page shown.
+    private fun takeGesturePageId(): String =
+        (penDownPageId ?: page.currentPageId).also { penDownPageId = null }
     private val log = ShipBook.getLogger("DrawCanvas")
     private val toolbarState get() = viewModel.toolbarState.value
 
@@ -83,6 +90,7 @@ class OnyxInputHandler(
 
         override fun onBeginRawDrawing(p0: Boolean, p1: TouchPoint?) {
             SteadyRotationController.penActivity()
+            penDownPageId = page.currentPageId
         }
 
         override fun onEndRawDrawing(p0: Boolean, p1: TouchPoint?) {
@@ -100,6 +108,7 @@ class OnyxInputHandler(
         // Handle button/eraser tip of the pen:
         override fun onBeginRawErasing(p0: Boolean, p1: TouchPoint?) {
             SteadyRotationController.penActivity()
+            penDownPageId = page.currentPageId
             if (touchHelper == null) return
             // Re-assert the native eraser indicator because setRawDrawingEnabled(true) (called
             // on every resume) resets it to disabled internally. The track style follows the active
@@ -118,7 +127,7 @@ class OnyxInputHandler(
         }
 
         override fun onRawErasingTouchPointListReceived(plist: TouchPointList?) =
-            onRawErasingList(plist)
+            onRawErasingList(plist, takeGesturePageId())
 
         override fun onRawErasingTouchPointMoveReceived(p0: TouchPoint?) {
         }
@@ -140,7 +149,7 @@ class OnyxInputHandler(
         when (toolbarState.mode) {
             // we need to change size according to zoom level before drawing on screen
             Mode.Draw, Mode.Line -> {
-                val scaledWidth = toolbarState.activePenSetting.strokeSize * page.zoomLevel.value
+                val scaledWidth = toolbarState.activePenSetting.strokeSize * page.zoom
                 touchHelper!!.setStrokeStyle(penToStroke(toolbarState.pen))
                     ?.setStrokeWidth(scaledWidth)
                     ?.setStrokeColor(toolbarState.activePenSetting.color)
@@ -192,8 +201,19 @@ class OnyxInputHandler(
 
     suspend fun updateIsDrawing() {
         if(touchHelper == null) return
-        log.i("Update is drawing: $toolbarState.isDrawing")
-        if (toolbarState.isDrawing) {
+        val state = toolbarState
+        log.d(
+            "Update is drawing: ${state.isDrawing} (resumed=${state.isResumed}, " +
+                "focus=${state.hasWindowFocus}, menu=${state.isMenuOpen}, " +
+                "eraserMenu=${state.isEraserMenuOpen}, penMenu=${state.penMenuPresetId}, " +
+                "background=${state.isBackgroundSelectorModalOpen}, " +
+                "quickNav=${state.isQuickNavOpen}, selection=${state.isSelectionActive}, " +
+                "selectionGesture=${state.isSelectionGestureActive})"
+        )
+        if (state.isDrawing) {
+            // Show the page before the firmware takes the screen: once raw drawing is on, a plain
+            // post can be swallowed, and a closed popup's area would stay stale.
+            drawCanvas.refreshManager.drawCanvasToViewSync(null)
             enableRawDrawing()
         } else {
             // A pending resetScreenFreeze resume would re-freeze the screen after we disable
@@ -252,7 +272,9 @@ class OnyxInputHandler(
             setupSurface(drawCanvas, touchHelper, toolbarHeight)
             // Armed inside the same coroutine, after the session is recreated: a caller that sets
             // the pen style right after updateActiveSurface() would otherwise race this launch.
-            enableRawDrawing()
+            // Only when drawing is on: if updateIsDrawing() disabled it while the surface did not
+            // exist yet (QuickNav open across a page navigation), nothing would disable it again.
+            if (toolbarState.isDrawing) enableRawDrawing()
         }
     }
     private fun onRawDrawingList(plist: TouchPointList) {
@@ -260,28 +282,29 @@ class OnyxInputHandler(
         val currentLastStrokeEndTime = lastStrokeEndTime
         lastStrokeEndTime = System.currentTimeMillis()
         val startTime = System.currentTimeMillis()
+        val pageId = takeGesturePageId()
 
         when (toolbarState.mode) {
-            Mode.Erase -> onRawErasingList(plist)
+            Mode.Erase -> onRawErasingList(plist, pageId)
             Mode.Select -> {
-                thread {
-                    val points =
-                        copyInputToSimplePointF(plist.points, page.scroll, page.zoomLevel.value)
-                    handleSelect(
-                        scope = coroutineScope,
-                        page = drawCanvas.page,
-                        viewModel = viewModel,
-                        points = points
-                    )
-                    val boundingBox = calculateBoundingBox(points) { Pair(it.x, it.y) }.toRect()
-                    val padding = 10
-                    val dirtyRect = Rect(
-                        boundingBox.left - padding,
-                        boundingBox.top - padding,
-                        boundingBox.right + padding,
-                        boundingBox.bottom + padding
-                    )
-                    drawCanvas.refreshManager.refreshUi(dirtyRect)
+                // On the main thread, as drawing is: selecting draws into the page's screen bitmap.
+                coroutineScope.launch(Dispatchers.Main.immediate) {
+                    CanvasEventBus.drawingInProgress.withLock {
+                        if (pageId != page.currentPageId) {
+                            log.i("Selection made on page $pageId dropped, another page is shown")
+                            return@withLock
+                        }
+                        val viewport = page.viewport.value
+                        val points =
+                            copyInputToSimplePointF(plist.points, viewport.scroll, viewport.zoom)
+                        handleSelect(
+                            scope = coroutineScope,
+                            page = drawCanvas.page,
+                            viewModel = viewModel,
+                            points = points
+                        )
+                    }
+                    drawCanvas.refreshManager.refreshUi(trackArea(plist))
                 }
             }
 
@@ -292,31 +315,39 @@ class OnyxInputHandler(
                         log.d("lock obtained in ${lock - startTime} ms")
 
 
+                        val viewport = page.viewport.value
                         val (startPoint, endPoint) = getModifiedStrokeEndpoints(
                             plist.points,
-                            page.scroll,
-                            page.zoomLevel.value
+                            viewport.scroll,
+                            viewport.zoom
                         )
                         val linePoints = transformToLine(startPoint, endPoint)
 
                         handleDraw(
                             drawCanvas.page,
-                            strokeHistoryBatch,
+                            pageId,
+                            history,
                             toolbarState.activePenSetting.strokeSize,
                             toolbarState.activePenSetting.color,
                             toolbarState.pen,
                             linePoints
                         )
 
-                        coroutineScope.launch(Dispatchers.Default) {
-                            val dirtyRect = Rect(
-                                min(startPoint.x, endPoint.x).toInt(),
-                                min(startPoint.y, endPoint.y).toInt(),
-                                max(startPoint.x, endPoint.x).toInt(),
-                                max(startPoint.y, endPoint.y).toInt()
+                        // On screen: the firmware's freehand track and the straight line drawn.
+                        val dirtyRect = trackArea(plist).apply {
+                            union(
+                                viewport.toScreen(
+                                    Rect(
+                                        min(startPoint.x, endPoint.x).toInt(),
+                                        min(startPoint.y, endPoint.y).toInt(),
+                                        max(startPoint.x, endPoint.x).toInt(),
+                                        max(startPoint.y, endPoint.y).toInt()
+                                    )
+                                )
                             )
+                        }
+                        coroutineScope.launch(Dispatchers.Default) {
                             drawCanvas.refreshManager.refreshUi(dirtyRect)
-                            CanvasEventBus.commitHistorySignal.emit(Unit)
                         }
                     }
 
@@ -325,12 +356,18 @@ class OnyxInputHandler(
 
             Mode.Draw -> {
                 coroutineScope.launch(Dispatchers.Main.immediate) {
+                    var dropped = false
                     CanvasEventBus.drawingInProgress.withLock {
                         val lock = System.currentTimeMillis()
                         log.d("lock obtained in ${lock - startTime} ms")
 
+                        if (pageId != page.currentPageId) {
+                            dropped = true
+                            return@withLock
+                        }
+                        val viewport = page.viewport.value
                         val scaledPoints =
-                            copyInput(plist.points, page.scroll, page.zoomLevel.value)
+                            copyInput(plist.points, viewport.scroll, viewport.zoom)
                         val firstPointTime = plist.points.first().timestamp
                         val erasedByScribbleDirtyRect = handleScribbleToErase(
                             page,
@@ -347,11 +384,16 @@ class OnyxInputHandler(
                             // draw the stroke
                             handleDraw(
                                 drawCanvas.page,
-                                strokeHistoryBatch,
+                                pageId,
+                                history,
                                 toolbarState.activePenSetting.strokeSize,
                                 toolbarState.activePenSetting.color,
                                 toolbarState.pen,
                                 scaledPoints
+                            )
+                            val width = (toolbarState.activePenSetting.strokeSize * viewport.zoom).toInt()
+                            drawCanvas.refreshManager.addFirmwareInk(
+                                trackArea(plist).apply { inset(-width, -width) }
                             )
                         } else {
                             log.d("Erased by scribble, $erasedByScribbleDirtyRect")
@@ -375,28 +417,42 @@ class OnyxInputHandler(
                         }
 
                     }
-                    coroutineScope.launch(Dispatchers.Default) {
-                        CanvasEventBus.commitHistorySignal.emit(Unit)
+                    if (dropped) {
+                        // Made on a page no longer shown; only the firmware's ink is left to clear.
+                        log.i("Stroke made on page $pageId dropped, another page is shown")
+                        drawCanvas.refreshManager.refreshUi(trackArea(plist))
                     }
                 }
             }
         }
     }
 
-    private fun onRawErasingList(plist: TouchPointList?) {
-        isErasing = false
-
-        if (plist == null) return
-        val points = copyInputToSimplePointF(plist.points, page.scroll, page.zoomLevel.value)
-
+    // The screen area the firmware drew [plist]'s track over.
+    private fun trackArea(plist: TouchPointList): Rect {
         val padding = 10
         val boundingBox = (calculateBoundingBox(plist.points) { Pair(it.x, it.y) }).toRect()
-        val strokeArea = Rect(
+        return Rect(
             boundingBox.left - padding,
             boundingBox.top - padding,
             boundingBox.right + padding,
             boundingBox.bottom + padding
         )
+    }
+
+    private fun onRawErasingList(plist: TouchPointList?, pageId: String) {
+        isErasing = false
+
+        if (plist == null) return
+        val strokeArea = trackArea(plist)
+        if (pageId != page.currentPageId) {
+            // Made on a page no longer shown: only the eraser track is cleared.
+            log.i("Erasing made on page $pageId dropped, another page is shown")
+            drawCanvas.refreshManager.commitErase(strokeArea, areaErase = toolbarState.eraser == Eraser.SELECT)
+            return
+        }
+        val viewport = page.viewport.value
+        val points = copyInputToSimplePointF(plist.points, viewport.scroll, viewport.zoom)
+
         val zoneEffected = handleErase(
             drawCanvas.page,
             history,

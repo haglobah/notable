@@ -1,8 +1,6 @@
 plugins {
     alias libs.plugins.android.application
     alias libs.plugins.google.devtools.ksp
-    id 'kotlin-parcelize'
-    alias libs.plugins.google.gms.google.services
     alias libs.plugins.jetbrains.kotlin.plugin.compose
     alias libs.plugins.jetbrains.kotlin.plugin.serialization
     alias libs.plugins.google.dagger.hilt.android
@@ -12,85 +10,45 @@ android {
     compileSdk 37
 
     defaultConfig {
-        applicationId "com.ethran.notable"
+        applicationId "tools.humane.notable"
         minSdk 29
         targetSdk 35
 
-        versionCode 40
-        versionName '0.2.6'
-        if (project.hasProperty('IS_NEXT') && project.property('IS_NEXT').toBoolean()) {
-            def timestamp = new Date().format('dd.MM.YYYY-HH:mm')
-            versionName = "${versionName}-next-${timestamp}"
-        }
+        versionCode 42
+        versionName '0.2.8'
+        buildConfigField "String", "SHIPBOOK_APP_ID", "\"${System.getenv("SHIPBOOK_APP_ID") ?: "default-secret"}\""
+        buildConfigField "String", "SHIPBOOK_APP_KEY", "\"${System.getenv("SHIPBOOK_APP_KEY") ?: "default-secret2"}\""
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
         ksp {
             arg('room.schemaLocation', "${project.projectDir}/schemas")
         }
-        // Suffix for the shared folders under Documents/ (database, PDFs, images, exports).
-        buildConfigField "String", "STORAGE_DIR_SUFFIX", '""'
     }
 
     signingConfigs {
-        debug {
-            if (System.getenv("STORE_FILE") != null) {
-                storeFile file(System.getenv("STORE_FILE"))
-                storePassword System.getenv("STORE_PASSWORD")
-                keyAlias System.getenv("KEY_ALIAS")
-                keyPassword System.getenv("KEY_PASSWORD")
-
-                v1SigningEnabled true
-                v2SigningEnabled true
-            } else {
-                println "Running locally, skipping release signing..."
-            }
-        }
         release {
             if (System.getenv("STORE_FILE") != null) {
                 storeFile file(System.getenv("STORE_FILE"))
                 storePassword System.getenv("STORE_PASSWORD")
                 keyAlias System.getenv("KEY_ALIAS")
                 keyPassword System.getenv("KEY_PASSWORD")
-
-                v1SigningEnabled true
-                v2SigningEnabled true
-            } else {
-                println "Running locally, skipping release signing..."
             }
         }
-
     }
-
 
     buildTypes {
         debug {
-            // Installs next to the release app instead of replacing it. The database lives in
-            // shared storage (Documents/notabledb), so debug builds also get their own folders:
-            // a debug build must never open the real app's data.
-            applicationIdSuffix ".dev"
-            buildConfigField "String", "STORAGE_DIR_SUFFIX", '"-dev"'
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            // signingConfig signingConfigs.debug
-            buildConfigField("boolean", "IS_NEXT", IS_NEXT)
-            buildConfigField "String", "SHIPBOOK_APP_ID", "\"${System.getenv("SHIPBOOK_APP_ID") ?: "default-secret"}\""
-            buildConfigField "String", "SHIPBOOK_APP_KEY", "\"${System.getenv("SHIPBOOK_APP_KEY") ?: "default-secret2"}\""
             if (System.getenv("STORE_FILE") != null) {
                 signingConfig signingConfigs.release
             }
         }
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField("boolean", "IS_NEXT", IS_NEXT)
-            buildConfigField "String", "SHIPBOOK_APP_ID", "\"${System.getenv("SHIPBOOK_APP_ID") ?: "default-secret"}\""
-            buildConfigField "String", "SHIPBOOK_APP_KEY", "\"${System.getenv("SHIPBOOK_APP_KEY") ?: "default-secret2"}\""
-            if (System.getenv("STORE_FILE") != null) {
-                signingConfig signingConfigs.release
-            }
+            // Without a release key, the debug key: a local release build installs over a debug
+            // build (one app, one id), and the other way round.
+            signingConfig System.getenv("STORE_FILE") != null ? signingConfigs.release : signingConfigs.debug
         }
     }
     compileOptions {
@@ -101,11 +59,7 @@ android {
         compose = true
         buildConfig = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.compose.get()
-    }
     packaging {
-
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
             // automerge-java's jar carries ~48 MB of desktop JNI libs as java resources; Android
@@ -162,12 +116,9 @@ dependencies {
     implementation libs.androidx.material.icons.extended
     implementation libs.androidx.lifecycle.runtime.ktx
     implementation libs.androidx.activity.compose
-    implementation libs.androidx.fragment.ktx
     implementation libs.androidx.graphics.core
     implementation libs.androidx.input.motionprediction
-    androidTestImplementation libs.androidx.junit.ktx
 
-    //implementation fileTree(dir: 'libs', include: ['*.aar'])
     implementation(libs.onyxsdk.device) {
         exclude group: 'com.android.support', module: 'support-compat'
     }
@@ -176,7 +127,7 @@ dependencies {
         exclude group: 'com.android.support', module: 'support-compat'
         exclude group: 'com.android.support', module: 'appcompat-v7'
         exclude group: "com.onyx.android.sdk", module: "onyxsdk-geometry"
-        exclude group : "com.tencent", module: "mmkv"
+        exclude group: "com.tencent", module: "mmkv"
     }
 
     implementation(libs.onyxsdk.base) {
@@ -185,10 +136,11 @@ dependencies {
         exclude group: 'com.tencent', module: 'mmkv'
     }
 
-    // Temporary (?) fix for https://github.com/gaborauth/toolsboox-android/issues/305
-    implementation(libs.hiddenapibypass) // required by onyx sdk
+    // Lets the Onyx SDK call hidden Android APIs (exempted in NotableApp);
+    // see https://github.com/gaborauth/toolsboox-android/issues/305
+    implementation(libs.hiddenapibypass)
 
-    // used in RawInputManager.
+    // RxJava 2, which the Onyx SDK runs on (RxManager, RawInputManager); newer than the SDK's own
     implementation libs.rxjava
     implementation libs.rxandroid
 
@@ -199,43 +151,32 @@ dependencies {
     androidTestImplementation libs.mockk.android
     debugImplementation libs.androidx.ui.tooling
     debugImplementation libs.androidx.ui.test.manifest
-    implementation libs.androidx.runtime.livedata
     implementation libs.androidx.runtime
+    implementation libs.androidx.runtime.livedata
     implementation libs.kotlinx.serialization.json
 
     implementation libs.androidx.navigation.compose
-
-    def room_version = "2.8.4"
 
     implementation libs.androidx.room.runtime
     implementation libs.androidx.room.ktx
     ksp libs.androidx.room.compiler
 
-    // For testing:
+    // Room testing
     androidTestImplementation libs.androidx.room.testing.android
-    testImplementation libs.androidx.room.testing
-    testImplementation libs.androidx.core.testing
 
     implementation libs.coil.compose
 
 
-    implementation libs.jnanoid
-
-    implementation platform(libs.firebase.bom)
-    implementation libs.firebase.analytics
-
     implementation libs.feather
-    implementation libs.klaxon
 
-    //noinspection GradleDynamicVersion
     implementation libs.shipbooksdk
 
-    // For xopp file format
-    implementation(libs.commons.compress) // GZip support
-    implementation libs.lz4.java // LZ4 support
+    // Xournal++ (.xopp) files: GZip and LZ4
+    implementation libs.commons.compress
+    implementation libs.lz4.java
 
-    // for PDF support:
-    implementation(libs.fitz)
+    // PDF rendering
+    implementation libs.fitz
 
     // Hilt
     implementation libs.hilt.android
@@ -253,17 +194,20 @@ dependencies {
     testImplementation libs.quickjs.kt.jvm
     implementation libs.java.websocket
 //    implementation("com.google.crypto.tink:tink-android:1.21.0")    // provides encryption for sync credentials
+}
 
-    // Added so that R8 optimization don't fail
-    // SLF4J backend: provides a simple logger so (probably) ShipBook can output logs.
-    // Needed because SLF4J is just an API; without a binding, logging calls are ignored.
-//    implementation 'org.slf4j:slf4j-simple:2.0.17'
-
-    // implementation 'org.joda:joda-convert:3.0.1'
-    // optional dependency of joda-convert:
-    // implementation 'org.threeten:threetenbp:1.7.2'
+tasks.matching { it.name == 'assembleRelease' }.configureEach {
+    doLast {
+        if (System.getenv("STORE_FILE") == null) {
+            println "STORE_FILE is not set: the release APK is signed with the debug key."
+        }
+    }
 }
 
 tasks.register('printVersionName') {
-    println android.defaultConfig.versionName
+    // Read at configuration time: with the configuration cache, a task action cannot reach the project model.
+    def versionName = android.defaultConfig.versionName
+    doLast {
+        println versionName
+    }
 }
