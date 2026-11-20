@@ -21,10 +21,6 @@
     <string name="continuous_stroke_slider">Continuous stroke slider</string>
     <string name="rename_on_create">Open properties on new notebook</string>
     <string name="uiScale">UI scale</string>
-    <string name="app_new_version">A newer version of Notable is available on GitHub.</string>
-    <string name="app_see_release">See release in browser</string>
-    <string name="app_latest_version">You are on the latest version.</string>
-    <string name="app_check_updates">Check for newer version</string>
     <string name="gestures_double_tap_action">Double tap action</string>
     <string name="gestures_two_finger_tap_action">Two-finger tap action</string>
     <string name="gestures_triple_tap_action">Triple tap action</string>
