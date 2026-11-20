@@ -17,6 +17,8 @@ import com.ethran.notable.io.ExportEngine
 import com.ethran.notable.ui.components.WithRecentsEdgeSwipe
 import com.ethran.notable.ui.views.BugReportDestination
 import com.ethran.notable.ui.views.BugReportScreen
+import com.ethran.notable.ui.views.FlowDestination
+import com.ethran.notable.ui.views.FlowView
 import com.ethran.notable.ui.views.Library
 import com.ethran.notable.ui.views.LibraryDestination
 import com.ethran.notable.ui.views.PagesDestination
@@ -136,13 +138,19 @@ fun NotableNavHost(
                 }
             }
             composable(
-                route = SettingsDestination.route,
+                route = SettingsDestination.routeWithArgs,
+                arguments = listOf(navArgument(SettingsDestination.TAB_ARG) { type = NavType.IntType; defaultValue = 0 }),
             ) {
                 SettingsView(
                     onBack = { appNavigator.goBack() },
                     goToWelcome = { appNavigator.goToWelcome() },
-                    goToSystemInfo = { appNavigator.goToSystemInfo() }
+                    goToSystemInfo = { appNavigator.goToSystemInfo() },
+                    initialTab = it.arguments?.getInt(SettingsDestination.TAB_ARG) ?: 0,
                 )
+                appNavigator.cleanCurrentPageId()
+            }
+            composable(route = FlowDestination.route) {
+                FlowView(onBack = { appNavigator.goBack() }, goToSettings = { appNavigator.navController.navigate(SettingsDestination.createRoute(SettingsDestination.SYNC_TAB)) })
                 appNavigator.cleanCurrentPageId()
             }
             composable(

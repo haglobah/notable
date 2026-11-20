@@ -56,6 +56,12 @@ internal val SettingsMaxWidth = 760.dp
 
 object SettingsDestination : NavigationDestination {
     override val route = "settings"
+    const val TAB_ARG = "tab"
+    /** `settings` alone still matches: the tab defaults to General. */
+    val routeWithArgs = "$route?$TAB_ARG={$TAB_ARG}"
+    /** The Sync tab, where Notable Sync and Flow sign in. */
+    const val SYNC_TAB = 3
+    fun createRoute(tab: Int) = "$route?$TAB_ARG=$tab"
 }
 
 @Composable
@@ -63,6 +69,7 @@ fun SettingsView(
     onBack: () -> Unit,
     goToWelcome: () -> Unit,
     goToSystemInfo: () -> Unit,
+    initialTab: Int = 0,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -79,6 +86,7 @@ fun SettingsView(
         goToWelcome = goToWelcome,
         goToSystemInfo = goToSystemInfo,
         onUpdateSettings = { viewModel.updateSettings(it) },
+        selectedTabInitial = initialTab,
         listOfGestures = viewModel.getGestureRows(),
         availableGestures = viewModel.availableGestures,
     )
@@ -153,6 +161,7 @@ fun SettingsContent(
 
                     3 -> {
                         NotableSyncSection()
+                        FlowSection()
                         LiveImageSection()
                     }
 

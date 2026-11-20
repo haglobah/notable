@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS everywhere, except this device's own loopback: a Flow or sync server on a laptop reached
+  through `adb reverse` (see app/src/main/java/com/ethran/notable/flow/FlowApi.kt).
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

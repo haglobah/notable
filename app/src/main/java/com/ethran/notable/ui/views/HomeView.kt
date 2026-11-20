@@ -93,6 +93,7 @@ import compose.icons.feathericons.FilePlus
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.FolderPlus
 import compose.icons.feathericons.Plus
+import compose.icons.feathericons.Mic
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.Upload
@@ -162,6 +163,7 @@ fun Library(
         onQueryChange = viewModel::setQuery,
         onNavigateToFolder = { id -> navController.navigate(LibraryDestination.createRoute(id)) },
         onNavigateToSettings = { navController.navigate("settings") },
+        onOpenFlow = { navController.navigate(FlowDestination.route) },
         onNavigateToEditor = { pageId, bookId ->
             navController.navigate(EditorDestination.createRoute(pageId, bookId))
         },
@@ -225,6 +227,7 @@ fun LibraryContent(
     onQueryChange: (String) -> Unit = {},
     onNavigateToFolder: (String?) -> Unit,
     onNavigateToSettings: () -> Unit,
+    onOpenFlow: () -> Unit,
     onNavigateToEditor: (String, String) -> Unit,
     goToPage: (String) -> Unit,
     onCreateNewQuickPage: () -> Unit,
@@ -311,6 +314,7 @@ fun LibraryContent(
                         onHideFinished = onHideFinished,
                         // Navigation lives with the bar, at its far right; a dot marks an update.
                         trailing = {
+                            NIconButton(FeatherIcons.Mic, stringResource(R.string.flow_title), onOpenFlow)
                             NIconButton(FeatherIcons.Trash2, stringResource(R.string.trash_title), onOpenTrash)
                             SettingsButton(onClick = onNavigateToSettings)
                         })

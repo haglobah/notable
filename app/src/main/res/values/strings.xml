@@ -437,4 +437,35 @@
     <string name="link_format">Copied link format</string>
     <string name="no_undo_to_perform">Nothing to undo</string>
     <string name="no_redo_to_perform">Nothing to redo</string>
+
+    <!-- Flow: talking to Claude through flow.humane.tools -->
+    <string name="flow_title">Flow</string>
+    <string name="flow_settings_intro">Talk to Claude from the tablet. Each message starts or continues a conversation in Flow, where its jobs can be inspected. Sign in with your humane tools account.</string>
+    <string name="flow_server">Flow address</string>
+    <string name="flow_email">Email</string>
+    <string name="flow_sign_in">Sign in to Flow</string>
+    <string name="flow_signing_in">Signing in…</string>
+    <string name="flow_sign_out">Sign out of Flow</string>
+    <string name="flow_signed_in_as">Signed in as %1$s at %2$s</string>
+    <string name="flow_signed_out_title">Not signed in to Flow</string>
+    <string name="flow_signed_out_message">Sign in with your humane tools account under Settings → Sync.</string>
+    <string name="flow_open_settings">Open settings</string>
+    <string name="flow_conversations">Conversations</string>
+    <string name="flow_new">New conversation</string>
+    <string name="flow_untitled">Untitled</string>
+    <string name="flow_new_hint">Tap the circle and say what you want. Tap again to send.</string>
+    <string name="flow_working">Working…</string>
+    <string name="flow_working_short">working</string>
+    <string name="flow_tool_failed">failed</string>
+    <string name="flow_link_connecting">connecting…</string>
+    <string name="flow_link_down">offline, retrying</string>
+    <string name="flow_tap_to_talk">Tap to talk</string>
+    <string name="flow_listening">Listening. Tap to send</string>
+    <string name="flow_transcribing">Transcribing…</string>
+    <string name="flow_sending">Sending…</string>
+    <string name="flow_cancel">Cancel</string>
+    <string name="flow_stop">Stop</string>
+    <string name="flow_type">Type instead</string>
+    <string name="flow_type_placeholder">Message</string>
+    <string name="flow_send">Send</string>
 </resources>
