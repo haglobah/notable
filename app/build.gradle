@@ -6,6 +6,19 @@ plugins {
     alias libs.plugins.google.dagger.hilt.android
 }
 
+// Through providers.exec, so the configuration cache notices a new commit.
+int gitCommitCount() {
+    try {
+        def out = providers.exec {
+            commandLine "git", "rev-list", "--count", "HEAD"
+            ignoreExitValue = true
+        }.standardOutput.asText.get().trim()
+        return out.isInteger() ? out.toInteger() : 42
+    } catch (Exception ignored) {
+        return 42
+    }
+}
+
 android {
     compileSdk 37
 
@@ -14,8 +27,12 @@ android {
         minSdk 29
         targetSdk 35
 
-        versionCode 42
+        // Commits on the built branch: every build of main is newer than the one before, so the
+        // tablet's updater (update/AppUpdates.kt) takes it. 42 without git (the last fixed code).
+        versionCode gitCommitCount()
         versionName '0.2.8'
+        // Where the updater reads the newest build (scripts/publish-apk.sh publishes it there).
+        buildConfigField "String", "UPDATE_URL", "\"https://flow.humane.tools/notable/latest.json\""
         buildConfigField "String", "SHIPBOOK_APP_ID", "\"${System.getenv("SHIPBOOK_APP_ID") ?: "default-secret"}\""
         buildConfigField "String", "SHIPBOOK_APP_KEY", "\"${System.getenv("SHIPBOOK_APP_KEY") ?: "default-secret2"}\""
 

@@ -149,6 +149,7 @@ fun SettingsContent(
             ) {
                 when (selectedTab) {
                     0 -> {
+                        UpdateSection()
                         GeneralSettings(settings, onUpdateSettings)
                         SettingsFooter()
                     }

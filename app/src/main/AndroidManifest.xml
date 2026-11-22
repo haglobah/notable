@@ -9,6 +9,10 @@
     <!-- Voice input for Flow (FlowView). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Updates from cirdan (update/AppUpdates.kt): Android's installer, silent once Notable
+         installed itself (Android 12+). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION"/>
 
     <application
         android:name=".NotableApp"
@@ -56,6 +60,10 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <receiver
+            android:name="com.ethran.notable.update.UpdateInstallReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

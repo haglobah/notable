@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
+import com.ethran.notable.update.AppUpdates
 import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -113,6 +114,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var imageService: ImageService
+
+    @Inject
+    lateinit var appUpdates: AppUpdates
 
     /** Links waiting for the UI; only the latest is kept. */
     private val deepLinks = Channel<DeepLink>(Channel.CONFLATED)
@@ -276,6 +280,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         enableFullScreen()
         CanvasEventBus.setResumed(true)
+        // A newer build on cirdan puts a dot on the settings gear (at most every 5 minutes).
+        appUpdates.check()
     }
 
     // Onyx SystemUI's TouchInteractionService swallows multi-finger touches for its

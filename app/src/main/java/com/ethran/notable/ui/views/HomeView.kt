@@ -51,6 +51,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.ethran.notable.R
+import com.ethran.notable.update.UpdateState
 import com.ethran.notable.data.AppRepository
 import com.ethran.notable.data.datastore.GlobalAppSettings
 import com.ethran.notable.data.db.Folder
@@ -364,8 +365,11 @@ fun LibraryContent(
 
 /** The settings gear. */
 @Composable
-private fun SettingsButton(onClick: () -> Unit) =
-    NIconButton(FeatherIcons.Settings, stringResource(R.string.settings_title), onClick)
+private fun SettingsButton(onClick: () -> Unit, viewModel: AppUpdatesViewModel = hiltViewModel()) {
+    // A newer build is on cirdan: a dot on the gear; Settings → General installs it.
+    val update by viewModel.updates.state.collectAsStateWithLifecycle()
+    NIconButton(FeatherIcons.Settings, stringResource(R.string.settings_title), onClick, badge = update is UpdateState.Available)
+}
 
 @Composable
 fun FolderList(
