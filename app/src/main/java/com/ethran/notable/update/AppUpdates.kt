@@ -106,7 +106,8 @@ class AppUpdates @Inject constructor(
     }
 
     /**
-     * Reads `latest.json` unless a check ran in the last minute ([force] skips that, and shows a
+     * Reads `latest.json` unless a check ran in the last half minute ([force] skips that, and shows a
+
      * failure), and fetches a newer build in the background.
      */
     fun check(force: Boolean = false) {
@@ -260,10 +261,10 @@ class AppUpdates @Inject constructor(
     }
 
     private companion object {
-        /** A resume checks again after this long. */
-        const val CHECK_INTERVAL_MS = 60 * 1000L
+        /** A resume checks again after this long (less than [POLL_INTERVAL_MS], so no poll is skipped). */
+        const val CHECK_INTERVAL_MS = 30 * 1000L
         /** While the app is in front: a push to `main` shows up within this plus cirdan's build. */
-        const val POLL_INTERVAL_MS = 3 * 60 * 1000L
+        const val POLL_INTERVAL_MS = 60 * 1000L
     }
 
 }

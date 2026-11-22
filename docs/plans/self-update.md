@@ -18,8 +18,8 @@ Android's install prompt.
   `apk` is relative to `latest.json`.
 - **Version code:** `git rev-list --count HEAD` (app/build.gradle; 42 without git). Builds of
   `main` only grow, and the tablet's first build had 42.
-- **App (`update/AppUpdates.kt`):** reads `BuildConfig.UPDATE_URL` every 3 minutes while the app
-  is in front (`poll`, from MainActivity while started) and on resume (at most once a minute).
+- **App (`update/AppUpdates.kt`):** reads `BuildConfig.UPDATE_URL` every minute while the app
+  is in front (`poll`, from MainActivity while started) and on resume (at most every 30 s).
   A newer build is downloaded in the background at once (`cacheDir/update`, SHA-256 checked; an
   APK already there with the right hash is kept across restarts), and a notice at the bottom of
   every screen says "Notable build N is ready to install: <subject>" with Install (Beat,
