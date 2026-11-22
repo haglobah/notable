@@ -478,7 +478,11 @@
     <string name="update_title">Updates</string>
     <string name="update_installed">Installed: %1$s, build %2$d</string>
     <string name="update_up_to_date">This is the newest build.</string>
-    <string name="update_available">Build %1$d is ready: %2$s</string>
+    <string name="update_available">Build %1$d is out: %2$s</string>
+    <string name="update_ready">Build %1$d is downloaded: %2$s</string>
+    <string name="update_ready_notice">Notable build %1$d is ready to install: %2$s</string>
+    <string name="update_install_short">Install</string>
+
     <string name="update_downloading">Downloading… %1$d %%</string>
     <string name="update_installing">Installing…</string>
     <string name="update_failed">The update failed: %1$s</string>

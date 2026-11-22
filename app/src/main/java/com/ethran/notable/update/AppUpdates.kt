@@ -14,6 +14,7 @@ import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +55,8 @@ sealed interface UpdateState {
     data object UpToDate : UpdateState
     data class Available(val release: Release) : UpdateState
     data class Downloading(val release: Release, val percent: Int) : UpdateState
+    /** Downloaded and its hash checked: Install hands it to Android. */
+    data class Ready(val release: Release) : UpdateState
     /** Handed to Android, which may ask to confirm. */
     data class Installing(val release: Release) : UpdateState
     data class Failed(val release: Release?, val message: String) : UpdateState
@@ -66,10 +69,12 @@ internal fun newerRelease(json: String, installedCode: Int): Release? =
 private val updateJson = Json { ignoreUnknownKeys = true }
 
 /**
- * Notable updates itself from cirdan (docs/plans/self-update.md): it reads `latest.json` on start
- * and on resume, the settings gear gets a dot when a newer build is there, and Install downloads the
- * APK, checks its hash and hands it to Android's package installer. Android asks to confirm unless
- * Notable installed the running version itself (Android 12+, then the update is silent).
+ * Notable updates itself from cirdan (docs/plans/self-update.md): while it is in front it reads
+ * `latest.json` every few minutes ([poll]) and on resume; a newer build is downloaded in the
+ * background and its hash checked, then the settings gear gets a dot and a notice offers Install
+ * (MainActivity), which hands the APK to Android's package installer. It never installs unasked:
+ * an update restarts the app. Android asks to confirm unless Notable installed the running version
+ * itself (Android 12+, then the update is silent).
  */
 @Singleton
 class AppUpdates @Inject constructor(
@@ -87,8 +92,23 @@ class AppUpdates @Inject constructor(
 
     private var lastCheck = 0L
     private var checking: Job? = null
+    /** The build downloaded and checked, and its APK. */
+    @Volatile private var ready: Pair<Release, File>? = null
+    /** Builds fetched in the background once already: one that failed waits for Install. */
+    private val fetched = mutableSetOf<Int>()
 
-    /** Reads `latest.json` unless a check ran in the last few minutes ([force] skips that). */
+    /** Checks every few minutes until cancelled: MainActivity runs it while the app is in front. */
+    suspend fun poll() {
+        while (true) {
+            check()
+            delay(POLL_INTERVAL_MS)
+        }
+    }
+
+    /**
+     * Reads `latest.json` unless a check ran in the last minute ([force] skips that, and shows a
+     * failure), and fetches a newer build in the background.
+     */
     fun check(force: Boolean = false) {
         val now = System.currentTimeMillis()
         if (!force && now - lastCheck < CHECK_INTERVAL_MS) return
@@ -99,16 +119,32 @@ class AppUpdates @Inject constructor(
         if (checking?.isActive == true) return
         lastCheck = now
         checking = scope.launch(Dispatchers.IO) {
-            _state.value = try {
+            val release = try {
                 val body = http.newCall(Request.Builder().url(latestUrl).build()).execute().use { r ->
                     if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
                     r.body.string()
                 }
                 newerRelease(body, BuildConfig.VERSION_CODE)
-                    ?.let { UpdateState.Available(it) } ?: UpdateState.UpToDate
             } catch (e: Exception) {
                 log.w("update check failed: ${e.message}")
-                if (force) UpdateState.Failed(null, e.message ?: e.toString()) else UpdateState.Unknown
+                // Offline for a moment: what was found before still holds.
+                if (force) _state.value = UpdateState.Failed(null, e.message ?: e.toString())
+                return@launch
+            }
+            val have = ready?.first?.versionCode == release?.versionCode
+            _state.value = when {
+                release == null -> UpdateState.UpToDate
+                have -> UpdateState.Ready(release)
+                else -> UpdateState.Available(release)
+            }
+            if (release == null || have || !fetched.add(release.versionCode)) return@launch
+            try {
+                val apk = download(release)
+                ready = release to apk
+                _state.value = UpdateState.Ready(release)
+            } catch (e: Exception) {
+                log.w("update download failed: ${e.message}")
+                _state.value = UpdateState.Failed(release, e.message ?: e.toString())
             }
         }
     }
@@ -127,7 +163,8 @@ class AppUpdates @Inject constructor(
         }
         scope.launch(Dispatchers.IO) {
             try {
-                val apk = download(release)
+                val apk = ready?.takeIf { it.first.versionCode == release.versionCode && it.second.exists() }?.second
+                    ?: download(release).also { ready = release to it }
                 _state.value = UpdateState.Installing(release)
                 withContext(Dispatchers.Main) { commit(apk) }
             } catch (e: Exception) {
@@ -145,8 +182,10 @@ class AppUpdates @Inject constructor(
 
     private fun download(release: Release): File {
         val dir = File(context.cacheDir, "update").apply { mkdirs() }
-        dir.listFiles()?.forEach { it.delete() }
         val file = File(dir, "notable-${release.versionCode}.apk")
+        // Fetched before the app last stopped: no need to fetch it again.
+        if (file.exists() && sha256(file).equals(release.sha256, ignoreCase = true)) return file
+        dir.listFiles()?.forEach { it.delete() }
         val url = latestUrl.resolve(release.apk) ?: throw IOException("bad APK path: ${release.apk}")
         _state.value = UpdateState.Downloading(release, 0)
         val digest = MessageDigest.getInstance("SHA-256")
@@ -182,6 +221,19 @@ class AppUpdates @Inject constructor(
         return file
     }
 
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                digest.update(buf, 0, n)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     private fun commit(apk: File) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
@@ -208,6 +260,10 @@ class AppUpdates @Inject constructor(
     }
 
     private companion object {
-        const val CHECK_INTERVAL_MS = 5 * 60 * 1000L
+        /** A resume checks again after this long. */
+        const val CHECK_INTERVAL_MS = 60 * 1000L
+        /** While the app is in front: a push to `main` shows up within this plus cirdan's build. */
+        const val POLL_INTERVAL_MS = 3 * 60 * 1000L
     }
+
 }

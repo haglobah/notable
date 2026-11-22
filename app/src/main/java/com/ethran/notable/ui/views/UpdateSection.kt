@@ -46,6 +46,7 @@ fun UpdateSection(viewModel: AppUpdatesViewModel = hiltViewModel()) {
                 UpdateState.UpToDate -> stringResource(R.string.update_up_to_date)
                 is UpdateState.Available -> stringResource(R.string.update_available, s.release.versionCode, s.release.subject)
                 is UpdateState.Downloading -> stringResource(R.string.update_downloading, s.percent)
+                is UpdateState.Ready -> stringResource(R.string.update_ready, s.release.versionCode, s.release.subject)
                 is UpdateState.Installing -> stringResource(R.string.update_installing)
                 is UpdateState.Failed -> stringResource(R.string.update_failed, s.message)
             }
@@ -53,6 +54,8 @@ fun UpdateSection(viewModel: AppUpdatesViewModel = hiltViewModel()) {
             Row(horizontalArrangement = Arrangement.spacedBy(NotableSpace.md)) {
                 val release = when (val s = state) {
                     is UpdateState.Available -> s.release
+                    is UpdateState.Ready -> s.release
+
                     is UpdateState.Failed -> s.release
                     else -> null
                 }

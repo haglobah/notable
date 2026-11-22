@@ -368,7 +368,9 @@ fun LibraryContent(
 private fun SettingsButton(onClick: () -> Unit, viewModel: AppUpdatesViewModel = hiltViewModel()) {
     // A newer build is on cirdan: a dot on the gear; Settings → General installs it.
     val update by viewModel.updates.state.collectAsStateWithLifecycle()
-    NIconButton(FeatherIcons.Settings, stringResource(R.string.settings_title), onClick, badge = update is UpdateState.Available)
+    val newer = update is UpdateState.Available || update is UpdateState.Downloading || update is UpdateState.Ready
+    NIconButton(FeatherIcons.Settings, stringResource(R.string.settings_title), onClick, badge = newer)
+
 }
 
 @Composable

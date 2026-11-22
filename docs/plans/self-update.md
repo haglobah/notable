@@ -5,7 +5,7 @@ Android's install prompt.
 
 ## How it works
 
-- **Build (cirdan, noldor `modules/notable-apk.nix`):** a timer every 10 minutes (and
+- **Build (cirdan, noldor `modules/notable-apk.nix`):** a timer every minute (and
   `notable-release` by hand) fetches `main` into its own clone (`/var/lib/notable-apk/notable`) and,
   when it moved, runs `scripts/publish-apk.sh /var/lib/notable-apk/www`: `assembleRelease` in the
   flake's dev shell, signed with gondor's debug key (the key the tablet's app has; on cirdan at
@@ -18,10 +18,15 @@ Android's install prompt.
   `apk` is relative to `latest.json`.
 - **Version code:** `git rev-list --count HEAD` (app/build.gradle; 42 without git). Builds of
   `main` only grow, and the tablet's first build had 42.
-- **App (`update/AppUpdates.kt`):** reads `BuildConfig.UPDATE_URL` on resume (at most every 5
-  minutes). A newer build puts a dot on the library's settings gear; Settings → General →
-  Updates shows it with its commit subject. Install opens "install unknown apps" the first time,
-  then downloads, checks the SHA-256 and commits a `PackageInstaller` session.
+- **App (`update/AppUpdates.kt`):** reads `BuildConfig.UPDATE_URL` every 3 minutes while the app
+  is in front (`poll`, from MainActivity while started) and on resume (at most once a minute).
+  A newer build is downloaded in the background at once (`cacheDir/update`, SHA-256 checked; an
+  APK already there with the right hash is kept across restarts), and a notice at the bottom of
+  every screen says "Notable build N is ready to install: <subject>" with Install (Beat,
+  2026-11-22: the gear's dot alone went unseen). It never installs unasked: an update restarts the
+  app. The gear's dot and Settings → General → Updates show it too. A failed background download
+  isn't retried for that build; Install there tries again. Install opens "install unknown apps" the
+  first time, then commits a `PackageInstaller` session.
   `UpdateInstallReceiver` shows Android's confirm screen when it asks for one. From Android 12,
   once Notable has installed itself, `USER_ACTION_NOT_REQUIRED` makes later updates silent.
 

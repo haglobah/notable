@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import com.ethran.notable.update.AppUpdates
+import com.ethran.notable.update.UpdateState
 import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -71,6 +72,7 @@ import javax.inject.Inject
 
 
 private const val TAG = "MainActivity"
+private const val UPDATE_SNACK = "app-update"
 const val APP_SETTINGS_KEY = "APP_SETTINGS"
 const val PACKAGE_NAME = BuildConfig.APPLICATION_ID
 
@@ -142,6 +144,7 @@ class MainActivity : ComponentActivity() {
         SCREEN_HEIGHT = applicationContext.resources.displayMetrics.heightPixels
 
         trackSystemGestureBlocking()
+        announceUpdates()
         trackSteadyRotation()
 
         // A recreated activity gets its launching intent again; that link was already opened.
@@ -203,7 +206,53 @@ class MainActivity : ComponentActivity() {
      * viewer lives in Settings → Debug. Returns whether a loop was detected (so a test
      * harness can crash only on the non-recovery launch).
      */
+    /** The build the update notice last offered: dismissed, it stays away until a newer one is ready. */
+    private var offeredUpdate = 0
+
+    /**
+     * While the app is in front, a newer build on cirdan is fetched in the background
+     * ([AppUpdates.poll]); once it is ready, a notice offers to install it. Installing restarts
+     * the app, so it waits for the tap.
+     */
+    private fun announceUpdates() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { appUpdates.poll() }
+                appUpdates.state.collect { state ->
+                    when (state) {
+                        is UpdateState.Ready -> if (state.release.versionCode != offeredUpdate) {
+                            offeredUpdate = state.release.versionCode
+                            snackDispatcher.showOrUpdateSnack(
+                                SnackConf(
+                                    id = UPDATE_SNACK,
+                                    text = getString(R.string.update_ready_notice, state.release.versionCode, state.release.subject),
+                                    duration = null, // stays until dismissed
+                                    actions = listOf(getString(R.string.update_install_short) to {
+                                        snackDispatcher.removeSnack(UPDATE_SNACK)
+                                        appUpdates.install(state.release)
+                                    }),
+                                )
+                            )
+                        }
+
+                        is UpdateState.Installing -> snackDispatcher.showOrUpdateSnack(
+                            SnackConf(id = UPDATE_SNACK, text = getString(R.string.update_installing), duration = null)
+                        )
+
+                        is UpdateState.Failed -> if (state.release != null) snackDispatcher.showOrUpdateSnack(
+                            SnackConf(id = UPDATE_SNACK, text = getString(R.string.update_failed, state.message), duration = 8000)
+                        )
+
+                        // A newer build replaces it, or it went in.
+                        else -> snackDispatcher.removeSnack(UPDATE_SNACK)
+                    }
+                }
+            }
+        }
+    }
+
     private fun maybeShowCrashLoopHint(): Boolean {
+
         if ((application as? NotableApp)?.consumeCrashLoopDetected() != true) return false
         snackDispatcher.showOrUpdateSnack(
             SnackConf(
@@ -280,8 +329,9 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         enableFullScreen()
         CanvasEventBus.setResumed(true)
-        // A newer build on cirdan puts a dot on the settings gear (at most every 5 minutes).
+        // Back in front: look for a newer build on cirdan at once (at most once a minute).
         appUpdates.check()
+
     }
 
     // Onyx SystemUI's TouchInteractionService swallows multi-finger touches for its
