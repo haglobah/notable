@@ -115,6 +115,13 @@ class FlowApi(http: OkHttpClient, val baseUrl: HttpUrl) {
         http.newCall(req).execute().use { it.failOn() }
     }
 
+    /** Ticks the conversation off ([done]) or opens it again, as Flow's checkbox does; its agents go with it. */
+    fun tick(cookies: Map<String, String>, conv: String, done: Boolean) {
+        val body = buildJsonObject { put("conv", conv); put("done", done) }.toString()
+        val req = Request.Builder().url(url("api/chat/tick")).cookies(cookies).post(body.toRequestBody(JSON)).build()
+        http.newCall(req).execute().use { it.failOn() }
+    }
+
     /**
      * Where the event log stands, so the stream starts there and not at the log's beginning (tens
      * of MB). Flow has no route for it; its saved page model (`/api/state`) has the seq it last

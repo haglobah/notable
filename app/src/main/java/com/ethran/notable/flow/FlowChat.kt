@@ -48,6 +48,8 @@ data class FlowConversation(
     val status: String? = null,
     /** When the tablet last saw something happen here, epoch ms. */
     val updatedAt: Long = 0,
+    /** Ticked off (in Flow or here); a new message opens it again. */
+    val done: Boolean = false,
 )
 
 @Serializable
@@ -61,6 +63,9 @@ data class FlowChat(
     /** Most recently active first. */
     val ordered: List<FlowConversation> get() = conversations.values.sortedByDescending { it.updatedAt }
 
+    /** Not ticked off, most recently active first: what a new message may go to. */
+    val open: List<FlowConversation> get() = ordered.filter { !it.done }
+
     /** A conversation the tablet starts, with the message it starts with (shown before Flow confirms it). */
     fun started(id: String, text: String, now: Long): FlowChat =
         copy(conversations = conversations + (id to FlowConversation(id, title = text.take(200), entries = listOf(FlowEntry.User(text, pending = true)), running = true, updatedAt = now)))
@@ -68,8 +73,11 @@ data class FlowChat(
     /** A message the tablet sends into one of its conversations. */
     fun said(id: String, text: String, now: Long): FlowChat {
         val c = conversations[id] ?: return started(id, text, now)
-        return put(c.copy(entries = (c.entries + FlowEntry.User(text, pending = true)).capped(), running = true, updatedAt = now))
+        return put(c.copy(entries = (c.entries + FlowEntry.User(text, pending = true)).capped(), running = true, done = false, updatedAt = now))
     }
+
+    /** Ticked off here, before Flow's `tick` confirms it. */
+    fun ticked(id: String, done: Boolean): FlowChat = conversations[id]?.let { put(it.copy(done = done)) } ?: this
 
     /** Folds one event of Flow's log. Events of conversations the tablet doesn't keep only move [seq]. */
     fun apply(e: JsonObject, now: Long): FlowChat {
@@ -82,7 +90,8 @@ data class FlowChat(
         val type = e.str("type") ?: return next
         if (type == "deleted") return next.copy(conversations = next.conversations - id)
         val changed = c.fold(type, e) ?: return next
-        return next.put(changed.copy(updatedAt = now))
+        // Ticking one off isn't activity: it keeps its place in the list.
+        return next.put(if (type == "tick") changed else changed.copy(updatedAt = now))
     }
 
     private fun put(c: FlowConversation) = copy(conversations = conversations + (c.id to c))
@@ -93,10 +102,12 @@ private fun FlowConversation.fold(type: String, e: JsonObject): FlowConversation
         val text = e.str("text").orEmpty()
         val i = entries.indexOfFirst { it is FlowEntry.User && it.pending && it.text.trim() == text.trim() }
         val list = if (i >= 0) entries.toMutableList().also { it[i] = FlowEntry.User(text) } else entries + FlowEntry.User(text)
-        copy(entries = list.capped(), running = true, status = null)
+        copy(entries = list.capped(), running = true, status = null, done = false)
     }
 
-    "resumed" -> copy(running = true)
+    "resumed" -> copy(running = true, done = false)
+
+    "tick" -> copy(done = (e["done"] as? JsonPrimitive)?.booleanOrNull == true)
 
     "text" -> {
         val delta = e.str("text").orEmpty()

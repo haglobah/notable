@@ -9,11 +9,19 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +44,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -43,14 +52,19 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ethran.notable.R
 import com.ethran.notable.editor.canvas.CanvasEventBus
+import com.ethran.notable.flow.FlowConversation
 import com.ethran.notable.flow.VoiceState
+import com.ethran.notable.ui.design.NDivider
 import com.ethran.notable.ui.design.NIcon
+import com.ethran.notable.ui.design.NotableSize
 import com.ethran.notable.ui.design.NotableSpace
 import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.design.inkClickable
 import com.ethran.notable.ui.design.nSurface
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Mic
+import compose.icons.feathericons.X
+import kotlinx.coroutines.flow.sample
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -61,11 +75,16 @@ private val DotMargin = 16.dp
 /** Where it sits at first: just under the library's top bar (64 dp) and a note's toolbar (41 dp). */
 val FlowDotTop = 76.dp
 
+/** The window of open conversations beside the dot while it listens. */
+private val PickerWidth = 360.dp
+
 /**
  * Talking to Claude through Flow without leaving the screen: a microphone dot floating over the
- * library and over a note while its toolbar shows. Tap to talk (it turns black), tap again to send;
- * drag it anywhere; a long press opens the conversation ([onOpen]). The library bar's microphone
- * shows and hides it. At first it sits at the right, [top] from the top.
+ * library and over a note while its toolbar shows. Tap to talk (it turns black); while it listens,
+ * a window beside it lists the open conversations started here: tap the dot again to send what was
+ * said as a new conversation, or a conversation to add it to that one. Drag it anywhere; a long
+ * press opens the conversations ([onOpen]). The library bar's microphone shows and hides it. At
+ * first it sits at the right, [top] from the top.
  */
 @Composable
 fun FlowMicDot(onOpen: () -> Unit, top: Dp = FlowDotTop, viewModel: FlowViewModel = hiltViewModel()) {
@@ -74,16 +93,20 @@ fun FlowMicDot(onOpen: () -> Unit, top: Dp = FlowDotTop, viewModel: FlowViewMode
     if (!dot.shown) return
     val account by client.account.collectAsState()
     val voice by client.voice.collectAsState()
+    // Replies stream in while it listens: e-ink redraws the list at most about once a second.
+    val chat by remember(client) { client.chat.sample(900) }.collectAsState(client.chat.value)
     val c = NotableTheme.colors
     val context = LocalContext.current
     val density = LocalDensity.current
+    // The dot's own tap sends what was said as a new conversation; the window beside it picks another.
+    val toggle = { client.toggleRecording(null) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) client.toggleRecording()
+        if (granted) toggle()
     }
     val tap = {
         when {
             account == null -> onOpen()
-            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> client.toggleRecording()
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> toggle()
             else -> permission.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
@@ -105,9 +128,12 @@ fun FlowMicDot(onOpen: () -> Unit, top: Dp = FlowDotTop, viewModel: FlowViewMode
         var dragged by remember { mutableStateOf<Offset?>(null) }
         val at = dragged ?: placed
         val current by rememberUpdatedState(at)
-        // The pen leaves it to the finger: its place is kept out of raw drawing once it settles.
+        // The pen leaves it and its window to the finger: their place is kept out of raw drawing once it settles.
         var bounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
-        LaunchedEffect(bounds, dragged == null) { if (dragged == null) CanvasEventBus.setFloatingControl(bounds) }
+        var pickerBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
+        LaunchedEffect(bounds, pickerBounds, dragged == null) {
+            if (dragged == null) CanvasEventBus.setFloatingControl(bounds?.let { b -> pickerBounds?.let { android.graphics.Rect(b).apply { union(it) } } ?: b })
+        }
 
         val description = stringResource(if (recording) R.string.flow_listening else R.string.flow_tap_to_talk)
         Box(
@@ -143,6 +169,34 @@ fun FlowMicDot(onOpen: () -> Unit, top: Dp = FlowDotTop, viewModel: FlowViewMode
             })
         }
 
+        val gap = with(density) { NotableSpace.sm.toPx() }
+        val left = at.x + size / 2 > constraints.maxWidth / 2f
+
+        // Listening: where it goes, beside it on the side with room.
+        val open = chat.open
+        if (recording && open.isNotEmpty()) {
+            var height by remember { mutableIntStateOf(0) }
+            DisposableEffect(Unit) { onDispose { pickerBounds = null } }
+            val width = with(density) { PickerWidth.toPx() }
+            ConversationPicker(
+                open,
+                onPick = { client.finishRecording(it) },
+                onCancel = client::cancelRecording,
+                modifier = Modifier
+                    .offset {
+                        val x = (if (left) at.x - gap - width else at.x + size + gap).coerceIn(0f, (constraints.maxWidth - width).coerceAtLeast(0f))
+                        val y = at.y.coerceAtMost(constraints.maxHeight - height.toFloat()).coerceAtLeast(0f)
+                        IntOffset(x.roundToInt(), y.roundToInt())
+                    }
+                    .onSizeChanged { height = it.height }
+                    .onGloballyPositioned {
+                        val b = it.boundsInWindow()
+                        pickerBounds = android.graphics.Rect(floor(b.left).toInt(), floor(b.top).toInt(), ceil(b.right).toInt(), ceil(b.bottom).toInt())
+                    },
+            )
+            return@BoxWithConstraints
+        }
+
         // What it is doing, beside it on the side with room: listening, transcribing, a failure.
         val label = when (val v = voice) {
             VoiceState.Idle -> null
@@ -154,8 +208,6 @@ fun FlowMicDot(onOpen: () -> Unit, top: Dp = FlowDotTop, viewModel: FlowViewMode
         if (label != null) {
             var width by remember { mutableIntStateOf(0) }
             var height by remember { mutableIntStateOf(0) }
-            val gap = with(density) { NotableSpace.sm.toPx() }
-            val left = at.x + size / 2 > constraints.maxWidth / 2f
             Text(
                 label, style = NotableTheme.type.meta, color = c.ink, maxLines = 2,
                 modifier = Modifier
@@ -169,6 +221,49 @@ fun FlowMicDot(onOpen: () -> Unit, top: Dp = FlowDotTop, viewModel: FlowViewMode
                     .then(if (voice is VoiceState.Failed) Modifier.inkClickable(onClick = client::dismissVoiceError) else Modifier)
                     .padding(horizontal = NotableSpace.md, vertical = NotableSpace.xs),
             )
+        }
+    }
+}
+
+/**
+ * Where what is being said goes: the open conversations started here, most recent first; a tap on
+ * one sends it there. The dot itself sends it as a new conversation.
+ */
+@Composable
+private fun ConversationPicker(open: List<FlowConversation>, onPick: (String) -> Unit, onCancel: () -> Unit, modifier: Modifier) {
+    val c = NotableTheme.colors
+    Column(modifier.width(PickerWidth).nSurface(c)) {
+        Text(
+            stringResource(R.string.flow_dot_pick), style = NotableTheme.type.meta, color = c.secondary,
+            modifier = Modifier.padding(horizontal = NotableSpace.lg, vertical = NotableSpace.md),
+        )
+        NDivider()
+        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+            open.forEach { conv ->
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = NotableSize.menuRow)
+                        .inkClickable(onClick = { onPick(conv.id) })
+                        .padding(horizontal = NotableSpace.lg, vertical = NotableSpace.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        conv.title.ifBlank { stringResource(R.string.flow_untitled) },
+                        style = NotableTheme.type.body, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (conv.running) Text(stringResource(R.string.flow_working_short), style = NotableTheme.type.meta, color = c.secondary,
+                        maxLines = 1, modifier = Modifier.padding(start = NotableSpace.md))
+                }
+            }
+        }
+        NDivider()
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = NotableSize.menuRow).inkClickable(onClick = onCancel).padding(horizontal = NotableSpace.lg),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NIcon(FeatherIcons.X, size = 18.dp, tint = c.secondary)
+            Spacer(Modifier.width(NotableSpace.md))
+            Text(stringResource(R.string.flow_cancel), style = NotableTheme.type.body, color = c.secondary)
         }
     }
 }

@@ -470,6 +470,10 @@
     <string name="flow_send">Send</string>
     <string name="flow_dot_show">Show the Flow microphone</string>
     <string name="flow_dot_hide">Hide the Flow microphone</string>
+    <string name="flow_dot_pick">Listening. Tap the microphone for a new conversation, or a conversation to add this to it.</string>
+    <string name="flow_done_section">Done (%1$d)</string>
+    <string name="flow_no_conversations">None yet</string>
+
     <!-- Updates from cirdan (update/AppUpdates.kt, Settings → General) -->
     <string name="update_title">Updates</string>
     <string name="update_installed">Installed: %1$s, build %2$d</string>

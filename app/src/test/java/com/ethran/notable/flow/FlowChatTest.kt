@@ -53,7 +53,29 @@ class FlowChatTest {
     }
 
     @Test
+    fun a_tick_closes_it_and_a_new_message_opens_it_again() {
+        val ticked = started.fold("""{"seq":11,"type":"tick","conv":"c1","done":true}""")
+        assertTrue(ticked.conversations.getValue("c1").done)
+        assertEquals(emptyList<FlowConversation>(), ticked.open)
+        // Ticking off isn't activity: the conversation keeps its place.
+        assertEquals(0L, ticked.conversations.getValue("c1").updatedAt)
+
+        val reopened = ticked.fold("""{"seq":12,"type":"user","conv":"c1","text":"one more thing"}""")
+        assertFalse(reopened.conversations.getValue("c1").done)
+        assertFalse(ticked.said("c1", "and this", 5).conversations.getValue("c1").done)
+        assertFalse(ticked.fold("""{"seq":12,"type":"tick","conv":"c1","done":false}""").conversations.getValue("c1").done)
+    }
+
+    @Test
+    fun open_lists_those_not_ticked_off_most_recent_first() {
+        val chat = FlowChat().started("a", "first", 1).started("b", "second", 2).started("c", "third", 3).ticked("b", true)
+        assertEquals(listOf("c", "a"), chat.open.map { it.id })
+        assertEquals(chat, chat.ticked("unknown", true))
+    }
+
+    @Test
     fun other_conversations_only_move_the_seq() {
+
         val chat = started.fold("""{"seq":40,"type":"text","conv":"elsewhere","text":"hi"}""")
         assertEquals(setOf("c1"), chat.conversations.keys)
         assertEquals(40L, chat.seq)

@@ -13,6 +13,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -64,8 +66,8 @@ sealed interface VoiceState {
 
 /**
  * The tablet's line to Flow (flow.humane.tools): sign-in, the chat event stream while a screen
- * shows it, and voice → transcript → message. Every message starts or continues a Flow
- * conversation, so each job is inspectable in Flow itself.
+ * shows it or a message is on its way, and voice → transcript → message. Every message starts or
+ * continues a Flow conversation, so each job is inspectable in Flow itself.
  */
 @Singleton
 class FlowClient @Inject constructor(
@@ -101,8 +103,8 @@ class FlowClient @Inject constructor(
     )
     val dot: StateFlow<FlowDot> = _dot.asStateFlow()
 
-    /** The conversation the screen shows and new messages go to; null: the next message starts one. */
-    private val _selected = MutableStateFlow(_chat.value.ordered.firstOrNull()?.id)
+    /** The conversation the screen shows and its messages go to; null: the next one starts one. */
+    private val _selected = MutableStateFlow(_chat.value.open.firstOrNull()?.id)
     val selected: StateFlow<String?> = _selected.asStateFlow()
 
     private var cookies: Map<String, String> = store.cookies()
@@ -110,6 +112,24 @@ class FlowClient @Inject constructor(
     @Volatile private var streamCall: Call? = null
     private var saveJob: Job? = null
     private var attached = 0
+    /** A recording or its message is under way (from the dot, too): the stream stays open meanwhile. */
+    private var holding = false
+
+    init {
+        // While the dot listens, the stream catches up, so its list of open conversations is current.
+        scope.launch(Dispatchers.Main.immediate) {
+            _voice.map { it == VoiceState.Recording || it == VoiceState.Transcribing || it == VoiceState.Sending }
+                .distinctUntilChanged()
+                .collect { busy ->
+                    holding = busy
+                    if (busy && streamJob?.isActive != true) restartStream()
+                    else if (!busy && attached == 0) {
+                        stopStream()
+                        saveNow()
+                    }
+                }
+        }
+    }
 
     private fun api(): FlowApi? = _account.value?.let { FlowApi(http, it.url.toHttpUrl()) }
 
@@ -126,7 +146,7 @@ class FlowClient @Inject constructor(
             store.saveChat(_chat.value)
         }
         _account.value = account
-        if (attached > 0) restartStream()
+        if (attached > 0 || holding) restartStream()
     }
 
     fun signOut() {
@@ -145,9 +165,11 @@ class FlowClient @Inject constructor(
 
     fun detach() {
         attached = maxOf(0, attached - 1)
-        if (attached == 0) {
+        if (attached > 0) return
+        // A recording goes on under the dot, where it can be sent; with the dot hidden it ends here.
+        if (recorder.recording && !_dot.value.shown) cancelRecording()
+        if (!holding) {
             stopStream()
-            if (recorder.recording) cancelRecording()
             saveNow()
         }
     }
@@ -166,10 +188,13 @@ class FlowClient @Inject constructor(
         dotPrefs.edit().putFloat("x", x).putFloat("y", y).apply()
     }
 
-    /** The microphone's tap: start listening; while listening, send what was said. */
-    fun toggleRecording() {
+    /**
+     * The microphone's tap: start listening; while listening, send what was said to [conv], or
+     * to a new conversation when null.
+     */
+    fun toggleRecording(conv: String?) {
         when (_voice.value) {
-            VoiceState.Recording -> finishRecording()
+            VoiceState.Recording -> finishRecording(conv)
             VoiceState.Idle, is VoiceState.Failed -> { dismissVoiceError(); startRecording() }
             else -> Unit
         }
@@ -190,8 +215,8 @@ class FlowClient @Inject constructor(
         _voice.value = VoiceState.Idle
     }
 
-    /** Ends the recording, transcribes it with Flow and sends the text. */
-    fun finishRecording() {
+    /** Ends the recording, transcribes it with Flow and sends the text to [conv], or starts a conversation with it. */
+    fun finishRecording(conv: String?) {
         if (_voice.value != VoiceState.Recording) return
         val pcm = recorder.stop()
         _voice.value = VoiceState.Transcribing
@@ -203,30 +228,30 @@ class FlowClient @Inject constructor(
                     _voice.value = VoiceState.Failed("Nothing was heard")
                     return@launch
                 }
-                deliver(api, text)
+                deliver(api, text, conv)
             } catch (e: IOException) {
                 failed(e)
             }
         }
     }
 
-    /** Sends typed text, like a transcript. */
+    /** Sends typed text, like a transcript, to the shown conversation. */
     fun sendText(text: String) {
         val t = text.trim()
         if (t.isEmpty()) return
         scope.launch {
             try {
                 val api = api() ?: throw FlowSignedOut("Sign in to Flow in Settings → Sync")
-                deliver(api, t)
+                deliver(api, t, _selected.value)
             } catch (e: IOException) {
                 failed(e)
             }
         }
     }
 
-    private suspend fun deliver(api: FlowApi, text: String) {
+    private suspend fun deliver(api: FlowApi, text: String, target: String?) {
         _voice.value = VoiceState.Sending
-        val conv = _selected.value ?: UUID.randomUUID().toString()
+        val conv = target ?: UUID.randomUUID().toString()
         val fresh = !_chat.value.conversations.containsKey(conv)
         val now = System.currentTimeMillis()
         chatLock.withLock { _chat.update { if (it.conversations.containsKey(conv)) it.said(conv, text, now) else it.started(conv, text, now) } }
@@ -247,6 +272,25 @@ class FlowClient @Inject constructor(
         }
         _voice.value = VoiceState.Idle
         if (attached > 0 && _link.value !is FlowLink.Live && streamJob?.isActive != true) restartStream()
+    }
+
+    /** Ticks a conversation off ([done]) or opens it again, here at once and in Flow. */
+    fun tick(conv: String, done: Boolean) {
+        changeChat { it.ticked(conv, done) }
+        scope.launch {
+            try {
+                val api = api() ?: throw FlowSignedOut("Sign in to Flow in Settings → Sync")
+                api.tick(cookies, conv, done)
+            } catch (e: IOException) {
+                changeChat { it.ticked(conv, !done) }
+                failed(e)
+            }
+        }
+    }
+
+    private fun changeChat(change: (FlowChat) -> FlowChat) {
+        _chat.update(change)
+        scheduleSave()
     }
 
     private fun failed(e: IOException) {

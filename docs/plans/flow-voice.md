@@ -29,6 +29,18 @@ Flow. Access only inside Notable for now; an OS-wide overlay is later.
   right, 76 dp down, under the top bar); a long press opens the conversation screen (`flow`). The
   library bar's microphone shows and hides it. Over a note its place is left out of raw drawing
   (`CanvasEventBus.floatingControl`, an exclude rect in `setupSurface`), so the pen taps it.
+- **The dot starts a new conversation by default; while it listens, a window beside it lists the
+  open conversations started here** (Beat, 2026-11-22): tap the dot again and what was said starts
+  a new conversation; tap a conversation in the window and it goes there instead (Cancel ends the
+  recording). Open = not ticked off. While a recording or its message is under way the event stream
+  stays open (`FlowClient.holding`), so the list catches up with ticks made in Flow; the window's
+  place is left out of raw drawing with the dot's (one union rect).
+- **The conversation screen is laid out like Flow's chat** (Beat, 2026-11-22): a sidebar with New
+  conversation, the open conversations (most recently active first) and the ticked-off ones under a
+  "Done" fold, the chosen one beside it (the bar's sidebar button hides the list). The box on a row
+  ticks it off or opens it again in Flow (`POST /api/chat/tick {conv, done}`, as Flow's checkbox);
+  the fold reads Flow's `tick` events, and a new message (`user`, `resumed`) opens one again, as in
+  Flow. The screen's microphone and typing go to the shown conversation, or start one under New.
 - **Conversations started here are scoped to `notable`** (Beat, 2026-11-22): the first message of
   a new conversation carries `scope: ["notable"]`, Flow's scope pills; later ones leave the scope
   as set in Flow.
@@ -50,7 +62,7 @@ Flow. Access only inside Notable for now; an OS-wide overlay is later.
 - `ui/views/FlowDot.kt` (the microphone dot), `ui/views/FlowView.kt` (route `flow`, the
   conversation, from a long press on the dot), `ui/views/FlowSection.kt`
   (Settings → Sync). Settings take a tab argument (`settings?tab=3`).
-- Tests: `app/src/test/java/com/ethran/notable/flow/FlowChatTest.kt` (7), `FlowApiTest.kt` (9).
+- Tests: `app/src/test/java/com/ethran/notable/flow/FlowChatTest.kt` (10), `FlowApiTest.kt` (9).
 
 ## Validation (2026-11-20, Note Air 5C)
 

@@ -2,6 +2,7 @@ package com.ethran.notable.ui.views
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -56,13 +58,13 @@ import com.ethran.notable.flow.VoiceState
 import com.ethran.notable.navigation.NavigationDestination
 import com.ethran.notable.ui.design.NButton
 import com.ethran.notable.ui.design.NButtonStyle
+import com.ethran.notable.ui.design.NCheckbox
 import com.ethran.notable.ui.design.NCodeBlock
 import com.ethran.notable.ui.design.NEmptyState
 import com.ethran.notable.ui.design.NIcon
 import com.ethran.notable.ui.design.NIconButton
-import com.ethran.notable.ui.design.NMenu
-import com.ethran.notable.ui.design.NMenuDivider
-import com.ethran.notable.ui.design.NMenuItem
+import com.ethran.notable.ui.design.NMenuHeader
+import com.ethran.notable.ui.design.NotableSize
 import com.ethran.notable.ui.design.NTextField
 import com.ethran.notable.ui.design.NTopBar
 import com.ethran.notable.ui.design.NotableShape
@@ -70,7 +72,9 @@ import com.ethran.notable.ui.design.NotableSpace
 import com.ethran.notable.ui.design.NotableTheme
 import com.ethran.notable.ui.design.inkClickable
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.List
+import compose.icons.feathericons.ChevronDown
+import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.Sidebar
 import compose.icons.feathericons.Mic
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Send
@@ -89,10 +93,12 @@ object FlowDestination : NavigationDestination {
 class FlowViewModel @Inject constructor(val client: FlowClient) : ViewModel()
 
 /**
- * Talking to Claude through Flow (flow.humane.tools): a big microphone circle is the main control.
- * Tap it, speak, tap again: Flow transcribes the recording and the text goes to the shown
- * conversation, or starts a new one. Replies stream in from Flow; every conversation is also in
- * Flow's own chat, where its jobs can be inspected.
+ * Talking to Claude through Flow (flow.humane.tools), laid out like Flow's chat: the conversations
+ * started here in a sidebar (open ones, then the ticked-off ones folded away), the chosen one
+ * beside it. A big microphone circle is the main control: tap it, speak, tap again: Flow
+ * transcribes the recording and the text goes to the shown conversation, or starts a new one.
+ * Replies stream in from Flow; every conversation is also in Flow's own chat, where its jobs can
+ * be inspected.
  */
 @Composable
 fun FlowView(onBack: () -> Unit, goToSettings: () -> Unit, viewModel: FlowViewModel = hiltViewModel()) {
@@ -108,7 +114,7 @@ fun FlowView(onBack: () -> Unit, goToSettings: () -> Unit, viewModel: FlowViewMo
     val link by client.link.collectAsState()
     val voice by client.voice.collectAsState()
     val conversation = selectedId?.let { chat.conversations[it] }
-    var listOpen by remember { mutableStateOf(false) }
+    var sidebar by rememberSaveable { mutableStateOf(true) }
     val c = NotableTheme.colors
 
     Column(Modifier.fillMaxSize().background(c.paper)) {
@@ -117,21 +123,7 @@ fun FlowView(onBack: () -> Unit, goToSettings: () -> Unit, viewModel: FlowViewMo
             onBack = onBack,
             meta = linkText(link),
         ) {
-            Box {
-                NIconButton(FeatherIcons.List, stringResource(R.string.flow_conversations), { listOpen = true }, enabled = chat.conversations.isNotEmpty())
-                if (listOpen) NMenu(onDismiss = { listOpen = false }, minWidth = 320.dp, maxWidth = 520.dp) {
-                    NMenuItem(stringResource(R.string.flow_new), { client.select(null); listOpen = false }, icon = FeatherIcons.Plus)
-                    NMenuDivider()
-                    chat.ordered.forEach { conv ->
-                        NMenuItem(
-                            conv.title.ifBlank { stringResource(R.string.flow_untitled) },
-                            { client.select(conv.id); listOpen = false },
-                            checked = conv.id == selectedId,
-                            meta = if (conv.running) stringResource(R.string.flow_working_short) else null,
-                        )
-                    }
-                }
-            }
+            NIconButton(FeatherIcons.Sidebar, stringResource(R.string.flow_conversations), { sidebar = !sidebar }, selected = sidebar)
             NIconButton(FeatherIcons.Plus, stringResource(R.string.flow_new), { client.select(null) })
         }
 
@@ -144,16 +136,103 @@ fun FlowView(onBack: () -> Unit, goToSettings: () -> Unit, viewModel: FlowViewMo
             return@Column
         }
 
-        Transcript(conversation, Modifier.weight(1f).fillMaxWidth())
-        Controls(
-            voice = voice,
-            running = conversation?.running == true,
-            onMic = client::toggleRecording,
-            onCancel = client::cancelRecording,
-            onStop = client::stopTurn,
-            onSend = client::sendText,
-            onDismissError = client::dismissVoiceError,
-        )
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            if (sidebar) {
+                Conversations(
+                    chat.ordered, selectedId,
+                    onSelect = client::select,
+                    onTick = client::tick,
+                    modifier = Modifier.width(320.dp).fillMaxHeight(),
+                )
+                Box(Modifier.width(NotableSize.hairline).fillMaxHeight().background(c.rule))
+            }
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Transcript(conversation, Modifier.weight(1f).fillMaxWidth())
+                Controls(
+                    voice = voice,
+                    running = conversation?.running == true,
+                    onMic = { client.toggleRecording(selectedId) },
+                    onCancel = client::cancelRecording,
+                    onStop = client::stopTurn,
+                    onSend = client::sendText,
+                    onDismissError = client::dismissVoiceError,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The sidebar, as in Flow's chat: a new conversation, then the open ones (most recently active
+ * first), then the ticked-off ones under a fold. The box ticks one off in Flow, or opens it again.
+ */
+@Composable
+private fun Conversations(
+    conversations: List<FlowConversation>,
+    selectedId: String?,
+    onSelect: (String?) -> Unit,
+    onTick: (String, Boolean) -> Unit,
+    modifier: Modifier,
+) {
+    val c = NotableTheme.colors
+    val open = conversations.filter { !it.done }
+    val done = conversations.filter { it.done }
+    var showDone by rememberSaveable { mutableStateOf(false) }
+    LazyColumn(modifier.background(c.paper)) {
+        item(key = "new") {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = NotableSize.menuRow)
+                    .background(if (selectedId == null) c.inset else c.paper)
+                    .inkClickable { onSelect(null) }
+                    .padding(horizontal = NotableSpace.lg),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NIcon(FeatherIcons.Plus)
+                Spacer(Modifier.width(NotableSpace.md))
+                Text(stringResource(R.string.flow_new), style = NotableTheme.type.body, color = c.ink)
+            }
+        }
+        items(open, key = { it.id }) { ConversationRow(it, it.id == selectedId, onSelect, onTick) }
+        if (done.isNotEmpty()) {
+            item(key = "done") {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = NotableSize.menuRow).inkClickable { showDone = !showDone }
+                        .padding(horizontal = NotableSpace.lg),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    NIcon(if (showDone) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight, size = 18.dp, tint = c.secondary)
+                    Spacer(Modifier.width(NotableSpace.sm))
+                    Text(stringResource(R.string.flow_done_section, done.size), style = NotableTheme.type.meta, color = c.secondary)
+                }
+            }
+            if (showDone) items(done, key = { it.id }) { ConversationRow(it, it.id == selectedId, onSelect, onTick) }
+        }
+        if (conversations.isEmpty()) item(key = "empty") { NMenuHeader(stringResource(R.string.flow_no_conversations)) }
+    }
+}
+
+@Composable
+private fun ConversationRow(conv: FlowConversation, selected: Boolean, onSelect: (String?) -> Unit, onTick: (String, Boolean) -> Unit) {
+    val c = NotableTheme.colors
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = NotableSize.menuRow)
+            .background(if (selected) c.inset else c.paper)
+            .inkClickable { onSelect(conv.id) }
+            .padding(start = NotableSpace.xs, end = NotableSpace.lg, top = NotableSpace.xs, bottom = NotableSpace.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        NCheckbox(conv.done, onCheckedChange = { onTick(conv.id, it) })
+        Column(Modifier.weight(1f)) {
+            Text(
+                conv.title.ifBlank { stringResource(R.string.flow_untitled) }, style = NotableTheme.type.body,
+                color = if (conv.done) c.secondary else c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                if (conv.running) conv.status ?: stringResource(R.string.flow_working_short)
+                else DateUtils.getRelativeTimeSpanString(conv.updatedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString(),
+                style = NotableTheme.type.meta, color = c.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
