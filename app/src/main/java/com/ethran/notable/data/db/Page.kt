@@ -83,6 +83,10 @@ interface PageDao {
     @Query("UPDATE page SET backgroundType=:type, background=:value, updatedAt=:updatedAt WHERE id =:pageId")
     suspend fun setBackground(pageId: String, type: String, value: String, updatedAt: Date)
 
+    /** The distinct backgrounds that start with [prefix] (a folder's path and "/"). */
+    @Query("SELECT DISTINCT background FROM page WHERE substr(background, 1, length(:prefix)) = :prefix")
+    suspend fun backgroundsUnder(prefix: String): List<String>
+
     @Query("SELECT * FROM page WHERE notebookId is null AND parentFolderId is :folderId")
     fun getSinglePagesInFolder(folderId: String? = null): LiveData<List<Page>>
 

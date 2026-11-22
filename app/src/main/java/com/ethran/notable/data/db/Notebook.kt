@@ -89,6 +89,10 @@ interface NotebookDao {
     @Query("SELECT * FROM notebook WHERE id = (:notebookId)")
     suspend fun getById(notebookId: String): Notebook?
 
+    /** The distinct default backgrounds that start with [prefix] (a folder's path and "/"). */
+    @Query("SELECT DISTINCT defaultBackground FROM notebook WHERE substr(defaultBackground, 1, length(:prefix)) = :prefix")
+    suspend fun backgroundsUnder(prefix: String): List<String>
+
     @Query("SELECT * FROM notebook WHERE defaultBackgroundType = :type")
     suspend fun getAllWithBackgroundType(type: String): List<Notebook>
 

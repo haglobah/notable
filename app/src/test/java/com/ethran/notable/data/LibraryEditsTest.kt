@@ -55,6 +55,7 @@ private class Store {
         override fun getAllInFolder(folderId: String?): LiveData<List<Notebook>> = throw NotImplementedError()
         override fun getAll() = notebooks.values.toList()
         override suspend fun getAllWithBackgroundType(type: String) = notebooks.values.filter { it.defaultBackgroundType == type }
+        override suspend fun backgroundsUnder(prefix: String) = notebooks.values.map { it.defaultBackground }.filter { it.startsWith(prefix) }.distinct()
         override suspend fun touchUpdatedAtForPage(pageId: String, updatedAt: Date) {
             val nb = notebooks.values.firstOrNull { pageId in it.pageIds } ?: return
             notebooks[nb.id] = nb.copy(updatedAt = updatedAt)
@@ -110,6 +111,7 @@ private class Store {
         }
         override fun getSinglePagesInFolder(folderId: String?): LiveData<List<Page>> = throw NotImplementedError()
         override suspend fun getAllQuickPages() = pages.values.filter { it.notebookId == null }
+        override suspend fun backgroundsUnder(prefix: String) = pages.values.map { it.background }.filter { it.startsWith(prefix) }.distinct()
         override suspend fun create(page: Page): Long { write("page+"); pages[page.id] = page; return 1 }
         override suspend fun update(page: Page) { write("page"); pages[page.id] = page }
         override suspend fun upsert(page: Page) { write("page"); pages[page.id] = page }
@@ -158,6 +160,7 @@ private class Store {
         override suspend fun update(images: List<Image>) { write("images"); images.forEach { this@Store.images[it.id] = it } }
         override suspend fun upsert(images: List<Image>) { write("images"); images.forEach { this@Store.images[it.id] = it } }
         override suspend fun idsForPage(pageId: String) = images.values.filter { it.pageId == pageId }.map { it.id }
+        override suspend fun urisUnder(prefix: String) = images.values.mapNotNull { it.uri }.filter { it.startsWith(prefix) }.distinct()
         override suspend fun deleteAll(ids: List<String>) { write("images-"); ids.forEach { images.remove(it) } }
         override suspend fun getById(imageId: String) = images.getValue(imageId)
     }

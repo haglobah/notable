@@ -109,6 +109,15 @@ class BackgroundFileWatcher @Inject constructor(
     }
 
     /**
+     * [filePath] was missing and is on disk now (a synced file fetched again): the pages that use it
+     * drop their blank background, and the file is watched from here on.
+     */
+    fun arrived(filePath: String) {
+        rearm(filePath)
+        fileChanges.tryEmit(filePath)
+    }
+
+    /**
      * Queue [unwatch] to run off the calling thread.
      *
      * Unlike [watch] / [unwatch] this **is** safe to call while holding another lock: it only

@@ -7,6 +7,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ethran.notable.data.dbDirPath
 import com.ethran.notable.data.getDbDirOrNull
 import com.ethran.notable.data.model.BookMeta
@@ -162,7 +163,28 @@ object DatabaseModule {
                 MIGRATION_32_33,
                 MIGRATION_37_38
             )
+            .addCallback(RepointDevFolder)
             .build()
+    }
+
+    /**
+     * The `.dev` build kept its files in `Documents/notabledb-dev`, this app keeps them in
+     * `Documents/notabledb`. A database brought over from there still names the old folder in its
+     * rows, and its PDFs, EPUBs and images showed blank; this points them at the folder in use.
+     * Synced files missing there come from the server again (`NotableSyncClient.fetchMissingFiles`).
+     */
+    private object RepointDevFolder : RoomDatabase.Callback() {
+        override fun onOpen(db: SupportSQLiteDatabase) {
+            val old = "/notabledb-dev/"
+            val new = "/${dbDirPath().name}/"
+            if (old == new) return
+            for ((table, column) in listOf("page" to "background", "notebook" to "defaultBackground", "Image" to "uri")) {
+                db.execSQL(
+                    "UPDATE $table SET $column = REPLACE($column, ?, ?) WHERE $column LIKE ?",
+                    arrayOf<Any>(old, new, "%$old%"),
+                )
+            }
+        }
     }
 
     @Provides

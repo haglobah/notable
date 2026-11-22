@@ -63,6 +63,10 @@ interface ImageDao {
     @Upsert
     suspend fun upsert(images: List<Image>)
 
+    /** The distinct uris that start with [prefix]. */
+    @Query("SELECT DISTINCT uri FROM Image WHERE substr(uri, 1, length(:prefix)) = :prefix")
+    suspend fun urisUnder(prefix: String): List<String>
+
     @Query("SELECT id FROM Image WHERE pageId = :pageId")
     suspend fun idsForPage(pageId: String): List<String>
 

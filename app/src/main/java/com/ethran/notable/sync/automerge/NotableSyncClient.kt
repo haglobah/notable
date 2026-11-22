@@ -3,6 +3,7 @@ package com.ethran.notable.sync.automerge
 import android.content.Context
 import com.ethran.notable.SCREEN_HEIGHT
 import com.ethran.notable.SCREEN_WIDTH
+import com.ethran.notable.data.BackgroundFileWatcher
 import com.ethran.notable.data.ContentMirror
 import com.ethran.notable.data.LocalChange
 import com.ethran.notable.data.PendingLocalWrites
@@ -124,6 +125,7 @@ class NotableSyncClient @Inject constructor(
     private val pendingWrites: PendingLocalWrites,
     private val events: AppEventBus,
     private val thumbnailUpdates: ThumbnailUpdates,
+    private val backgroundFiles: BackgroundFileWatcher,
     @param:ApplicationScope private val scope: CoroutineScope,
 ) : ContentMirror, CodeDocs {
     private val root = File(context.filesDir, "notable-sync")
@@ -640,23 +642,22 @@ class NotableSyncClient @Inject constructor(
                         useLibrary(s, url)
                     }
                 }
+                // A file of this device's not uploaded yet is still in the queue.
+                val download = { sha: String, dest: File ->
+                    if (!s.blobs.copyQueued(sha, dest)) {
+                        val api = s.api ?: throw java.io.IOException("file $sha is not on this device, and no account is logged in to fetch it")
+                        api.getBlob(s.account!!.token, sha, dest)
+                    }
+                }
+                val blobDir = File(getDbDir(), "sync-blobs").apply { mkdirs() }
                 s.projector = AutomergeProjector(
                     sink = RoomProjectionSink(folderDao, notebookDao, pageDao, strokeDao, imageDao),
-                    files = DownloadingProjectionFiles(
-                        // A file of this device's not uploaded yet is still in the queue.
-                        download = { sha, dest ->
-                            if (!s.blobs.copyQueued(sha, dest)) {
-                                val api = s.api ?: throw java.io.IOException("file $sha is not on this device, and no account is logged in to fetch it")
-                                api.getBlob(s.account!!.token, sha, dest)
-                            }
-                        },
-                        dir = File(getDbDir(), "sync-blobs").apply { mkdirs() },
-                        open = androidFileOpener(context),
-                    ),
+                    files = DownloadingProjectionFiles(download = download, dir = blobDir, open = androidFileOpener(context)),
                     state = s.projectionState,
                     localCanvasWidth = canvasWidth().toDouble(),
                     localPending = pendingWrites::contains,
                 )
+                scope.launch(Dispatchers.IO) { fetchMissingFiles(blobDir, download) }
                 follow(s, libraryUrl)
                 for (url in s.queue) {
                     drainInto(s.queue, url).forEach { project(s, it) }
@@ -667,6 +668,29 @@ class NotableSyncClient @Inject constructor(
                 log.e("projection stopped", e)
                 _projection.value = _projection.value.copy(running = false,
                     errors = _projection.value.errors + ("library" to (e.message ?: e.javaClass.simpleName)))
+            }
+        }
+    }
+
+    /**
+     * Fetches the synced files Room's rows name in [dir] that aren't on this device: the projector
+     * fetches a file only when it writes the row, so one lost afterwards (or a database brought
+     * over without its files) left its pages blank for good.
+     */
+    private suspend fun fetchMissingFiles(dir: File, download: (String, File) -> Unit) {
+        val prefix = dir.absolutePath + "/"
+        val paths = pageDao.backgroundsUnder(prefix) + notebookDao.backgroundsUnder(prefix) +
+            imageDao.urisUnder("file://$prefix").map { it.removePrefix("file://") }
+        for (path in paths.toSet()) {
+            val file = File(path)
+            val sha = file.name.take(64)
+            if (file.isFile || file.parentFile != dir || !sha.matches(Regex("[0-9a-f]{64}"))) continue
+            try {
+                download(sha, file)
+                log.i("fetched missing file ${file.name}")
+                backgroundFiles.arrived(path)
+            } catch (e: Exception) {
+                log.w("could not fetch missing file ${file.name}: ${e.message}")
             }
         }
     }
