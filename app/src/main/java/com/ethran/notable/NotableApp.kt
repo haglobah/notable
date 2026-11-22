@@ -2,6 +2,7 @@ package com.ethran.notable
 
 import android.app.Application
 import android.util.Log
+import com.ethran.notable.logs.LogShipper
 import com.onyx.android.sdk.base.utils.ResManager
 import com.onyx.android.sdk.rx.RxManager
 import com.ethran.notable.data.LegacyWebDavCleanup
@@ -27,6 +28,9 @@ class NotableApp : Application() {
     @Inject
     lateinit var liveImage: ImageService
 
+    @Inject
+    lateinit var logShipper: LogShipper
+
     override fun onCreate() {
         Log.i("NotableApp", "onCreate START")
         super.onCreate()
@@ -48,6 +52,8 @@ class NotableApp : Application() {
         notableSync.start()
         // The live code image (ADR-002): its own thread, fed by the code doc; safe mode decides here.
         liveImage.start()
+        // Its logcat to Flow on cirdan, where it can be read without adb (Settings → Debug).
+        logShipper.start()
         Log.i("NotableApp", "onCreate FINISH")
     }
 

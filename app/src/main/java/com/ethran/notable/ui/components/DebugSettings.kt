@@ -73,6 +73,13 @@ fun DebugSettings(
             }
         )
         NToggleRow(
+            title = "Send logs to cirdan",
+            checked = settings.shipLogs,
+            onCheckedChange = { isChecked ->
+                onSettingsChange(settings.copy(shipLogs = isChecked))
+            }
+        )
+        NToggleRow(
             title = "Allow destructive migrations",
             checked = settings.destructiveMigrations,
             onCheckedChange = { isChecked ->

@@ -36,3 +36,12 @@ install it over the old app (same key and id, so the data stays). From then on t
 - Release builds run R8. Keep rules cover Onyx, MuPDF, lz4, Automerge, QuickJS and websockets;
   a crash in a release build that a debug build doesn't have is the first thing to suspect.
 - Only `main` is built. Branches go to the tablet over adb as before.
+
+## The tablet's logs (2026-11-22)
+
+`logs/LogShipper.kt` follows this app's logcat (`-v threadtime,year`, from where the last batch
+ended, so a crash's last lines go out on the next start) into an outbox file (20 MB at most) and
+posts it gzipped every 30 s to Flow, `POST /api/notable/logs`, with the Flow session the chat uses.
+Flow appends each batch to `$HOTLUSTRE_APPDATA/notable/logs/<UTC day>.log` on cirdan, kept 30
+days (hotlustre `server/plugins/notable-logs.ts`). Settings → Debug → "Send logs to cirdan" turns
+it off. Nothing ships while signed out of Flow; the outbox waits.

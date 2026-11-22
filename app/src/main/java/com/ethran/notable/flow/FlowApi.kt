@@ -75,6 +75,14 @@ class FlowApi(http: OkHttpClient, val baseUrl: HttpUrl) {
         }
     }
 
+    /** Appends a batch of the app's logcat (gzip) to the day's file on Flow's machine (notable-logs.ts). */
+    fun postLogs(cookies: Map<String, String>, gzipped: ByteArray) {
+        val req = Request.Builder().url(url("api/notable/logs")).cookies(cookies)
+            .header("Content-Encoding", "gzip")
+            .post(gzipped.toRequestBody(OCTETS)).build()
+        http.newCall(req).execute().use { it.failOn() }
+    }
+
     /** Transcribes 16 kHz mono PCM16 little-endian audio with Flow's voice settings. */
     fun transcribe(cookies: Map<String, String>, pcm: ByteArray): String {
         val req = Request.Builder().url(url("api/voice/transcribe")).cookies(cookies)

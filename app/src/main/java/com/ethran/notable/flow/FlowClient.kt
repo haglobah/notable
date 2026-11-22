@@ -259,6 +259,21 @@ class FlowClient @Inject constructor(
         if (_voice.value is VoiceState.Failed) _voice.value = VoiceState.Idle
     }
 
+    /**
+     * Ships a batch of logs (logs/LogShipper.kt) with this account's session; a session the core
+     * refuses is renewed once. False when signed out: the batch waits.
+     */
+    suspend fun postLogs(gzipped: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        val api = api() ?: return@withContext false
+        try {
+            api.postLogs(cookies, gzipped)
+        } catch (e: FlowSignedOut) {
+            cookies = api.renew(cookies).also { store.saveCookies(it) }
+            api.postLogs(cookies, gzipped)
+        }
+        true
+    }
+
     /** Stops the shown conversation's turn. */
     fun stopTurn() {
         val conv = _selected.value ?: return

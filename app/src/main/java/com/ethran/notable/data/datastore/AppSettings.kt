@@ -100,6 +100,8 @@ data class AppSettings(
     val openGLRendering: Boolean = true,
     val muPdfRendering: Boolean = true,
     val destructiveMigrations: Boolean = false,
+    /** This app's logcat goes to Flow on cirdan (logs/LogShipper.kt). */
+    val shipLogs: Boolean = true,
 
     ) {
     enum class GestureAction {
