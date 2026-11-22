@@ -117,9 +117,11 @@ fun Library(
     folderId: String? = null,
     goToPage: (String) -> Unit = {},
     onCreateNewQuickPage: (String?) -> Unit = {},
-    viewModel: LibraryViewModel = hiltViewModel()
+    viewModel: LibraryViewModel = hiltViewModel(),
+    flow: FlowViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val flowDot by flow.client.dot.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val browse by viewModel.browse.collectAsStateWithLifecycle()
     val quickNotebookId by viewModel.quickNotebookId.collectAsStateWithLifecycle()
@@ -163,7 +165,8 @@ fun Library(
         onQueryChange = viewModel::setQuery,
         onNavigateToFolder = { id -> navController.navigate(LibraryDestination.createRoute(id)) },
         onNavigateToSettings = { navController.navigate("settings") },
-        onOpenFlow = { navController.navigate(FlowDestination.route) },
+        flowDotShown = flowDot.shown,
+        onToggleFlowDot = { flow.client.showDot(!flowDot.shown) },
         onNavigateToEditor = { pageId, bookId ->
             navController.navigate(EditorDestination.createRoute(pageId, bookId))
         },
@@ -227,7 +230,9 @@ fun LibraryContent(
     onQueryChange: (String) -> Unit = {},
     onNavigateToFolder: (String?) -> Unit,
     onNavigateToSettings: () -> Unit,
-    onOpenFlow: () -> Unit,
+    /** The Flow microphone dot floats over the library and notes (FlowMicDot); the bar's microphone toggles it. */
+    flowDotShown: Boolean,
+    onToggleFlowDot: () -> Unit,
     onNavigateToEditor: (String, String) -> Unit,
     goToPage: (String) -> Unit,
     onCreateNewQuickPage: () -> Unit,
@@ -314,7 +319,7 @@ fun LibraryContent(
                         onHideFinished = onHideFinished,
                         // Navigation lives with the bar, at its far right; a dot marks an update.
                         trailing = {
-                            NIconButton(FeatherIcons.Mic, stringResource(R.string.flow_title), onOpenFlow)
+                            NIconButton(FeatherIcons.Mic, stringResource(if (flowDotShown) R.string.flow_dot_hide else R.string.flow_dot_show), onToggleFlowDot, selected = flowDotShown)
                             NIconButton(FeatherIcons.Trash2, stringResource(R.string.trash_title), onOpenTrash)
                             SettingsButton(onClick = onNavigateToSettings)
                         })

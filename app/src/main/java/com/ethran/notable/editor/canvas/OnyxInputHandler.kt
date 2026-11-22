@@ -269,7 +269,7 @@ class OnyxInputHandler(
             onSurfaceInit(drawCanvas)
             val toolbarHeight =
                 if (toolbarState.isToolbarOpen) convertDpToPixel(40.dp, drawCanvas.context).toInt() else 0
-            setupSurface(drawCanvas, touchHelper, toolbarHeight)
+            setupSurface(drawCanvas, touchHelper, toolbarHeight, CanvasEventBus.floatingControl.value)
             // Armed inside the same coroutine, after the session is recreated: a caller that sets
             // the pen style right after updateActiveSurface() would otherwise race this launch.
             // Only when drawing is on: if updateIsDrawing() disabled it while the surface did not

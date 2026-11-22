@@ -137,11 +137,11 @@ fun onSurfaceDestroy(view: View, touchHelper: TouchHelper?) {
 
 
 /**
- * Recreates the raw-drawing session for [view] (limit/exclude rects around the toolbar) and leaves
+ * Recreates the raw-drawing session for [view] (limit/exclude rects around the toolbar and a floating control) and leaves
  * it **disabled**: the caller arms it with `OnyxInputHandler.enableRawDrawing`, which also
  * configures the eraser channel and pen style.
  */
-fun setupSurface(view: View, touchHelper: TouchHelper?, toolbarHeight: Int) {
+fun setupSurface(view: View, touchHelper: TouchHelper?, toolbarHeight: Int, floating: Rect? = null) {
     if (touchHelper == null) return
     // Takes at least 50ms on Note 4c,
     // and I don't think that we need it immediately
@@ -168,7 +168,12 @@ fun setupSurface(view: View, touchHelper: TouchHelper?, toolbarHeight: Int) {
         else
             Rect(0, 0, viewWidth, viewHeight - toolbarHeight)
 
-    touchHelper.setLimitRect(mutableListOf(limitRect)).setExcludeRect(listOf(excludeRect))
+    // A control floating over the page (window pixels): out of raw drawing too.
+    val floatingRect = floating?.let {
+        val at = IntArray(2).also(view::getLocationInWindow)
+        Rect(it).apply { offset(-at[0], -at[1]) }
+    }
+    touchHelper.setLimitRect(mutableListOf(limitRect)).setExcludeRect(listOfNotNull(excludeRect, floatingRect))
         .openRawDrawing()
     log.i("Setup editable surface completed")
 

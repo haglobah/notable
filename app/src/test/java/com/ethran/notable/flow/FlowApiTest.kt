@@ -72,6 +72,16 @@ class FlowApiTest {
     }
 
     @Test
+    fun send_scopes_a_new_conversation_and_leaves_a_scope_alone_otherwise() {
+        respond(202, """{"ok":true}""")
+        api.send(emptyMap(), "conv-1", "cid-1", "hello", scope = listOf("notable"))
+        assertTrue(server.takeRequest().body!!.utf8().contains("\"scope\":[\"notable\"]"))
+        respond(202, """{"ok":true}""")
+        api.send(emptyMap(), "conv-1", "cid-2", "more")
+        assertTrue(!server.takeRequest().body!!.utf8().contains("scope"))
+    }
+
+    @Test
     fun transcribe_sends_raw_pcm() {
         respond(200, """{"text":" make it bigger "}""")
         assertEquals(" make it bigger ", api.transcribe(emptyMap(), ByteArray(6400)))

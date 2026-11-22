@@ -18,6 +18,7 @@ import com.ethran.notable.ui.components.WithRecentsEdgeSwipe
 import com.ethran.notable.ui.views.BugReportDestination
 import com.ethran.notable.ui.views.BugReportScreen
 import com.ethran.notable.ui.views.FlowDestination
+import com.ethran.notable.ui.views.FlowMicDot
 import com.ethran.notable.ui.views.FlowView
 import com.ethran.notable.ui.views.Library
 import com.ethran.notable.ui.views.LibraryDestination
@@ -57,17 +58,20 @@ fun NotableNavHost(
                 }),
             ) {
                 WithRecentsEdgeSwipe(goToEditor = { pageId, bId -> appNavigator.goToEditor(pageId, bId) }) {
-                    Library(
-                        navController = appNavigator.navController,
-                        folderId = it.arguments?.getString(LibraryDestination.FOLDER_ID_ARG),
-                        goToPage = { pageId -> appNavigator.goToPage(appRepository, pageId) },
-                        onCreateNewQuickPage = { folderId ->
-                            appNavigator.onCreateNewQuickPage(
-                                appRepository,
-                                folderId
-                            )
-                        }
-                    )
+                    Box(Modifier.fillMaxSize()) {
+                        Library(
+                            navController = appNavigator.navController,
+                            folderId = it.arguments?.getString(LibraryDestination.FOLDER_ID_ARG),
+                            goToPage = { pageId -> appNavigator.goToPage(appRepository, pageId) },
+                            onCreateNewQuickPage = { folderId ->
+                                appNavigator.onCreateNewQuickPage(
+                                    appRepository,
+                                    folderId
+                                )
+                            }
+                        )
+                        FlowMicDot(onOpen = { appNavigator.navController.navigate(FlowDestination.route) })
+                    }
                 }
                 appNavigator.cleanCurrentPageId()
             }
@@ -108,6 +112,7 @@ fun NotableNavHost(
                     goToPages = { bookId -> appNavigator.goToPages(bookId) },
                     goToBugReport = { appNavigator.goToBugReport() },
                     goToEditor = { pageId, bId -> appNavigator.goToEditor(pageId, bId) },
+                    goToFlow = { appNavigator.navController.navigate(FlowDestination.route) },
                     bookId = bookId,
                     initialPageId = currentPageId,
                     isQuickNavOpen = appNavigator.isQuickNavOpen,

@@ -44,6 +44,16 @@ sealed interface FlowLink {
     data class Down(val reason: String) : FlowLink
 }
 
+/**
+ * The microphone dot floating over the library and over a note while its toolbar shows: [shown]
+ * toggles it (the library bar's microphone), [x]/[y] are where it was dragged to, in dp from the
+ * screen's top left; null: its place near the top bar, at the right.
+ */
+data class FlowDot(val shown: Boolean = true, val x: Float? = null, val y: Float? = null)
+
+/** The project Flow scopes a conversation started here to (its scope pills): this repo. */
+const val FLOW_SCOPE = "notable"
+
 sealed interface VoiceState {
     data object Idle : VoiceState
     data object Recording : VoiceState
@@ -59,7 +69,7 @@ sealed interface VoiceState {
  */
 @Singleton
 class FlowClient @Inject constructor(
-    @param:ApplicationContext context: Context,
+    @param:ApplicationContext private val context: Context,
     crypto: CryptoHelper,
     @param:ApplicationScope private val scope: CoroutineScope,
 ) {
@@ -80,6 +90,16 @@ class FlowClient @Inject constructor(
 
     private val _voice = MutableStateFlow<VoiceState>(VoiceState.Idle)
     val voice: StateFlow<VoiceState> = _voice.asStateFlow()
+
+    private val dotPrefs = context.getSharedPreferences("flow-dot", Context.MODE_PRIVATE)
+    private val _dot = MutableStateFlow(
+        FlowDot(
+            shown = dotPrefs.getBoolean("shown", true),
+            x = dotPrefs.getFloat("x", Float.NaN).takeUnless { it.isNaN() },
+            y = dotPrefs.getFloat("y", Float.NaN).takeUnless { it.isNaN() },
+        )
+    )
+    val dot: StateFlow<FlowDot> = _dot.asStateFlow()
 
     /** The conversation the screen shows and new messages go to; null: the next message starts one. */
     private val _selected = MutableStateFlow(_chat.value.ordered.firstOrNull()?.id)
@@ -136,6 +156,25 @@ class FlowClient @Inject constructor(
         _selected.value = conv
     }
 
+    fun showDot(shown: Boolean) {
+        _dot.update { it.copy(shown = shown) }
+        dotPrefs.edit().putBoolean("shown", shown).apply()
+    }
+
+    fun moveDot(x: Float, y: Float) {
+        _dot.update { it.copy(x = x, y = y) }
+        dotPrefs.edit().putFloat("x", x).putFloat("y", y).apply()
+    }
+
+    /** The microphone's tap: start listening; while listening, send what was said. */
+    fun toggleRecording() {
+        when (_voice.value) {
+            VoiceState.Recording -> finishRecording()
+            VoiceState.Idle, is VoiceState.Failed -> { dismissVoiceError(); startRecording() }
+            else -> Unit
+        }
+    }
+
     fun startRecording() {
         if (_voice.value == VoiceState.Recording) return
         try {
@@ -188,6 +227,7 @@ class FlowClient @Inject constructor(
     private suspend fun deliver(api: FlowApi, text: String) {
         _voice.value = VoiceState.Sending
         val conv = _selected.value ?: UUID.randomUUID().toString()
+        val fresh = !_chat.value.conversations.containsKey(conv)
         val now = System.currentTimeMillis()
         chatLock.withLock { _chat.update { if (it.conversations.containsKey(conv)) it.said(conv, text, now) else it.started(conv, text, now) } }
         _selected.value = conv
@@ -197,7 +237,7 @@ class FlowClient @Inject constructor(
         var tries = 0
         while (true) {
             try {
-                api.send(cookies, conv, cid, text)
+                api.send(cookies, conv, cid, text, scope = if (fresh) listOf(FLOW_SCOPE) else null)
                 break
             } catch (e: FlowError) {
                 // 409: a new Flow version is starting; it asks to send again in a moment.

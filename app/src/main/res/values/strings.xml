@@ -468,4 +468,6 @@
     <string name="flow_type">Type instead</string>
     <string name="flow_type_placeholder">Message</string>
     <string name="flow_send">Send</string>
+    <string name="flow_dot_show">Show the Flow microphone</string>
+    <string name="flow_dot_hide">Hide the Flow microphone</string>
 </resources>

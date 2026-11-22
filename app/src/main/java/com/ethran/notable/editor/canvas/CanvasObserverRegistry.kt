@@ -84,6 +84,7 @@ class CanvasObserverRegistry(
         observePenChanges()
         observeIsDrawingSnapshot()
         observeToolbar()
+        observeFloatingControl()
         observeMode()
         observeQuickNav()
         observeRestoreCanvas()
@@ -309,6 +310,16 @@ class CanvasObserverRegistry(
                     inputHandler.updatePenAndStroke()
                     refreshManager.refreshUi(null)
                 }
+        }
+    }
+
+    /** The Flow dot came, went or moved: raw drawing is set up around its new place. */
+    private fun observeFloatingControl() {
+        observerScope.launch {
+            CanvasEventBus.floatingControl.drop(1).collect {
+                log.v("floating control at $it")
+                inputHandler.updateActiveSurface()
+            }
         }
     }
 

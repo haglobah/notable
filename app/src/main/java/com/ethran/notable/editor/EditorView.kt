@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import com.ethran.notable.ui.views.FlowMicDot
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,6 +77,8 @@ fun EditorView(
     goToBugReport: () -> Unit,
     /** Opens another notebook (or loose page) from the recents panel. */
     goToEditor: (pageId: String, bookId: String?) -> Unit,
+    /** Opens the Flow conversation (a long press on the microphone dot). */
+    goToFlow: () -> Unit,
 
     viewModel: EditorViewModel = hiltViewModel()
 ) {
@@ -321,6 +324,8 @@ fun EditorView(
                 JumpBackChip(jump, onBack = { viewModel.onToolbarAction(ToolbarAction.JumpBack) },
                     onDismiss = { viewModel.onToolbarAction(ToolbarAction.DismissJumpBack) })
             }
+            // Talking to Flow, with the toolbar: a closed toolbar leaves the page to the pen.
+            if (toolbarState.isToolbarOpen) FlowMicDot(onOpen = goToFlow)
         }
     }
 }

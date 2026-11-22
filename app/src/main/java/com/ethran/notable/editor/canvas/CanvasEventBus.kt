@@ -36,6 +36,19 @@ object CanvasEventBus {
      */
     val hasWindowFocus: StateFlow<Boolean> = _hasWindowFocus.asStateFlow()
 
+    private val _floatingControl = MutableStateFlow<Rect?>(null)
+
+    /**
+     * Where a control floats over the page (the Flow microphone dot), in window pixels: raw drawing
+     * leaves it out, so the pen taps it instead of drawing under it. Written only by
+     * [setFloatingControl], from the control.
+     */
+    val floatingControl: StateFlow<Rect?> = _floatingControl.asStateFlow()
+
+    fun setFloatingControl(bounds: Rect?) {
+        _floatingControl.value = bounds
+    }
+
     fun setResumed(resumed: Boolean) {
         _isResumed.value = resumed
     }

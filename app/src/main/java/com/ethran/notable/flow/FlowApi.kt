@@ -1,6 +1,7 @@
 package com.ethran.notable.flow
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -87,10 +88,14 @@ class FlowApi(http: OkHttpClient, val baseUrl: HttpUrl) {
 
     /**
      * Sends a message: a new conversation for an unknown [conv], else into it (joining a running
-     * turn). [cid] makes a resend count once.
+     * turn). [cid] makes a resend count once. [scope]: the projects a new conversation is about
+     * (Flow's scope pills); null leaves the conversation's as they are.
      */
-    fun send(cookies: Map<String, String>, conv: String, cid: String, text: String) {
-        val body = buildJsonObject { put("cid", cid); put("conv", conv); put("text", text) }.toString()
+    fun send(cookies: Map<String, String>, conv: String, cid: String, text: String, scope: List<String>? = null) {
+        val body = buildJsonObject {
+            put("cid", cid); put("conv", conv); put("text", text)
+            if (scope != null) put("scope", JsonArray(scope.map(::JsonPrimitive)))
+        }.toString()
         val req = Request.Builder().url(url("api/chat")).cookies(cookies).post(body.toRequestBody(JSON)).build()
         http.newCall(req).execute().use { it.failOn() }
     }

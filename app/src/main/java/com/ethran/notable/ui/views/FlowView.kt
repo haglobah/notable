@@ -148,13 +148,7 @@ fun FlowView(onBack: () -> Unit, goToSettings: () -> Unit, viewModel: FlowViewMo
         Controls(
             voice = voice,
             running = conversation?.running == true,
-            onMic = {
-                when (voice) {
-                    VoiceState.Recording -> client.finishRecording()
-                    VoiceState.Idle, is VoiceState.Failed -> { client.dismissVoiceError(); client.startRecording() }
-                    else -> Unit
-                }
-            },
+            onMic = client::toggleRecording,
             onCancel = client::cancelRecording,
             onStop = client::stopTurn,
             onSend = client::sendText,

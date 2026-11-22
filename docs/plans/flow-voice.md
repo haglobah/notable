@@ -22,6 +22,16 @@ Flow. Access only inside Notable for now; an OS-wide overlay is later.
   Boox has Google's and Qualcomm's `RecognitionService`s, which are an option for offline use later.
 - **Tap to talk, tap to send.** The transcript is sent at once; Stop ends a running turn; a
   keyboard toggle sends typed text.
+- **The microphone is a dot over the screen (Beat, 2026-11-22),** not a screen of its own:
+  `FlowMicDot` floats over the library and over a note while its toolbar is open. Tap: it turns
+  black and listens; tap again: sent, with a small label beside it (listening, transcribing, a
+  failure to tap away). Drag it anywhere (kept in the `flow-dot` preferences, dp; at first at the
+  right, 76 dp down, under the top bar); a long press opens the conversation screen (`flow`). The
+  library bar's microphone shows and hides it. Over a note its place is left out of raw drawing
+  (`CanvasEventBus.floatingControl`, an exclude rect in `setupSurface`), so the pen taps it.
+- **Conversations started here are scoped to `notable`** (Beat, 2026-11-22): the first message of
+  a new conversation carries `scope: ["notable"]`, Flow's scope pills; later ones leave the scope
+  as set in Flow.
 - **Where the stream starts:** without `since` Flow replays its whole log (73 MB on gondor). Flow
   has no route for the log's head, so the first connect reads `chat.seq` from `/api/state` (the
   page's saved model, ~10 MB) with a streaming scan (`chatSeq`), once; after that the tablet keeps
@@ -37,7 +47,8 @@ Flow. Access only inside Notable for now; an OS-wide overlay is later.
 - `app/src/main/java/com/ethran/notable/flow/`: `FlowChat.kt` (model + fold, pure), `FlowApi.kt`
   (HTTP, SSE reader, cookie merge, `chatSeq`), `FlowClient.kt` (Hilt singleton: account, stream
   while a screen is attached, voice → transcript → send, persistence), `VoiceRecorder.kt`.
-- `ui/views/FlowView.kt` (route `flow`, mic button in the library bar), `ui/views/FlowSection.kt`
+- `ui/views/FlowDot.kt` (the microphone dot), `ui/views/FlowView.kt` (route `flow`, the
+  conversation, from a long press on the dot), `ui/views/FlowSection.kt`
   (Settings → Sync). Settings take a tab argument (`settings?tab=3`).
 - Tests: `app/src/test/java/com/ethran/notable/flow/FlowChatTest.kt` (7), `FlowApiTest.kt` (9).
 
