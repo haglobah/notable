@@ -61,6 +61,21 @@ class FlowApiTest {
     }
 
     @Test
+    fun capture_posts_the_image_and_reads_where_it_went() {
+        respond(200, """{"text":"Tools shape thoughts","note":"2026-11-23"}""")
+        assertEquals("Tools shape thoughts" to "2026-11-23", api.capture(mapOf("s" to "1"), byteArrayOf(1, 2, 3)))
+        val req = server.takeRequest()
+        assertEquals("/api/writing/capture", req.url.encodedPath)
+        assertEquals("image/png", req.headers["Content-Type"])
+        assertEquals(3L, req.body!!.size.toLong())
+        respond(200, """{"text":"held","note":null}""")
+        assertEquals("held" to null, api.capture(emptyMap(), byteArrayOf(1)))
+        respond(502, """{"error":"Claude could not read it (error_max_turns)"}""")
+        val e = assertThrows(FlowError::class.java) { api.capture(emptyMap(), byteArrayOf(1)) }
+        assertEquals("Claude could not read it (error_max_turns)", e.message)
+    }
+
+    @Test
     fun send_posts_the_conversation_and_shows_flow_s_error() {
         respond(202, """{"ok":true}""")
         api.send(mapOf("s" to "1"), "conv-1", "cid-1", "hello")

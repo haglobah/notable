@@ -95,6 +95,22 @@ class FlowApi(http: OkHttpClient, val baseUrl: HttpUrl) {
     }
 
     /**
+     * Puts a thought into Flow's writing inbox (server/plugins/writing.ts): [png] is handwriting,
+     * which Flow reads with Claude and adds to today's daily note under "Captured". Returns what it
+     * read and the note's title, or null when today's note is not made yet (Flow holds it until then).
+     */
+    fun capture(cookies: Map<String, String>, png: ByteArray): Pair<String, String?> {
+        val req = Request.Builder().url(url("api/writing/capture")).cookies(cookies)
+            .post(png.toRequestBody(PNG)).build()
+        http.newCall(req).execute().use { r ->
+            r.failOn()
+            val o = Json.parseToJsonElement(r.body.string()).jsonObject
+            val note = o["note"] as? JsonPrimitive
+            return (o["text"] as? JsonPrimitive)?.content.orEmpty() to note?.takeIf { it.isString }?.content
+        }
+    }
+
+    /**
      * Sends a message: a new conversation for an unknown [conv], else into it (joining a running
      * turn). [cid] makes a resend count once. [scope]: the projects a new conversation is about
      * (Flow's scope pills); null leaves the conversation's as they are.
@@ -172,6 +188,7 @@ class FlowApi(http: OkHttpClient, val baseUrl: HttpUrl) {
     companion object {
         private val JSON = "application/json".toMediaType()
         private val OCTETS = "application/octet-stream".toMediaType()
+        private val PNG = "image/png".toMediaType()
     }
 }
 

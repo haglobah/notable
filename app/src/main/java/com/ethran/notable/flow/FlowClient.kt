@@ -1,10 +1,17 @@
 package com.ethran.notable.flow
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import androidx.core.graphics.createBitmap
 import com.ethran.notable.data.db.CryptoHelper
 import com.ethran.notable.di.ApplicationScope
 import com.ethran.notable.sync.automerge.KeystoreCipher
 import com.ethran.notable.sync.automerge.SecretCipher
+import com.ethran.notable.ui.SnackConf
+import com.ethran.notable.ui.SnackDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.shipbook.shipbooksdk.ShipBook
 import kotlinx.coroutines.CoroutineScope
@@ -27,12 +34,14 @@ import kotlinx.serialization.json.Json
 import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToInt
 
 private val log = ShipBook.getLogger("FlowClient")
 
@@ -56,6 +65,9 @@ data class FlowDot(val shown: Boolean = true, val x: Float? = null, val y: Float
 /** The project Flow scopes a conversation started here to (its scope pills): this repo. */
 const val FLOW_SCOPE = "notable"
 
+/** The longest side of a capture's image, in pixels: Claude reads images up to about this size. */
+private const val CAPTURE_SIDE = 1568
+
 sealed interface VoiceState {
     data object Idle : VoiceState
     data object Recording : VoiceState
@@ -74,6 +86,7 @@ class FlowClient @Inject constructor(
     @param:ApplicationContext private val context: Context,
     crypto: CryptoHelper,
     @param:ApplicationScope private val scope: CoroutineScope,
+    private val snacks: SnackDispatcher,
 ) {
     private val dir = File(context.filesDir, "flow")
     private val store = FlowStore(dir, KeystoreCipher(crypto))
@@ -285,6 +298,42 @@ class FlowClient @Inject constructor(
                 changeChat { it.ticked(conv, !done) }
                 failed(e)
             }
+        }
+    }
+
+    /**
+     * Sends a selection of handwriting to Flow's writing inbox: Flow reads it and adds the thought to
+     * today's daily note under "Captured", as Alt-r does in Flow. A snack says how it went.
+     */
+    fun captureInk(selection: Bitmap) {
+        // Ink on white (the selection is ink on transparent), no larger than Claude reads an image.
+        val k = minOf(1f, CAPTURE_SIDE.toFloat() / maxOf(selection.width, selection.height))
+        val image = createBitmap((selection.width * k).roundToInt().coerceAtLeast(1), (selection.height * k).roundToInt().coerceAtLeast(1))
+        Canvas(image).apply {
+            drawColor(Color.WHITE)
+            scale(k, k)
+            drawBitmap(selection, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+        }
+        val id = "flow-capture-${UUID.randomUUID()}"
+        snacks.showOrUpdateSnack(SnackConf(id = id, text = "Sending to the writing inbox…"))
+        scope.launch {
+            val png = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            image.recycle()
+            val said = try {
+                val api = api() ?: throw FlowSignedOut("Sign in to Flow in Settings → Sync")
+                val (text, note) = try {
+                    api.capture(cookies, png)
+                } catch (e: FlowSignedOut) {
+                    cookies = api.renew(cookies).also { store.saveCookies(it) }
+                    api.capture(cookies, png)
+                }
+                val thought = if (text.length > 140) text.take(139) + "…" else text
+                if (note != null) "In the writing inbox: $thought" else "Held until today's daily note is made: $thought"
+            } catch (e: IOException) {
+                log.w("Flow capture: ${e.message}")
+                "Not sent to the writing inbox: ${e.message ?: e.javaClass.simpleName}"
+            }
+            snacks.showOrUpdateSnack(SnackConf(id = id, text = said, duration = 6000))
         }
     }
 

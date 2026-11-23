@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -27,15 +29,18 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ethran.notable.R
 import com.ethran.notable.data.datastore.BUTTON_SIZE
 import com.ethran.notable.editor.EditorControlTower
 import com.ethran.notable.editor.ui.toolbar.ToolbarButton
 import com.ethran.notable.io.shareBitmap
+import com.ethran.notable.ui.views.FlowViewModel
 import com.ethran.notable.ui.noRippleClickable
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Clipboard
 import compose.icons.feathericons.Copy
+import compose.icons.feathericons.Inbox
 import compose.icons.feathericons.Scissors
 import compose.icons.feathericons.Share2
 
@@ -47,8 +52,11 @@ val strokeStyle = Stroke(
 @Composable
 fun SelectedBitmap(
     context: Context,
-    controlTower: EditorControlTower
+    controlTower: EditorControlTower,
+    flow: FlowViewModel = hiltViewModel(),
 ) {
+    // Signed in to Flow, the selection can go to its writing inbox.
+    val flowAccount by flow.client.account.collectAsState()
     val selectionState = controlTower.getSnapshotOfSelectionState()
     if (selectionState.selectedBitmap == null) return
 
@@ -102,7 +110,7 @@ fun SelectedBitmap(
 
         // TODO: improve this code
 
-        val buttonCount = if (selectionState.isResizable()) 7 else 5
+        val buttonCount = (if (selectionState.isResizable()) 7 else 5) + (if (flowAccount != null) 1 else 0)
         val toolbarPadding = 4
 
         // If we can calculate offset of buttons show selection handling tools
@@ -127,6 +135,12 @@ fun SelectedBitmap(
                         onSelect = {
                             shareBitmap(context, controlTower.getSelectedBitmap())
                         },
+                        modifier = Modifier.height(BUTTON_SIZE.dp)
+                    )
+                    if (flowAccount != null) ToolbarButton(
+                        vectorIcon = FeatherIcons.Inbox,
+                        isSelected = false,
+                        onSelect = { flow.client.captureInk(controlTower.getSelectedBitmap()) },
                         modifier = Modifier.height(BUTTON_SIZE.dp)
                     )
                     ToolbarButton(

@@ -44,6 +44,14 @@ Flow. Access only inside Notable for now; an OS-wide overlay is later.
 - **Conversations started here are scoped to `notable`** (Beat, 2026-11-22): the first message of
   a new conversation carries `scope: ["notable"]`, Flow's scope pills; later ones leave the scope
   as set in Flow.
+- **A selection of handwriting goes to Flow's writing inbox** (Beat, 2026-11-23): the lasso
+  selection's toolbar has an inbox button while signed in to Flow (`SelectorBitmap.kt`).
+  `FlowClient.captureInk` puts the selection on white, at most 1568 px on its longest side, and
+  posts the PNG to `POST /api/writing/capture` (hotlustre `server/plugins/writing.ts`): Flow reads
+  the handwriting with Claude and adds `- HH:MM <thought>` under `## Captured` in today's daily
+  note, as Alt-r does in Flow, in the owner's time zone (the Boox's clock is set to the US west
+  coast). Without a daily note yet, Flow holds the thought until one is made. A snack says what was
+  read, or why it did not go. The ink stays on the page.
 - **Where the stream starts:** without `since` Flow replays its whole log (73 MB on gondor). Flow
   has no route for the log's head, so the first connect reads `chat.seq` from `/api/state` (the
   page's saved model, ~10 MB) with a streaming scan (`chatSeq`), once; after that the tablet keeps
